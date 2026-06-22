@@ -1,5 +1,11 @@
+"use client";
+
 import React, { createContext, useContext, useState } from "react";
-import { mockAnalyticsService } from "../src/services/mockAnalyticsService"; // Sẽ tạo ở Step 2
+import { mockAnalyticsService } from "../src/services/mockAnalyticsService";
+
+/* ------------------------------------------------------------------ */
+/*  Domain Types                                                        */
+/* ------------------------------------------------------------------ */
 
 export interface CandidateAnalytics {
   uuid: string;
@@ -34,6 +40,10 @@ export interface CandidateAnalytics {
 
 export type IngestionStatus = "IDLE" | "LOADING" | "SUCCESS" | "ERROR";
 
+/* ------------------------------------------------------------------ */
+/*  Context Shape                                                       */
+/* ------------------------------------------------------------------ */
+
 interface WorkspaceContextProps {
   status: IngestionStatus;
   pdfUrl: string | null;
@@ -47,6 +57,10 @@ const WorkspaceContext = createContext<WorkspaceContextProps | undefined>(
   undefined,
 );
 
+/* ------------------------------------------------------------------ */
+/*  Provider                                                            */
+/* ------------------------------------------------------------------ */
+
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -57,41 +71,38 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  /* ------ Upload handler ------ */
   const uploadResume = async (file: File) => {
     setStatus("LOADING");
     setErrorMessage(null);
-    setPdfUrl(URL.createObjectURL(file)); // Tạo local URL để hiển thị bản xem trước PDF ngay lập tức
+    // Create a local object URL so the PDF viewer can render immediately
+    setPdfUrl(URL.createObjectURL(file));
 
     try {
-      // ===== MOCK MODE =====
-      const mockResult = await mockAnalyticsService(file);
-      setAnalyticData(mockResult);
+      // ===== MOCK MODE (Phase 1) =====
+      // TODO: replace with real fetch + initWebSocketPipeline() when backend is ready
+      const result = await mockAnalyticsService(file);
+      setAnalyticData(result);
       setStatus("SUCCESS");
       // ===== END MOCK MODE =====
-
-      /* === REAL MODE  ===
-      const formData = new FormData();
-      formData.append('resume', file);
-      const response = await fetch('/api/v1/ingest', { method: 'POST', body: formData });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Upload failed');
-      }
-      const result = await response.json();
-      initWebSocketPipeline(result.candidateUuid);
-      */
-    } catch (error: any) {
+    } catch (error: unknown) {
       setStatus("ERROR");
-      setErrorMessage(error.message || "An unknown validation error occurred.");
+      const message =
+        error instanceof Error ? error.message : "Unknown ingestion error.";
+      setErrorMessage(message);
     }
   };
 
-  // WebSocket Core Pipeline (Đã sửa dùng backtick ` đúng chuẩn ES6)
-  const initWebSocketPipeline = (uuid: string) => {
+  /* ------ WebSocket pipeline (used in REAL MODE) ------ */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _initWebSocketPipeline = (uuid: string) => {
     const ws = new WebSocket(`wss://ats.internal:8421/stream/${uuid}`);
 
     ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
+      const payload = JSON.parse(event.data) as {
+        type: string;
+        data: CandidateAnalytics;
+      };
       if (payload.type === "AI_ANALYTICS_COMPLETE") {
         setAnalyticData(payload.data);
         setStatus("SUCCESS");
@@ -101,11 +112,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     ws.onerror = () => {
       setStatus("ERROR");
-      setErrorMessage("Asynchronous Engine Failure: WebSocket disconnected.");
+      setErrorMessage("WebSocket: Asynchronous engine failure or timeout.");
       ws.close();
     };
   };
 
+  /* ------ Reset ------ */
   const resetWorkspace = () => {
     setStatus("IDLE");
     setPdfUrl(null);
@@ -114,7 +126,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   return (
-    // Đã sửa lỗi cú pháp: Thêm dấu "=" sau value
     <WorkspaceContext.Provider
       value={{
         status,
@@ -130,9 +141,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 };
 
+/* ------------------------------------------------------------------ */
+/*  Hook                                                                */
+/* ------------------------------------------------------------------ */
+
 export const useWorkspace = () => {
   const context = useContext(WorkspaceContext);
   if (!context)
-    throw new Error("useWorkspace must be used within a WorkspaceProvider");
+    throw new Error("useWorkspace must be used inside <WorkspaceProvider>");
   return context;
 };
