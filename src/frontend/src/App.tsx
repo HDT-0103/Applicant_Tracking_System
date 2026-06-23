@@ -39,7 +39,9 @@ export default function App() {
         />
         {pdfUrl && (
           <iframe
-            src={pdfUrl}
+            // #toolbar=0  → ẩn thanh toolbar của Chrome PDF Viewer
+            // #navpanes=0 → ẩn panel điều hướng bên trái (nếu có)
+            src={`${pdfUrl}#toolbar=0&navpanes=0`}
             className="pdf-iframe"
             title="Candidate Resume PDF"
           />
