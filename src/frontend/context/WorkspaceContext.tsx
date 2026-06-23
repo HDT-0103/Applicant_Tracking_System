@@ -1,104 +1,153 @@
-import React, {createContext, useContext, useState, useEffect} from 'react';
+"use client";
 
-export type IngestionStatus = 'IDLE'| 'LOADING' | 'SUCCESS' | 'ERROR';
+import React, { createContext, useContext, useState } from "react";
+import { mockAnalyticsService } from "../src/services/mockAnalyticsService";
 
-interface CandidateAnalytics {
-    uuid: string;
-    fullName: string;
-    affinityScore: number;
-    skills: {name: string, score: number}[];
-    trajectory: any[];
+/* ------------------------------------------------------------------ */
+/*  Domain Types                                                        */
+/* ------------------------------------------------------------------ */
+
+export interface CandidateAnalytics {
+  uuid: string;
+  fullName: string;
+  title: string;
+  location: string;
+  affinityScore: number;
+  matchConfidence: string;
+  matchPercentile: number;
+  breakdown: {
+    experience: number;
+    skillsFit: number;
+    culture: number;
+  };
+  skills: { name: string; score: number }[];
+  trajectory: {
+    year: number;
+    role: string;
+    company: string;
+    period: string;
+    highlight: string;
+    isCurrent: boolean;
+    type: "work" | "edu";
+  }[];
+  appliedRole: string;
+  appliedDate: string;
+  source: string;
+  seniority: string;
+  assessmentStatus: string;
+  department: string;
 }
+
+export type IngestionStatus = "IDLE" | "LOADING" | "SUCCESS" | "ERROR";
+
+/* ------------------------------------------------------------------ */
+/*  Context Shape                                                       */
+/* ------------------------------------------------------------------ */
 
 interface WorkspaceContextProps {
-    status: IngestionStatus;
-    pdfUrl: string | null;
-    analyticData: CandidateAnalytics | null;
-    errorMessage: string | null;
-    uploadResume: (file: File) => Promise<void>;
-    resetWorkspace : ()=>void;
+  status: IngestionStatus;
+  pdfUrl: string | null;
+  analyticData: CandidateAnalytics | null;
+  errorMessage: string | null;
+  uploadResume: (file: File) => Promise<void>;
+  resetWorkspace: () => void;
 }
 
-const WorkspaceContext = createContext<WorkspaceContextProps | undefined> (undefined);
+const WorkspaceContext = createContext<WorkspaceContextProps | undefined>(
+  undefined,
+);
 
-export const WorkspaceProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
-    const [status, setStatus] = useState<IngestionStatus>('IDLE');
-    const [pdfUrl, setPdfUrl] = useState<string|null> (null);
-    const [analyticData, setAnalyticData] = useState<CandidateAnalytics | null>(null);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+/* ------------------------------------------------------------------ */
+/*  Provider                                                            */
+/* ------------------------------------------------------------------ */
 
-    const uploadResume = async (file: File) => {
-        setStatus('LOADING');
-        setErrorMessage(null);
-        
-        const formData = new FormData();
-        formData.append('resume', file);
+export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const [status, setStatus] = useState<IngestionStatus>("IDLE");
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [analyticData, setAnalyticData] = useState<CandidateAnalytics | null>(
+    null,
+  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-        try{
-            const response = await fetch('/api/v1/ingest', {
-                method: 'POST',
-                body: formData
-            });
-            if (!response.ok){
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Upload failed');
-            }
+  /* ------ Upload handler ------ */
+  const uploadResume = async (file: File) => {
+    setStatus("LOADING");
+    setErrorMessage(null);
+    // Create a local object URL so the PDF viewer can render immediately
+    setPdfUrl(URL.createObjectURL(file));
 
-            const result = await response.json();
-            setPdfUrl(URL.createObjectURL(file));
-
-            initWebSocketPipeline(result.candidateUuid);
-        }
-        catch (error: any)
-        {
-            setStatus('ERROR');
-            setErrorMessage(error.message);
-        }
+    try {
+      // ===== MOCK MODE (Phase 1) =====
+      // TODO: replace with real fetch + initWebSocketPipeline() when backend is ready
+      const result = await mockAnalyticsService(file);
+      setAnalyticData(result);
+      setStatus("SUCCESS");
+      // ===== END MOCK MODE =====
+    } catch (error: unknown) {
+      setStatus("ERROR");
+      const message =
+        error instanceof Error ? error.message : "Unknown ingestion error.";
+      setErrorMessage(message);
     }
+  };
 
-    const initWebSocketPipeline = (uuid: string) => {
-        const ws = new WebSocket ('wss://ats.internal:8421/stream/${uuid}');
+  /* ------ WebSocket pipeline (used in REAL MODE) ------ */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _initWebSocketPipeline = (uuid: string) => {
+    const ws = new WebSocket(`wss://ats.internal:8421/stream/${uuid}`);
 
-        ws.onmessage = (event) =>{
-            const payload = JSON.parse(event.data);
-            if (payload.type === 'AI_ANALYTICS_COMPLETE'){
-                setAnalyticData(payload.data);
-                setStatus('SUCCESS');
-                ws.close();
-            }
-        };
-
-        ws.onerror = () => {
-            setStatus('ERROR');
-            setErrorMessage('Asynchronous Engine Failure: WebSocket handshake or processing timeout!');
-            ws.close();
-        }
-
-        setTimeout(() =>{
-            if (status === 'LOADING'){
-                ws.close();
-                setStatus('ERROR');
-                setErrorMessage('Processing Timeout exceeded client-side thresholds!');
-            }
-        }, 30000);
+    ws.onmessage = (event) => {
+      const payload = JSON.parse(event.data) as {
+        type: string;
+        data: CandidateAnalytics;
+      };
+      if (payload.type === "AI_ANALYTICS_COMPLETE") {
+        setAnalyticData(payload.data);
+        setStatus("SUCCESS");
+        ws.close();
+      }
     };
 
-    const resetWorkspace = () => {
-        setStatus('IDLE');
-        setPdfUrl(null);
-        setAnalyticData(null);
-        setErrorMessage(null);
-    }
+    ws.onerror = () => {
+      setStatus("ERROR");
+      setErrorMessage("WebSocket: Asynchronous engine failure or timeout.");
+      ws.close();
+    };
+  };
 
-    return (
-        <WorkspaceContext.Provider value {{status, pdfUrl, analyticsData, errorMessage, uploadResume, resetWorkspace}}>
-            {children}
-        </WorkspaceContext.Provider>
-    );
+  /* ------ Reset ------ */
+  const resetWorkspace = () => {
+    setStatus("IDLE");
+    setPdfUrl(null);
+    setAnalyticData(null);
+    setErrorMessage(null);
+  };
+
+  return (
+    <WorkspaceContext.Provider
+      value={{
+        status,
+        pdfUrl,
+        analyticData,
+        errorMessage,
+        uploadResume,
+        resetWorkspace,
+      }}
+    >
+      {children}
+    </WorkspaceContext.Provider>
+  );
 };
 
+/* ------------------------------------------------------------------ */
+/*  Hook                                                                */
+/* ------------------------------------------------------------------ */
+
 export const useWorkspace = () => {
-    const context = useContext(WorkspaceContext);
-    if (!context) throw new Error('useWorkspace must be used within a WorkspaceProvider');
-    return context;
+  const context = useContext(WorkspaceContext);
+  if (!context)
+    throw new Error("useWorkspace must be used inside <WorkspaceProvider>");
+  return context;
 };
