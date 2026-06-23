@@ -1,13 +1,28 @@
+import os
 from functools import lru_cache
+from pathlib import Path
+from dotenv import load_dotenv  # <--- Sử dụng thư viện dotenv gốc để ép nạp file
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 1. Tìm chính xác đường dẫn tuyệt đối ra file .env ngoài cùng lớn nhất
+CURRENT_FILE = Path(__file__).resolve()
+ROOT_DIR = CURRENT_FILE.parents[5]
+ENV_PATH = ROOT_DIR / ".env"
+
+# 2. Ép hệ thống nạp trực tiếp file .env ngoài cùng vào bộ nhớ môi trường (os.environ)
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH, override=True)
+    print(f"--- [DEBUG] ĐÃ ÉP NẠP FILE .ENV TẠI: {ENV_PATH} ---")
+    print(f"--- [DEBUG] CLIENT ID ĐỌC ĐƯỢC: {os.getenv('GOOGLE_CLIENT_ID')} ---")
+else:
+    print(f"--- [WARNING] KHÔNG TÌM THẤY FILE .ENV TẠI: {ENV_PATH} ---")
+
 
 class Settings(BaseSettings):
+    # Sử dụng cấu hình trống để Pydantic lấy trực tiếp từ os.environ hệ thống
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         extra="ignore",
     )
 
