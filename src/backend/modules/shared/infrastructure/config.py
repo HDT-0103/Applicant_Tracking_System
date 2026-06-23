@@ -1,29 +1,31 @@
 import os
 from functools import lru_cache
 from pathlib import Path
-from dotenv import load_dotenv  # <--- Sử dụng thư viện dotenv gốc để ép nạp file
+from dotenv import load_dotenv
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# 1. Tìm chính xác đường dẫn tuyệt đối ra file .env ngoài cùng lớn nhất
+# 1. Tìm đường dẫn file .env tự động bằng cách quét ngược lên trên
 CURRENT_FILE = Path(__file__).resolve()
-ROOT_DIR = CURRENT_FILE.parents[5]
-ENV_PATH = ROOT_DIR / ".env"
 
-# 2. Ép hệ thống nạp trực tiếp file .env ngoài cùng vào bộ nhớ môi trường (os.environ)
+def find_env_file(start_path: Path) -> Path:
+    for parent in start_path.parents:
+        if (parent / ".env").exists() or (parent / ".env.example").exists():
+            return parent / ".env"
+    return start_path.parents[5] / ".env"
+
+ENV_PATH = find_env_file(CURRENT_FILE)
+
+# 2. Nạp file .env vào biến môi trường hệ thống (Dùng để backup nếu chạy không qua env-cmd)
 if ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH, override=True)
-    print(f"--- [DEBUG] ĐÃ ÉP NẠP FILE .ENV TẠI: {ENV_PATH} ---")
-    print(f"--- [DEBUG] CLIENT ID ĐỌC ĐƯỢC: {os.getenv('GOOGLE_CLIENT_ID')} ---")
-else:
-    print(f"--- [WARNING] KHÔNG TÌM THẤY FILE .ENV TẠI: {ENV_PATH} ---")
 
 
 class Settings(BaseSettings):
-    # Sử dụng cấu hình trống để Pydantic lấy trực tiếp từ os.environ hệ thống
     model_config = SettingsConfigDict(
         extra="ignore",
+        populate_by_name=True,
     )
 
     app_name: str = Field(default="SmartATS", alias="APP_NAME")
@@ -31,11 +33,9 @@ class Settings(BaseSettings):
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
     app_port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="info", alias="LOG_LEVEL")
-    cors_origins: str = Field(
-        default="http://localhost:3000",
-        alias="CORS_ORIGINS",
-    )
+    cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
 
+    # Đọc tự động hoàn toàn từ môi trường hệ thống qua biến alias hoặc lấy mặc định rỗng
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="GOOGLE_CLIENT_SECRET")
     google_redirect_uri: str = Field(
@@ -45,20 +45,11 @@ class Settings(BaseSettings):
 
     jwt_secret: str = Field(default="change_me_in_local_env", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
-    access_token_expire_minutes: int = Field(
-        default=60,
-        alias="ACCESS_TOKEN_EXPIRE_MINUTES",
-    )
-    refresh_token_expire_days: int = Field(
-        default=7,
-        alias="REFRESH_TOKEN_EXPIRE_DAYS",
-    )
+    access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
 
     admin_emails: str = Field(default="", alias="ADMIN_EMAILS")
-    recruiter_email_domains: str = Field(
-        default="",
-        alias="RECRUITER_EMAIL_DOMAINS",
-    )
+    recruiter_email_domains: str = Field(default="", alias="RECRUITER_EMAIL_DOMAINS")
 
     upload_dir: str = Field(default="uploads", alias="UPLOAD_DIR")
     max_upload_mb: int = Field(default=25, alias="MAX_UPLOAD_MB")
@@ -90,4 +81,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # Ưu tiên lấy trực tiếp các biến môi trường hiện tại đang có trong OS do env-cmd nạp vào
+    return Settings(**dict(os.environ))

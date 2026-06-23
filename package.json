@@ -7,8 +7,8 @@
     "build": "next build src/frontend",
     "start": "next start src/frontend",
     "lint": "next lint src/frontend",
-    "backend:dev": "python -m uvicorn apps.main:app --reload --host 0.0.0.0 --port 8000 --app-dir src/backend",
-    "backend:start": "python -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend"
+    "backend:dev": "env-cmd -f .env python -m uvicorn apps.main:app --reload --host 0.0.0.0 --port 8000 --app-dir src/backend",
+    "backend:start": "env-cmd -f .env python -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
