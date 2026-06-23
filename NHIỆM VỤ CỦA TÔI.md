@@ -1,58 +1,42 @@
-Dựa vào toàn bộ dữ liệu từ file Đề xuất dự án (**Template0**), Đặc tả yêu cầu (**Template1**) và cấu trúc thư mục thực tế của nhóm bạn, mình xin phân tích rõ ràng và bóc tách chính xác **vị trí thư mục/file** bạn cần làm việc (bao gồm cả phần Code và phần Báo cáo) để bạn không bị nhầm lẫn với các thành viên khác:
 
----
+# VIỆC CẦN LÀM ĐẦU TIÊN
 
-### I. PHẦN CODE (Toàn bộ nằm trong `/src`)
+Chính xác luôn Toàn ơi! Để hệ thống **SmartATS** chạy được ở chế độ thực tế (**Real Mode**) bảo mật và đúng chuẩn doanh nghiệp, luồng **Đăng nhập (Authentication)** và **Phân quyền (Authorization)** là bước đầu tiên cực kỳ quan trọng cần được hoàn thiện.
 
-Với vai trò **Full-Stack & Integration Engineer**, bạn chịu trách nhiệm chính về giao diện hiển thị kết quả phân tích và các module tích hợp dịch vụ bên ngoài. Cụ thể:
+Nhìn vào cấu hình `.env.example` và thiết kế dự án, dưới đây là phần bạn cần code tiếp cho hệ thống đăng nhập:
 
-#### 1. Frontend (Next.js) — Code tại thư mục `src/frontend/src/`
+### 1. Phía Frontend (`src/frontend`)
 
-Hiện tại Trí đã làm xong khung bọc ngoài (`App.tsx` và `WorkspaceContext.tsx`), việc của bạn là code nội dung hiển thị bên trong **Panel bên phải** khi trạng thái là `SUCCESS`:
+Hiện tại giao diện của bạn đang vào thẳng không gian làm việc (`App.tsx`). Bạn cần xây dựng thêm luồng chặn Auth:
 
-* **Vẽ Biểu đồ kỹ năng (Radar Chart):** Code cấu phần biểu đồ để render mảng dữ liệu `skills: {name: string, score: number}[]` nhận từ WebSocket.
-* *Nơi code:* Tạo file component mới trong `src/frontend/src/components/`.
-
-
-* **Vẽ Dòng thời gian sự nghiệp động (SVG Career Timeline):** Render mảng dữ liệu `trajectory` dưới dạng đồ họa SVG trực quan để hiển thị lịch sử làm việc của ứng viên.
-* *Nơi code:* Tạo file component mới trong `src/frontend/src/components/`.
+* **Tạo màn hình Login (`Login.tsx`):** Thiết kế một giao diện đăng nhập sạch sẽ bằng TailwindCSS. Vì dự án định hướng tích hợp sâu với hệ sinh thái Google (như Google Calendar để xếp lịch phỏng vấn), bạn cần ưu tiên tích hợp **Google OAuth2** (Sử dụng thư viện `@react-oauth/google` hoặc tự dựng nút gọi Authentication URL).
+* **Quản lý State và Token:** * Sau khi user đăng nhập thành công, lưu `accessToken` và `refreshToken` vào `localStorage` hoặc `Secure Cookie`.
+* Bọc toàn bộ ứng dụng trong một lớp bảo mật Context mới (ví dụ: `AuthContext.tsx`) để kiểm tra nếu chưa có token thì tự động chuyển hướng (redirect) về trang `/login`.
 
 
-* **Giao diện Workspace hoàn chỉnh (`AiAnalyticsWorkspace`):** Kết hợp các cấu phần trên (Thông tin cá nhân, Điểm số, Biểu đồ kỹ năng, Dòng thời gian) thành một màn hình Analytics Hub hoàn chỉnh ở bên phải.
-* *Nơi code:* Tạo file view trong `src/frontend/src/views/`.
+* **Cập nhật Axios/Fetch Interceptor:** Viết một cấu hình HttpClient chung để tự động đính kèm Header `Authorization: Bearer <token>` vào tất cả các request API gửi đi từ `WorkspaceContext.tsx` (như endpoint upload file CV).
+
+### 2. Phía Backend / Gateway
+
+Dựa trên tệp cài đặt, bạn cần code các API Endpoint sau (thường nằm ở cụm module `auth/` phía backend):
+
+* **Endpoint `/api/auth/google`:** Tiếp nhận Authorization Code từ Frontend gửi lên, thực hiện trao đổi với Google Server để lấy `id_token` và thông tin Profile của HR/Recruiter.
+* **Xử lý JWT (JSON Web Token):** * Tạo mã JWT chứa thông tin của User (ID, Email, Vai trò: Recruiter/Interviewer).
+* Code Middleware xác thực token cho các request tiếp theo (đảm bảo chỉ có user đã đăng nhập mới được gọi API upload file CV hay xem phân tích AI).
 
 
-
-#### 2. Backend (FastAPI / Python) — Code tại thư mục `src/backend/modules/`
-
-Bạn phụ trách tích hợp và đồng bộ hóa dữ liệu với các nền tảng của bên thứ ba:
-
-* **Đồng bộ dữ liệu (Data Synchronization):** Kết nối dữ liệu thu thập được từ GitHub/LinkedIn (do module `portfolio-enrich` của thành viên khác xử lý) vào luồng lưu trữ hoặc xuất dữ liệu cho Frontend.
-* *Nơi code:* Phối hợp xử lý tại `src/backend/modules/portfolio-enrich/`.
-
-
-* **Tự động xếp lịch phỏng vấn (Automated Scheduling):** Tích hợp sâu với **Google Calendar API** (sử dụng các biến môi trường `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, v.v. đã khai báo trong file `.env.example`) để quét lịch trống của các Tech Lead và đề xuất khung giờ phù hợp.
-* *Nơi code:* Khởi tạo các hàm xử lý lịch trình trong `src/backend/modules/notification/`.
-
-
-* **Tích hợp thông báo Slack:** Code logic gọi các endpoint **Slack Webhooks** để tự động bắn tin nhắn thông báo lên channel chung của phòng nhân sự khi lịch phỏng vấn được chốt thành công.
-* *Nơi code:* Viết các hàm đẩy payload thông báo tại `src/backend/modules/notification/`.
+* **Tích hợp biến môi trường:** Sử dụng đúng các key đã khai báo trong tệp cấu hình của dự án:
+* `GOOGLE_CLIENT_ID`
+* `GOOGLE_CLIENT_SECRET`
+* `GOOGLE_REDIRECT_URI`
+* `JWT_SECRET` (cần bổ sung để ký mã token bảo mật)
 
 
 
----
+### Gợi ý thứ tự làm cho bạn:
 
-### II. PHẦN BÁO CÁO & TÀI LIỆU (Toàn bộ nằm trong `/docs` và File Template gốc)
+1. **Bổ sung UI Login:** Code nhanh một form Login có nút "Sign in with Google".
+2. **Cấu hình luồng OAuth2 Frontend:** Lấy `client_id` từ file `.env` chạy thử nghiệm luồng mở pop-up đăng nhập của Google để lấy về mã Access Token/Code thành công.
+3. **Viết API kiểm tra Token ở Backend:** Đảm bảo khi frontend gửi CV kèm mã token trong Header, backend sẽ giải mã và biết chính xác ai (`Nguyễn Khánh Toàn` hay một HR nào khác) đang thực hiện thao tác upload này để lưu vết (Audit Log).
 
-Dựa theo quy trình Công nghệ Phần mềm và phân chia task trên JIRA, bạn chịu trách nhiệm viết tài liệu cho các mục sau:
-
-#### 1. Trong file `/Template1-RequirementAnalysis.md` (ở thư mục gốc):
-
-* **Mục `#### Stakeholders` (Task AP-33):** Bạn vừa làm xong phần này, bao gồm việc giải trình chi tiết về 12 tác nhân liên quan và thiết kế mã nguồn sơ đồ **System Context Diagram** bằng Mermaid.js.
-* **Mục Kịch bản Use Case (Use Case Specification) cho tính năng đặt lịch:** Khi nhóm làm đến các Use Case tiếp theo (ví dụ: *U002 - Automated Interview Scheduling*), bạn sẽ phải là người viết bảng đặc tả kịch bản chính (Main Scenario), kịch bản thay thế (Alternative Scenarios) và điều kiện tiên quyết giống như bảng mẫu U001 mà Trí đã dựng.
-* **Mục Prototype / Mockup giao diện:** Thiết kế giao diện (bằng Figma/Draw.io) cho màn hình Workspace hiển thị kết quả phân tích (bên phải) và màn hình cấu hình đặt lịch phỏng vấn tự động để chèn vào tài liệu.
-
-#### 2. Trong các thư mục tài liệu chuyên biệt của `/docs`:
-
-* **Đặc tả tích hợp API ngoài (`/docs/requirements/`):** Viết tài liệu làm rõ cấu trúc dữ liệu nhận về từ Google Calendar API và cấu trúc payload gửi đi cho Slack Webhooks.
-* **Tài liệu Đóng góp Thành viên (`/Template1-RequirementAnalysis.md` -> Mục `# Member Contribution Assessment`):** Chụp ảnh màn hình các task JIRA mang tên bạn (ví dụ: `AP-33`) ở trạng thái **Done**, kèm link các Pull Request (PR) hoặc commit Git của nhánh `docs/ap-33-...` dán vào phần thông tin cá nhân của bạn để làm bằng chứng đóng góp (Evidence) cho giảng viên chấm điểm.
+Phần đăng nhập này sẽ tạo nền tảng cực tốt để sau đó bạn code tiếp tính năng **Tự động xếp lịch phỏng vấn qua Google Calendar** ở các bước sau!

@@ -2,11 +2,13 @@
 
 import React from "react";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useAuth } from "../context/AuthContext";
 import { IdleUploadZone } from "./components/IdleUploadZone";
 import { PdfToolbar } from "./components/PdfToolbar";
 import { AiAnalyticsWorkspace } from "./components/AiAnalyticsWorkspace";
 import { SkeletonLoadingSpinner } from "./components/SkeletonLoadingSpinner";
 import { FallbackDataWizard } from "./components/FallbackDataWizard";
+import { AppHeader } from "./components/AppHeader";
 
 export default function App() {
   const {
@@ -17,19 +19,42 @@ export default function App() {
     uploadResume,
     resetWorkspace,
   } = useWorkspace();
+  const { canUpload } = useAuth();
+
+  const shell = (content: React.ReactNode) => (
+    <div className="app-shell">
+      <AppHeader />
+      {content}
+    </div>
+  );
 
   /* ── IDLE: Show drop zone ── */
   if (status === "IDLE") {
-    return <IdleUploadZone onFileDrop={uploadResume} />;
+    if (!canUpload) {
+      return shell(
+        <div className="access-denied-panel">
+          <h2>Upload restricted</h2>
+          <p>
+            Your account has the Interviewer role. Resume ingestion is limited
+            to Recruiters and Admins. Contact your HR administrator if you need
+            upload access.
+          </p>
+        </div>,
+      );
+    }
+
+    return shell(<IdleUploadZone onFileDrop={uploadResume} />);
   }
 
   /* ── ERROR: Show error wizard ── */
   if (status === "ERROR") {
-    return <FallbackDataWizard error={errorMessage} onRetry={resetWorkspace} />;
+    return shell(
+      <FallbackDataWizard error={errorMessage} onRetry={resetWorkspace} />,
+    );
   }
 
   /* ── LOADING / SUCCESS: Split-screen view ── */
-  return (
+  return shell(
     <div className="split-screen-container">
       {/* ════ LEFT PANEL: Native PDF Viewer ════ */}
       <div className="left-panel">
@@ -55,6 +80,6 @@ export default function App() {
           <AiAnalyticsWorkspace data={analyticData} onReset={resetWorkspace} />
         )}
       </div>
-    </div>
+    </div>,
   );
 }

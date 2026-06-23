@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState } from "react";
 import { mockAnalyticsService } from "../src/services/mockAnalyticsService";
+import { api } from "../src/services/httpClient";
 
 /* ------------------------------------------------------------------ */
 /*  Domain Types                                                        */
@@ -71,20 +72,32 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const useMockIngestion =
+    process.env.NEXT_PUBLIC_USE_MOCK_INGESTION !== "false";
+
   /* ------ Upload handler ------ */
   const uploadResume = async (file: File) => {
     setStatus("LOADING");
     setErrorMessage(null);
-    // Create a local object URL so the PDF viewer can render immediately
     setPdfUrl(URL.createObjectURL(file));
 
     try {
-      // ===== MOCK MODE (Phase 1) =====
-      // TODO: replace with real fetch + initWebSocketPipeline() when backend is ready
-      const result = await mockAnalyticsService(file);
-      setAnalyticData(result);
-      setStatus("SUCCESS");
-      // ===== END MOCK MODE =====
+      if (useMockIngestion) {
+        const result = await mockAnalyticsService(file);
+        setAnalyticData(result);
+        setStatus("SUCCESS");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadResponse = await api.post<{ uuid: string }>(
+        "/api/ingestion/upload",
+        formData,
+      );
+
+      _initWebSocketPipeline(uploadResponse.uuid);
     } catch (error: unknown) {
       setStatus("ERROR");
       const message =
@@ -94,9 +107,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /* ------ WebSocket pipeline (used in REAL MODE) ------ */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _initWebSocketPipeline = (uuid: string) => {
-    const ws = new WebSocket(`wss://ats.internal:8421/stream/${uuid}`);
+    const wsBase =
+      process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
+    const ws = new WebSocket(`${wsBase}/stream/${uuid}`);
 
     ws.onmessage = (event) => {
       const payload = JSON.parse(event.data) as {
