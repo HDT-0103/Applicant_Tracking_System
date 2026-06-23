@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { CandidateAnalytics } from "../../context/WorkspaceContext";
 
 /* ------------------------------------------------------------------ */
@@ -246,29 +246,183 @@ const CareerTimeline: React.FC<{
 );
 
 /* ------------------------------------------------------------------ */
-/*  Sub-component: Decision Bar                                         */
+/*  Sub-component: Decision Bar (Interactive)                           */
 /* ------------------------------------------------------------------ */
-const CandidateDecisionBar: React.FC<{ onReset: () => void }> = ({
+type Decision = "none" | "approved" | "rejected";
+
+const CandidateDecisionBar: React.FC<{ onReset: () => void; candidateId: string }> = ({
   onReset,
-}) => (
-  <div className="decision-bar">
-    <span className="decision-label">Candidate Decision</span>
-    <button className="btn-approve" type="button">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z" />
-      </svg>
-      Approve to Interview
-    </button>
-    <button className="btn-reject" type="button" onClick={onReset}>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
-      </svg>
-      Reject Profile
-    </button>
-    <button className="btn-action" type="button">Flag</button>
-    <button className="btn-action" type="button">Share</button>
-  </div>
-);
+  candidateId,
+}) => {
+  const [decision, setDecision] = useState<Decision>("none");
+  const [isFlagged, setIsFlagged] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const shareLink = `https://ats.internal/candidates/${candidateId}/review`;
+
+  const handleApprove = () => {
+    setDecision((prev) => (prev === "approved" ? "none" : "approved"));
+  };
+
+  const handleReject = () => {
+    setDecision((prev) => (prev === "rejected" ? "none" : "rejected"));
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement("textarea");
+      textarea.value = shareLink;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <>
+      <div className="decision-bar">
+        <span className="decision-label">Candidate Decision</span>
+
+        {/* ── Approve Button ── */}
+        <button
+          className={`btn-approve ${decision === "approved" ? "decided" : ""}`}
+          type="button"
+          onClick={handleApprove}
+          disabled={decision === "rejected"}
+        >
+          {decision === "approved" ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z" />
+              </svg>
+              Approved
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z" />
+              </svg>
+              Approve to Interview
+            </>
+          )}
+        </button>
+
+        {/* ── Reject Button ── */}
+        <button
+          className={`btn-reject ${decision === "rejected" ? "decided" : ""}`}
+          type="button"
+          onClick={handleReject}
+          disabled={decision === "approved"}
+        >
+          {decision === "rejected" ? (
+            <>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
+              </svg>
+              Rejected
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
+              </svg>
+              Reject Profile
+            </>
+          )}
+        </button>
+
+        {/* ── Flag (Star) Button ── */}
+        <button
+          className={`btn-flag ${isFlagged ? "flagged" : ""}`}
+          type="button"
+          onClick={() => setIsFlagged((f) => !f)}
+          aria-label={isFlagged ? "Remove flag" : "Flag candidate"}
+          title={isFlagged ? "Remove flag" : "Flag candidate"}
+        >
+          {isFlagged ? (
+            /* Filled star */
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="1.5" aria-hidden="true">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+          ) : (
+            /* Outline star */
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+          )}
+          {isFlagged ? "Flagged" : "Flag"}
+        </button>
+
+        {/* ── Share Button ── */}
+        <button
+          className="btn-action"
+          type="button"
+          onClick={() => setShowShareModal(true)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 8a3 3 0 100-6 3 3 0 000 6zM9 16a3 3 0 100-6 3 3 0 000 6zM15 22a3 3 0 100-6 3 3 0 000 6zM8.59 13.51l5.83 3.48M14.42 7.01l-5.83 3.48" />
+          </svg>
+          Share
+        </button>
+      </div>
+
+      {/* ── Share Modal Overlay ── */}
+      {showShareModal && (
+        <div
+          className="share-overlay"
+          onClick={() => setShowShareModal(false)}
+          role="dialog"
+          aria-label="Share candidate profile"
+        >
+          <div
+            className="share-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="share-modal-header">
+              <h3>Share Candidate Profile</h3>
+              <button
+                className="share-close-btn"
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="share-description">
+              Copy the link below to share this candidate&apos;s profile with your team.
+            </p>
+            <div className="share-link-row">
+              <input
+                className="share-link-input"
+                type="text"
+                value={shareLink}
+                readOnly
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                className="share-copy-btn"
+                type="button"
+                onClick={handleCopyLink}
+              >
+                {copied ? "✓ Copied!" : "Copy Link"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
 
 /* ------------------------------------------------------------------ */
 /*  Main: AiAnalyticsWorkspace                                          */
@@ -306,6 +460,6 @@ export const AiAnalyticsWorkspace: React.FC<Props> = ({ data, onReset }) => (
       </div>
     </div>
 
-    <CandidateDecisionBar onReset={onReset} />
+    <CandidateDecisionBar onReset={onReset} candidateId={data.uuid} />
   </div>
 );

@@ -812,3 +812,169 @@ button {
 .retry-btn:hover {
   background: #4338ca;
 }
+
+/* ---------- Decision Bar: Interactive States ---------- */
+
+/* Approved state — bold green */
+.btn-approve.decided {
+  background: #065f46;
+  font-weight: 700;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+}
+
+.btn-approve:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Rejected state — bold red */
+.btn-reject.decided {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+
+.btn-reject:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- Flag / Star Button ---------- */
+.btn-flag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  padding: 9px 14px;
+  border-radius: 8px;
+  color: #374151;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.btn-flag:hover {
+  background: #fffbeb;
+  border-color: #fbbf24;
+}
+
+.btn-flag.flagged {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #b45309;
+  font-weight: 600;
+}
+
+/* ---------- Share Modal ---------- */
+.share-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.share-modal {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  padding: 24px;
+  width: 480px;
+  max-width: 90vw;
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.share-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.share-modal-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.share-close-btn {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #9ca3af;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.share-close-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.share-description {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.share-link-row {
+  display: flex;
+  gap: 8px;
+}
+
+.share-link-input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: monospace;
+  color: #374151;
+  background: #f9fafb;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.share-link-input:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.share-copy-btn {
+  padding: 9px 16px;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.15s;
+  min-width: 100px;
+}
+
+.share-copy-btn:hover {
+  background: #4338ca;
+}
