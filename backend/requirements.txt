@@ -1,43 +1,44 @@
-# SmartATS backend baseline dependencies
-
-# API runtime
+# ==============================================================================
+# 1. API RUNTIME & DOCUMENT PROCESSING
+# ==============================================================================
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.34,<1.0
 pydantic>=2.10,<3.0
 pydantic-settings>=2.7,<3.0
 python-dotenv>=1.0,<2.0
 python-multipart>=0.0.20,<1.0
-
-# Database and migrations
-SQLAlchemy>=2.0,<3.0
-alembic>=1.14,<2.0
-psycopg[binary]>=3.2,<4.0
-pgvector>=0.3,<1.0
-
-# Agent, LLM, and semantic matching
-mcp>=1.2,<2.0
-openai>=1.59,<2.0
-google-generativeai>=0.8,<1.0
-langchain>=0.3,<1.0
-langchain-openai>=0.3,<1.0
-langchain-google-genai>=2.0,<3.0
-numpy>=2.2,<3.0
-scikit-learn>=1.6,<2.0
-
-# Resume parsing and document processing
 pypdf>=5.1,<6.0
 python-docx>=1.1,<2.0
 
-# Integrations
+# ==============================================================================
+# 2. DATABASE & MIGRATIONS (ASYNC-READY)
+# ==============================================================================
+# Sử dụng SQLAlchemy làm ORM quản lý Async Session
+SQLAlchemy[asyncio]>=2.0,<3.0  
+alembic>=1.14,<2.0
+# Driver kết nối chính thức (Bản C giúp chạy async cực bốc trên production)
+psycopg[binary]>=3.2,<4.0        
+pgvector>=0.3,<1.0
+
+# ==============================================================================
+# 3. AI, LLM & AGENT LAYER (Tập trung vào hệ sinh thái LangChain)
+# ==============================================================================
+langchain>=0.3,<1.0
+langchain-community>=0.3,<1.0
+langchain-openai>=0.3,<1.0
+langchain-google-genai>=2.0,<3.0
+numpy>=2.2,<3.0
+
+# ==============================================================================
+# 4. INTEGRATIONS & UTILITIES
+# ==============================================================================
 httpx>=0.28,<1.0
 redis>=5.2,<6.0
-azure-servicebus>=7.13,<8.0
-google-api-python-client>=2.159,<3.0
-google-auth>=2.37,<3.0
-google-auth-oauthlib>=1.2,<2.0
-
-# Observability and testing
 structlog>=24.4,<25.0
+
+# ==============================================================================
+# 5. TESTING & QUALITY ASSURANCE
+# ==============================================================================
 pytest>=8.3,<9.0
 pytest-asyncio>=0.25,<1.0
 ruff>=0.9,<1.0
