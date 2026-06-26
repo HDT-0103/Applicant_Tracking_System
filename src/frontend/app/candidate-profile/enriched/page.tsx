@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis,
   PolarRadiusAxis, ResponsiveContainer, Tooltip,
@@ -10,7 +10,8 @@ import {
   BookOpen, Briefcase, GraduationCap, ExternalLink, Zap,
   AlertCircle, Clock, Layers, Shield, GitBranch, Cpu, Globe,
 } from "lucide-react";
-import { D, Dot, Badge, SectionLabel, Divider, radarBase, timelineItems } from "../../lib/shared";
+import { D, Dot, Badge, SectionLabel, Divider, radarBase, timelineItems } from "../../../lib/shared";
+import { AppHeader } from "../../../components/AppHeader";
 
 // ─── GitHub Accordion Card ────────────────────────────────────────────────────
 function GitHubCard({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
@@ -98,8 +99,8 @@ function GitHubCard({ expanded, onToggle }: { expanded: boolean; onToggle: () =>
 function LinkedInCard({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
   const roles = [
     { title: "Senior Backend Engineer", org: "Nexus Systems Ltd.", match: 98 },
-    { title: "Backend Engineer",        org: "DataBridge Inc.",    match: 96 },
-    { title: "Junior Developer",        org: "TechStack Labs",     match: 91 },
+    { title: "Backend Engineer", org: "DataBridge Inc.", match: 96 },
+    { title: "Junior Developer", org: "TechStack Labs", match: 91 },
   ];
   return (
     <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "hidden", background: D.canvas }}>
@@ -165,7 +166,7 @@ function LinkedInCard({ expanded, onToggle }: { expanded: boolean; onToggle: () 
   );
 }
 
-// ─── Left Panel — Enrichment Dashboard ───────────────────────────────────────
+// ─── Left Panel — Enrichment Dashboard ────────────────────────────────────────
 function EnrichmentPanel() {
   const [openCard, setOpenCard] = useState<"github" | "linkedin" | null>("github");
   const toggle = (card: "github" | "linkedin") =>
@@ -250,7 +251,7 @@ function EnrichmentPanel() {
   );
 }
 
-// ─── Enriched Radar Chart ─────────────────────────────────────────────────────
+// ─── Enriched Radar Chart ──────────────────────────────────────────────────────
 function EnrichedRadar() {
   const [showBoth, setShowBoth] = useState(true);
   const data = radarBase.map((d) => ({
@@ -340,7 +341,7 @@ function EnrichedRadar() {
   );
 }
 
-// ─── Match Confidence (enriched) ──────────────────────────────────────────────
+// ─── Match Confidence (enriched) ───────────────────────────────────────────────
 function MatchConfidence() {
   const score = 89.5; const r = 44;
   const circ = 2 * Math.PI * r; const fill = (score / 100) * circ;
@@ -392,7 +393,7 @@ function MatchConfidence() {
   );
 }
 
-// ─── Career Timeline (verified) ───────────────────────────────────────────────
+// ─── Career Timeline (verified) ─────────────────────────────────────────────────
 function CareerTimeline() {
   const [expanded, setExpanded] = useState(true);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -411,8 +412,7 @@ function CareerTimeline() {
           <div style={{ position: "absolute", left: 44, top: 6, bottom: 6, width: 1, background: D.line }} />
           {timelineItems.map((item, i) => (
             <div key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
-              style={{ display: "flex", alignItems: "flex-start", marginBottom: i < timelineItems.length - 1 ? 8 : 0, cursor: "default" }}
-            >
+              style={{ display: "flex", alignItems: "flex-start", marginBottom: i < timelineItems.length - 1 ? 8 : 0, cursor: "default" }}>
               <div style={{ width: 36, flexShrink: 0, textAlign: "right", paddingTop: 4, fontSize: 9.5, fontWeight: item.current ? 700 : 500, color: item.current ? D.blue : D.dim, fontFamily: D.mono }}>{item.year}</div>
               <div style={{ width: 18, flexShrink: 0, display: "flex", justifyContent: "center", paddingTop: 6, position: "relative", zIndex: 1, marginLeft: -1 }}>
                 <div style={{
@@ -448,7 +448,7 @@ function CareerTimeline() {
   );
 }
 
-// ─── Right Panel — Enriched Analytics ────────────────────────────────────────
+// ─── Right Panel — Enriched Analytics ───────────────────────────────────────────
 function EnrichedAnalytics() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: D.canvas }}>
@@ -515,19 +515,22 @@ function EnrichedAnalytics() {
   );
 }
 
-// ─── Frame 2 ──────────────────────────────────────────────────────────────────
-export default function AIAgentPromptPage() {
+// ─── Main Page ─────────────────────────────────────────────────────────────────
+export default function EnrichedCandidateProfilePage() {
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
-      {/* Left — enrichment dashboard */}
-      <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
-        <EnrichmentPanel />
-      </div>
-      {/* Divider */}
-      <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
-      {/* Right — enriched analytics */}
-      <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-        <EnrichedAnalytics />
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <AppHeader />
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
+        {/* Left — enrichment dashboard */}
+        <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
+          <EnrichmentPanel />
+        </div>
+        {/* Divider */}
+        <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
+        {/* Right — enriched analytics */}
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <EnrichedAnalytics />
+        </div>
       </div>
     </div>
   );

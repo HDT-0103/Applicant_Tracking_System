@@ -3,8 +3,8 @@
 import React, { useState } from "react";
 import { useRouter, usePathname } from 'next/navigation';
 import { Bell, Search, RefreshCw, ChevronRight, Loader2 } from "lucide-react";
-import { D, Dot, Badge, globalStyles } from "../app/shared";
-import { useAuth, type UserRole } from "../../context/AuthContext";
+import { D, Dot, Badge, globalStyles } from "../lib/shared";
+import { useAuth, type UserRole } from "../contexts/AuthContext";
 
 const ROLE_LABELS: Record<UserRole, string> = {
   recruiter: "Recruiter",
@@ -12,26 +12,45 @@ const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
 };
 
-export const AppHeader: React.FC = () => {
+interface AppHeaderProps {
+  onRunSync?: () => void;
+}
+
+export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync }) => {
   const router = useRouter();
   const pathname = usePathname();
   const [syncing, setSyncing] = useState(false);
   const { user, logout, canUpload } = useAuth();
 
   const isLanding  = pathname === "/";
-  const isCandidatePage   = pathname === "/candidate-profile"; // Assuming this is equivalent to /candidate
-  const isEnrichedCandidatePage   = pathname === "/candidate-profile/enriched"; // Assuming this is equivalent to /candidate/enriched
+  const isCandidatePage   = pathname === "/candidate-profile";
+  const isEnrichedCandidatePage   = pathname === "/candidate-profile/enriched";
+  const isMainPageSuccess = isLanding && onRunSync !== undefined; // When we're on main page with PDF
 
   const handleRunSync = () => {
-    if (!isCandidatePage) return;
-    setSyncing(true);
-    setTimeout(() => {
-      setSyncing(false);
-      router.push("/candidate-profile/enriched");
-    }, 1400);
+    // If we have a custom onRunSync, use that
+    if (onRunSync) {
+      setSyncing(true);
+      setTimeout(() => {
+        setSyncing(false);
+        onRunSync();
+      }, 1400);
+    } 
+    // Otherwise use the old behavior for candidate profile page
+    else if (isCandidatePage) {
+      setSyncing(true);
+      setTimeout(() => {
+        setSyncing(false);
+        router.push("/candidate-profile/enriched");
+      }, 1400);
+    }
   };
 
-  if (!user) return null; // Keep existing auth check
+  const showRunSync = !isLanding || onRunSync !== undefined;
+  const canClickRunSync = onRunSync !== undefined || isCandidatePage;
+  const isSynced = isEnrichedCandidatePage;
+
+  if (!user) return null;
 
   return (
     <nav style={{
@@ -61,7 +80,7 @@ export const AppHeader: React.FC = () => {
       </div>
 
       {/* Breadcrumb */}
-      {!isLanding && (
+      {!isLanding || onRunSync !== undefined ? (
         <div style={{
           display: "flex", alignItems: "center", gap: 5, marginLeft: 20,
           fontSize: 11.5, color: D.muted, fontFamily: D.font,
@@ -71,7 +90,7 @@ export const AppHeader: React.FC = () => {
             onClick={() => router.push("/")}
           >Candidates</span>
           <ChevronRight size={11} strokeWidth={2} color={D.dim} />
-          <span style={{ color: D.sub, fontWeight: 500 }}>Alex M. Richardson</span> {/* Placeholder name */}
+          <span style={{ color: D.sub, fontWeight: 500 }}>Alex M. Richardson</span>
           {isEnrichedCandidatePage && (
             <>
               <ChevronRight size={11} strokeWidth={2} color={D.dim} />
@@ -79,7 +98,7 @@ export const AppHeader: React.FC = () => {
             </>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Center search */}
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -105,31 +124,31 @@ export const AppHeader: React.FC = () => {
 
       {/* Right actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        {/* Run Sync — only visible on CandidatePage, dims on EnrichedCandidatePage */}
-        {!isLanding && (
+        {/* Run Sync button */}
+        {showRunSync && (
           <button
             onClick={handleRunSync}
-            disabled={!isCandidatePage || syncing}
+            disabled={!canClickRunSync || syncing}
             style={{
               display: "flex", alignItems: "center", gap: 6,
               padding: "6px 14px",
-              border: `1px solid ${isEnrichedCandidatePage ? D.line : D.blue}`,
+              border: `1px solid ${isSynced ? D.line : D.blue}`,
               borderRadius: 6,
-              background: isEnrichedCandidatePage ? D.surface : D.blue,
-              cursor: isCandidatePage ? "pointer" : "default",
+              background: isSynced ? D.surface : D.blue,
+              cursor: canClickRunSync ? "pointer" : "default",
               fontSize: 11.5, fontWeight: 600,
-              color: isEnrichedCandidatePage ? D.dim : "#fff",
+              color: isSynced ? D.dim : "#fff",
               fontFamily: D.font,
               transition: "all 0.2s ease",
               opacity: syncing ? 0.75 : 1,
             }}
           >
             {syncing
-              ? <Loader2 size={11} strokeWidth={2} color={isEnrichedCandidatePage ? D.dim : "#fff"} style={{ animation: "spin 0.8s linear infinite" }} />
-              : <RefreshCw size={11} strokeWidth={2} color={isEnrichedCandidatePage ? D.dim : "#fff"} />
+              ? <Loader2 size={11} strokeWidth={2} color={isSynced ? D.dim : "#fff"} style={{ animation: "spin 0.8s linear infinite" }} />
+              : <RefreshCw size={11} strokeWidth={2} color={isSynced ? D.dim : "#fff"} />
             }
-            {syncing ? "Syncing…" : isEnrichedCandidatePage ? "Synced" : "Run Sync"}
-            {isEnrichedCandidatePage && (
+            {syncing ? "Syncing…" : isSynced ? "Synced" : "Run Sync"}
+            {isSynced && (
               <Badge color={D.mint} bg={D.mintSoft}>
                 <Dot color={D.mint} />
                 Done
@@ -159,10 +178,10 @@ export const AppHeader: React.FC = () => {
             width: 26, height: 26, borderRadius: "50%", background: D.blue,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 9.5, fontWeight: 700, color: "#fff",
-          }}>{user?.name.charAt(0).toUpperCase()}</div> {/* Use actual user initial */}
+          }}>{user?.name.charAt(0).toUpperCase()}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 500, color: D.ink, lineHeight: 1.1 }}>{user?.name}</span> {/* Use actual user name */}
-            <span style={{ fontSize: 9.5, color: D.dim, lineHeight: 1.2 }}>{user?.role ? ROLE_LABELS[user.role] : ''}</span> {/* Use actual user role */}
+            <span style={{ fontSize: 11.5, fontWeight: 500, color: D.ink, lineHeight: 1.1 }}>{user?.name}</span>
+            <span style={{ fontSize: 9.5, color: D.dim, lineHeight: 1.2 }}>{user?.role ? ROLE_LABELS[user.role] : ''}</span>
           </div>
         </div>
       </div>

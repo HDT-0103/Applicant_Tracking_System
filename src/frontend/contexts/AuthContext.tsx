@@ -14,7 +14,7 @@ import {
   clearStoredTokens,
   getStoredAccessToken,
   setStoredTokens,
-} from "../src/services/httpClient";
+} from "../services/httpClient";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */

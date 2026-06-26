@@ -1,8 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState } from "react";
-import { mockAnalyticsService } from "../src/services/mockAnalyticsService";
-import { api } from "../src/services/httpClient";
+import { mockAnalyticsService } from "../services/mockAnalyticsService";
+import { api } from "../services/httpClient";
 
 /* ------------------------------------------------------------------ */
 /*  Domain Types                                                        */
