@@ -9,6 +9,20 @@ import { AiAnalyticsWorkspace } from "./components/AiAnalyticsWorkspace";
 import { SkeletonLoadingSpinner } from "./components/SkeletonLoadingSpinner";
 import { FallbackDataWizard } from "./components/FallbackDataWizard";
 import { AppHeader } from "./components/AppHeader";
+import RunSyncButton from "./components/RunSyncButton";
+
+
+const shell = (content: React.ReactNode) => (
+  <div className="app-shell">
+    <AppHeader />
+
+    <div className="flex justify-end p-4">
+      <RunSyncButton />
+    </div>
+
+    {content}
+  </div>
+);
 
 export default function App() {
   const {
