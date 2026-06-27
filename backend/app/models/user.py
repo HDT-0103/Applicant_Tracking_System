@@ -5,8 +5,8 @@ from sqlalchemy import String, text, TIMESTAMP, Enum
 from sqlalchemy.dialects.postgresql import UUID  # Import UUID từ postgresql dialect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
-from enums import RoleType
+from backend.app.models.base import Base
+from backend.app.models.enums import RoleType
 
 if TYPE_CHECKING:
     from models.resume import Resume

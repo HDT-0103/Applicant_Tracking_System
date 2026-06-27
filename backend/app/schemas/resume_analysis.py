@@ -6,3 +6,4 @@ class ResumeAnalysis(BaseModel):
     strengths: list[str]
     weaknesses: list[str]
     experience: list[dict]
+    

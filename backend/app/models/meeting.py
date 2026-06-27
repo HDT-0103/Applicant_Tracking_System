@@ -5,8 +5,8 @@ from sqlalchemy import String, text, TIMESTAMP, ForeignKey, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
-from enums import StatusType
+from backend.app.models.base import Base
+from backend.app.models.enums import StatusType
 
 if TYPE_CHECKING:
     from models.user import User

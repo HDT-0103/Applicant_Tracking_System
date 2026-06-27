@@ -5,7 +5,7 @@ from sqlalchemy import String, text, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
+from backend.app.models.base import Base
 try:
     from pgvector.sqlalchemy import Vector
 except ImportError:

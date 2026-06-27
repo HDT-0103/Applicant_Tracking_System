@@ -5,7 +5,7 @@ from sqlalchemy import String, text, TIMESTAMP, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
+from backend.app.models.base import Base
 try:
     from pgvector.sqlalchemy import Vector
 except ImportError:
@@ -13,7 +13,7 @@ except ImportError:
     Vector = TYPES.UserDefinedType
 
 if TYPE_CHECKING:
-    from models.requirement import Requirement
+    from backend.app.models.requirement import Requirement
 
 class RequirementEmbedding(Base):
     __tablename__ = "requirement_embeddings"

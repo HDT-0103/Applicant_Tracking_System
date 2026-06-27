@@ -12,7 +12,7 @@ pypdf>=5.1,<6.0
 python-docx>=1.1,<2.0
 
 # ==============================================================================
-# 2. DATABASE & MIGRATIONS (ASYNC-READY)
+# 2. DATABASE & MIGRATIONS (ASYNC-READY VIA PSYCOPG 3)
 # ==============================================================================
 SQLAlchemy[asyncio]>=2.0,<3.0  
 alembic>=1.14,<2.0
@@ -20,11 +20,13 @@ psycopg[binary]>=3.2,<4.0
 pgvector>=0.3,<1.0
 
 # ==============================================================================
-# 3. AI, LLM & AGENT LAYER (Tập trung vào Groq & Hệ sinh thái LangChain)
+# 3. AI, LLM & EMBEDDING LAYER (Groq, LangChain & Local Embedding)
 # ==============================================================================
+sentence-transformers>=3.3,<4.0  # <--- THÊM: Để chạy con multilingual-e5-base
+torch>=2.2,<3.0                  # <--- THÊM: Core để chạy model (Mặc định CPU cho nhẹ)
 langchain>=0.3,<1.0
 langchain-community>=0.3,<1.0
-langchain-groq>=0.2,<0.3        # <--- Thêm "vũ khí tối tân" Groq vào đây
+langchain-groq>=0.2,<0.3         
 numpy>=2.2,<3.0
 
 # ==============================================================================
@@ -39,4 +41,4 @@ structlog>=24.4,<25.0
 # ==============================================================================
 pytest>=8.3,<9.0
 pytest-asyncio>=0.25,<1.0
-ruff>=0.9,<1.0
+ruff>=0.9,<1.0a

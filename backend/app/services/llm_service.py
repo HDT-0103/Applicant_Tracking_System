@@ -52,3 +52,11 @@ class LLMService:
     def extract_skills(self, resume_analysis: ResumeAnalysis) -> list[str]:
         return resume_analysis.skills
 
+    def extract_experience(self, resume_analysis: ResumeAnalysis) -> list[dict]:
+        return resume_analysis.experience
+    
+    def extract_strengths(self, resume_analysis: ResumeAnalysis) -> list[str]:
+        return resume_analysis.strengths
+    
+    def extract_weaknesses(self, resume_analysis: ResumeAnalysis) -> list[str]:
+        return resume_analysis.weaknesses
