@@ -14,10 +14,9 @@ if TYPE_CHECKING:
 class Meeting(Base):
     __tablename__ = "meetings"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     scheduled_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     
-    # MUST FIX: Áp dụng Native Enum
     status: Mapped[StatusType] = mapped_column(
         Enum(StatusType, native_enum=True), 
         nullable=False, 
@@ -29,7 +28,6 @@ class Meeting(Base):
     participant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
 
-    # Sửa cú pháp foreign_keys truyền trực tiếp biến đối tượng (hoặc text không bọc ngoặc vuông sai cách)
     host: Mapped["User"] = relationship(back_populates="hosted_meetings", foreign_keys=[host_id])
     participant: Mapped["User"] = relationship(back_populates="participated_meetings", foreign_keys=[participant_id])
 

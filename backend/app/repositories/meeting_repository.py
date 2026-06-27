@@ -2,7 +2,7 @@ import uuid
 from typing import List
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.meeting import Meeting
+from backend.app.models.meeting import Meeting
 
 class MeetingRepository:
     def __init__(self, session: AsyncSession):

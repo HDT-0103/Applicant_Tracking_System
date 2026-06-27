@@ -13,20 +13,24 @@ except ImportError:
     Vector = TYPES.UserDefinedType
 
 if TYPE_CHECKING:
-    from backend.app.models.requirement import Requirement
+    from models.requirement import Requirement
 
 class RequirementEmbedding(Base):
     __tablename__ = "requirement_embeddings"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    requirement_id: Mapped[int] = mapped_column(
-        ForeignKey("requirements.id", ondelete="CASCADE"), nullable=False, index=True
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    requirement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("requirements.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024))
+    
+    # Chia 3 vector và set kích thước 768
+    summary_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+    skills_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+    experience_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+    
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
 
-    # NÊN SỬA: UniqueConstraint tránh nhân bản bản ghi embedding cùng model
     __table_args__ = (
         UniqueConstraint("requirement_id", "model_name", name="uq_requirement_model_embedding"),
     )

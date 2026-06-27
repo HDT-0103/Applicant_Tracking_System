@@ -1,7 +1,6 @@
 from backend.app.services.embedding_service import EmbeddingService
 from backend.app.services.ranking_service import RankingService
 
-from backend.app.pipelines.semantic_pipeline import SemanticPipeline
 
 from backend.app.schemas.resume_analysis import ResumeAnalysis
 from backend.app.schemas.requirement_analysis import RequirementAnalysis

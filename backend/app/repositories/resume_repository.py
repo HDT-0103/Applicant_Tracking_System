@@ -3,7 +3,9 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.resume import Resume
+from backend.app.models.resume import Resume
+from backend.app.models.resume_analysis import ResumeAnalysis
+from backend.app.models.resume_embedding import ResumeEmbedding
 
 class ResumeRepository:
     def __init__(self, session: AsyncSession):
@@ -19,7 +21,6 @@ class ResumeRepository:
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> List[Resume]:
         statement = select(Resume).where(Resume.user_id == user_id)
-        # MUST FIX: Thêm .all() ở cuối scalars để bung kết quả thành List
         result = await self.session.scalars(statement)
         return result.all()
 
@@ -30,7 +31,19 @@ class ResumeRepository:
             .where(Resume.id == resume_id)
             .options(
                 selectinload(Resume.analyses),
-                selectinload(Resume.embeddings)  # Điểm cộng lớn Mentor gợi ý
+                selectinload(Resume.embeddings)
             )
         )
         return await self.session.scalar(statement)
+    
+    async def get_all_with_embeddings(self) -> List[tuple]:
+        """
+        Query lấy tất cả Resume kèm theo Embedding và Analysis tương ứng.
+        Trả về danh sách các tuple (Embedding, Analysis)
+        """
+        stmt = (
+            select(ResumeEmbedding, ResumeAnalysis)
+            .join(ResumeAnalysis, ResumeEmbedding.resume_id == ResumeAnalysis.resume_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.all()

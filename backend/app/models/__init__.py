@@ -5,7 +5,8 @@ from backend.app.models.requirement import Requirement
 from backend.app.models.meeting import Meeting
 from backend.app.models.resume_embedding import ResumeEmbedding
 from backend.app.models.requirement_embedding import RequirementEmbedding
-from backend.app.models.analysis import Analysis
+from backend.app.models.resume_analysis import ResumeAnalysis
+from backend.app.models.requirement_analysis import RequirementAnalysis
 
 __all__ = [
     "Base", 
@@ -15,5 +16,6 @@ __all__ = [
     "Meeting", 
     "ResumeEmbedding", 
     "RequirementEmbedding", 
-    "Analysis"
+    "ResumeAnalysis",
+    "RequirementAnalysis"
 ]

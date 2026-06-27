@@ -18,17 +18,19 @@ if TYPE_CHECKING:
 class ResumeEmbedding(Base):
     __tablename__ = "resume_embeddings"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     resume_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1024))
     
-    # NÊN SỬA: Đảm bảo không null
+    # Chia 3 vector và set kích thước 768 cho model E5
+    summary_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+    skills_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+    experience_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
+    
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
 
-    # NÊN SỬA: Ràng buộc duy nhất đảm bảo tính toàn vẹn (Chỉ có 1 bản ghi bge-large cho mỗi resume)
     __table_args__ = (
         UniqueConstraint("resume_id", "model_name", name="uq_resume_model_embedding"),
     )

@@ -1,7 +1,7 @@
 import uuid
 from typing import List, Optional, TYPE_CHECKING
 from datetime import datetime
-from sqlalchemy import String, text, TIMESTAMP, ForeignKey, Text  # Import Text
+from sqlalchemy import String, text, TIMESTAMP, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,7 +10,7 @@ from backend.app.models.base import Base
 if TYPE_CHECKING:
     from models.user import User
     from models.resume_embedding import ResumeEmbedding
-    from models.analysis import Analysis
+    from models.resume_analysis import ResumeAnalysis  # Đổi tên import
 
 class Resume(Base):
     __tablename__ = "resumes"
@@ -20,7 +20,6 @@ class Resume(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     
-    # NÊN SỬA: Đổi String sang Text hoàn toàn cho các trường dài
     raw_text: Mapped[Optional[str]] = mapped_column(Text) 
     file_path: Mapped[Optional[str]] = mapped_column(String(512))
     
@@ -30,7 +29,7 @@ class Resume(Base):
     # Relationships
     user: Mapped["User"] = relationship(back_populates="resumes")
     embeddings: Mapped[List["ResumeEmbedding"]] = relationship(back_populates="resume", cascade="all, delete-orphan")
-    analyses: Mapped[List["Analysis"]] = relationship(back_populates="resume", cascade="all, delete-orphan")
+    analyses: Mapped[List["ResumeAnalysis"]] = relationship(back_populates="resume", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Resume {self.id}>"
