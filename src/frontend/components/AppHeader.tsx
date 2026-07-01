@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Bell, Search, RefreshCw, ChevronRight, Loader2 } from "lucide-react";
 import { D, Dot, Badge, globalStyles } from "../lib/shared";
 import { useAuth, type UserRole } from "../contexts/AuthContext";
+import { useWorkspace } from "../contexts/WorkspaceContext";
 
 const ROLE_LABELS: Record<UserRole, string> = {
   recruiter: "Recruiter",
@@ -21,34 +22,38 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync }) => {
   const pathname = usePathname();
   const [syncing, setSyncing] = useState(false);
   const { user, logout, canUpload } = useAuth();
+  const { syncCandidateProfile, candidateUuid } = useWorkspace();
 
   const isLanding  = pathname === "/";
   const isCandidatePage   = pathname === "/candidate-profile";
   const isEnrichedCandidatePage   = pathname === "/candidate-profile/enriched";
   const isMainPageSuccess = isLanding && onRunSync !== undefined; // When we're on main page with PDF
 
-  const handleRunSync = () => {
-    // If we have a custom onRunSync, use that
-    if (onRunSync) {
-      setSyncing(true);
-      setTimeout(() => {
+  const handleRunSync = async () => {
+    setSyncing(true);
+    try {
+      // If we have a custom onRunSync, use that
+      if (onRunSync) {
+        setTimeout(() => {
+          setSyncing(false);
+          onRunSync();
+        }, 1400);
+      } 
+      // Otherwise, use sync API from workspace
+      else {
+        const response = await syncCandidateProfile();
         setSyncing(false);
-        onRunSync();
-      }, 1400);
-    } 
-    // Otherwise use the old behavior for candidate profile page
-    else if (isCandidatePage) {
-      setSyncing(true);
-      setTimeout(() => {
-        setSyncing(false);
-        router.push("/candidate-profile/enriched");
-      }, 1400);
+        router.push(`${response.redirect}?uuid=${candidateUuid}`);
+      }
+    } catch (err) {
+      console.error("Sync failed:", err);
+      setSyncing(false);
     }
   };
 
   const showRunSync = !isLanding || onRunSync !== undefined;
-  const canClickRunSync = onRunSync !== undefined || isCandidatePage;
-  const isSynced = isEnrichedCandidatePage;
+  const canClickRunSync = onRunSync !== undefined || isCandidatePage || isEnrichedCandidatePage;
+  const isSynced = false;
 
   if (!user) return null;
 

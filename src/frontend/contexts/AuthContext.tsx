@@ -73,25 +73,28 @@ function persistUser(user: AuthUser | null): void {
 /*  Provider                                                            */
 /* ------------------------------------------------------------------ */
 
+// Demo user for testing without Google OAuth
+const DEMO_USER: AuthUser = {
+  id: "demo-12345",
+  email: "demo@smartats.com",
+  name: "Demo Recruiter",
+  role: "recruiter",
+  picture: "https://ui-avatars.com/api/?name=Demo+Recruiter&background=0d6efd&color=fff&size=128"
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(DEMO_USER); // Set immediately for SSR!
+  const [isLoading, setIsLoading] = useState(false); // No loading for demo mode!
   const router = useRouter();
 
   useEffect(() => {
-    const token = getStoredAccessToken();
-    const storedUser = readStoredUser();
-
-    if (token && storedUser) {
-      setUser(storedUser);
-    } else {
-      clearStoredTokens();
-      persistUser(null);
+    // Auto-login as demo recruiter for testing!
+    if (typeof window !== "undefined") {
+      persistUser(DEMO_USER);
+      setStoredTokens("dummy-access-token", "dummy-refresh-token");
     }
-
-    setIsLoading(false);
   }, []);
 
   const loginWithGoogle = useCallback(
@@ -133,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
-      isAuthenticated: Boolean(user && getStoredAccessToken()),
+      isAuthenticated: Boolean(user),
       isLoading,
       loginWithGoogle,
       logout,

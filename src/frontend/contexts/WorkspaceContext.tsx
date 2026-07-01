@@ -1,7 +1,6 @@
 "use client";
 
 import React, { createContext, useContext, useState } from "react";
-import { mockAnalyticsService } from "../services/mockAnalyticsService";
 import { api } from "../services/httpClient";
 
 /* ------------------------------------------------------------------ */
@@ -49,9 +48,12 @@ interface WorkspaceContextProps {
   status: IngestionStatus;
   pdfUrl: string | null;
   analyticData: CandidateAnalytics | null;
+  candidateUuid: string | null;
   errorMessage: string | null;
   uploadResume: (file: File) => Promise<void>;
   resetWorkspace: () => void;
+  syncCandidateProfile: (uuid?: string) => Promise<{ redirect: string }>;
+  setCandidateUuid: (uuid: string | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextProps | undefined>(
@@ -70,10 +72,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   const [analyticData, setAnalyticData] = useState<CandidateAnalytics | null>(
     null,
   );
+  const [candidateUuid, setCandidateUuid] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const useMockIngestion =
-    process.env.NEXT_PUBLIC_USE_MOCK_INGESTION !== "false";
 
   /* ------ Upload handler ------ */
   const uploadResume = async (file: File) => {
@@ -82,22 +82,16 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     setPdfUrl(URL.createObjectURL(file));
 
     try {
-      if (useMockIngestion) {
-        const result = await mockAnalyticsService(file);
-        setAnalyticData(result);
-        setStatus("SUCCESS");
-        return;
-      }
-
       const formData = new FormData();
       formData.append("file", file);
 
-      const uploadResponse = await api.post<{ uuid: string }>(
+      const uploadResponse = await api.post<{ uuid: string; full_name: string | null; github_username: string | null; linkedin_url: string | null }>(
         "/api/ingestion/upload",
         formData,
       );
 
-      _initWebSocketPipeline(uploadResponse.uuid);
+      setCandidateUuid(uploadResponse.uuid);
+      setStatus("SUCCESS");
     } catch (error: unknown) {
       setStatus("ERROR");
       const message =
@@ -106,29 +100,23 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /* ------ WebSocket pipeline (used in REAL MODE) ------ */
-  const _initWebSocketPipeline = (uuid: string) => {
-    const wsBase =
-      process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
-    const ws = new WebSocket(`${wsBase}/stream/${uuid}`);
+  /* ------ Sync Enrichment ------ */
+  const syncCandidateProfile = async (uuid?: string): Promise<{ redirect: string }> => {
+    const targetUuid = uuid || candidateUuid;
+    if (!targetUuid) {
+      throw new Error("No candidate UUID available for sync.");
+    }
 
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as {
-        type: string;
-        data: CandidateAnalytics;
-      };
-      if (payload.type === "AI_ANALYTICS_COMPLETE") {
-        setAnalyticData(payload.data);
-        setStatus("SUCCESS");
-        ws.close();
-      }
-    };
+    const response = await api.post<{ status: string; redirect: string; candidate_uuid: string }>(
+      `/api/enrichment/${targetUuid}/sync`,
+    );
 
-    ws.onerror = () => {
-      setStatus("ERROR");
-      setErrorMessage("WebSocket: Asynchronous engine failure or timeout.");
-      ws.close();
-    };
+    // Also update the context's candidateUuid if we passed one
+    if (uuid && candidateUuid !== uuid) {
+      setCandidateUuid(uuid);
+    }
+
+    return response;
   };
 
   /* ------ Reset ------ */
@@ -136,6 +124,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     setStatus("IDLE");
     setPdfUrl(null);
     setAnalyticData(null);
+    setCandidateUuid(null);
     setErrorMessage(null);
   };
 
@@ -145,9 +134,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
         status,
         pdfUrl,
         analyticData,
+        candidateUuid,
         errorMessage,
         uploadResume,
         resetWorkspace,
+        syncCandidateProfile,
+        setCandidateUuid,
       }}
     >
       {children}

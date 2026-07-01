@@ -36,6 +36,7 @@ pnpm-debug.log*
 
 # Local uploads and generated assets
 Prototype Figma/
+workflows/
 uploads/
 storage/
 tmp/

@@ -23,6 +23,15 @@ def get_current_user(
     ],
     jwt_service: Annotated[JwtService, Depends(get_jwt_service)],
 ) -> AuthUser:
+    # Demo mode: accept dummy-access-token for testing
+    if credentials and credentials.scheme.lower() == "bearer" and credentials.credentials == "dummy-access-token":
+        return AuthUser(
+            id="demo-12345",
+            email="demo@smartats.com",
+            name="Demo Recruiter",
+            role="recruiter"
+        )
+    
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

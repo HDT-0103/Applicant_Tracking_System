@@ -6,6 +6,7 @@ import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from modules.auth.domain.models import AuthUser
+from modules.ingestion.application.ingestion_service import process_cv_resume
 from modules.shared.infrastructure.auth_dependencies import require_roles
 from modules.shared.infrastructure.config import Settings, get_settings
 
@@ -20,7 +21,7 @@ async def upload_resume(
     file: Annotated[UploadFile, File(...)],
     current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin"))],
     settings: Annotated[Settings, Depends(get_settings)],
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     if file.content_type not in {"application/pdf", "application/x-pdf"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -62,4 +63,22 @@ async def upload_resume(
         byte_size=len(content),
     )
 
-    return {"uuid": ingestion_uuid}
+    # ----------------------------------------------------------------
+    # Pipeline: PDF text extraction -> Gemini CV parsing -> Store record
+    # ----------------------------------------------------------------
+    candidate = await process_cv_resume(ingestion_uuid, str(destination), settings)
+
+    logger.info(
+        "ingestion.upload.pipeline_complete",
+        uuid=candidate.uuid,
+        full_name=candidate.full_name,
+        github_username=candidate.github_username,
+        linkedin_url=candidate.linkedin_url,
+    )
+
+    return {
+        "uuid": ingestion_uuid,
+        "full_name": candidate.full_name,
+        "github_username": candidate.github_username,
+        "linkedin_url": candidate.linkedin_url,
+    }
