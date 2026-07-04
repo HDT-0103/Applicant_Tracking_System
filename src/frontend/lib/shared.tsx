@@ -25,66 +25,7 @@ export const D = {
 
 // --- Shared Data --------------------------------------------------------------
 
-export const radarBase = [
-  { skill: "Backend", base: 86, enriched: 91, fullMark: 100 },
-  { skill: "Frontend", base: 60, enriched: 63, fullMark: 100 },
-  { skill: "Cloud", base: 73, enriched: 79, fullMark: 100 },
-  { skill: "InfoSec", base: 52, enriched: 55, fullMark: 100 },
-  { skill: "ML / AI", base: 69, enriched: 74, fullMark: 100 },
-];
-
-export const timelineItems = [
-  {
-    year: "2024",
-    title: "Senior Backend Engineer",
-    org: "Nexus Systems Ltd.",
-    period: "Jan 2024 — Present",
-    type: "work" as const,
-    current: true,
-    note: "Microservices · 2M+ req/day · P95 latency −43%",
-    verified: true,
-  },
-  {
-    year: "2022",
-    title: "Backend Engineer",
-    org: "DataBridge Inc.",
-    period: "Mar 2022 — Dec 2023",
-    type: "work" as const,
-    current: false,
-    note: "Apache Spark · 500 GB/day throughput",
-    verified: true,
-  },
-  {
-    year: "2020",
-    title: "Junior Software Developer",
-    org: "TechStack Labs",
-    period: "Jun 2020 — Feb 2022",
-    type: "work" as const,
-    current: false,
-    note: "FastAPI · Node.js · REST API design · 80K DAU",
-    verified: true,
-  },
-  {
-    year: "2018",
-    title: "Software Engineering Intern",
-    org: "CloudBase Corp.",
-    period: "May 2018 — Aug 2018",
-    type: "work" as const,
-    current: false,
-    note: "Docker · Jenkins CI/CD",
-    verified: false,
-  },
-  {
-    year: "2014",
-    title: "B.Sc. Computer Science",
-    org: "University of Science & Technology",
-    period: "2014 — 2018",
-    type: "edu" as const,
-    current: false,
-    note: "GPA 3.87 · Dean's List · Distributed Systems thesis",
-    verified: true,
-  },
-];
+// Mock data removed - now using real data from API
 
 // --- Components ---------------------------------------------------------------
 

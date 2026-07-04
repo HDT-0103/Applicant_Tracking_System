@@ -1,7 +1,8 @@
 import asyncio
 import json
+import os
 import structlog
-from typing import Annotated, Dict, List
+from typing import Annotated, Dict, List, Optional
 
 import httpx
 from fastapi import Depends
@@ -28,6 +29,209 @@ logger = structlog.get_logger(__name__)
 # In-memory storage (simulating database for now)
 candidate_enrichments: Dict[str, CandidateEnrichment] = {}
 active_websockets: Dict[str, List] = {}
+
+
+def read_github_json_from_file(candidate_uuid: str) -> Optional[GitHubProfile]:
+    """Read GitHub data from stored JSON file instead of API."""
+    try:
+        # Find GitHub JSON file for this candidate
+        stored_data_dir = "./stored_data"
+        if not os.path.exists(stored_data_dir):
+            logger.warning("github.file.directory_not_found", directory=stored_data_dir)
+            return None
+        
+        # Look for github_*.json files
+        github_files = [f for f in os.listdir(stored_data_dir) if f.startswith("github_") and f.endswith(".json")]
+        if not github_files:
+            logger.warning("github.file.not_found", directory=stored_data_dir)
+            return None
+        
+        # Use the first available GitHub file
+        github_file_path = os.path.join(stored_data_dir, github_files[0])
+        logger.info("github.file.reading", file=github_file_path)
+        
+        with open(github_file_path, "r", encoding="utf-8") as f:
+            json_data = json.load(f)
+        
+        # Extract data from the JSON structure
+        data = json_data.get("data", {})
+        
+        # Map repos
+        repos_data = data.get("repos", [])
+        repos = [
+            GitHubRepo(
+                name=repo.get("name", ""),
+                language=repo.get("language"),
+                size=repo.get("size", 0)
+            )
+            for repo in repos_data
+        ]
+        
+        # Create GitHubProfile
+        github_profile = GitHubProfile(
+            public_repos_count=data.get("public_repos_count", 0),
+            top_languages=data.get("top_languages", {}),
+            readme_content=data.get("readme_content"),
+            repos=repos
+        )
+        
+        logger.info("github.file.loaded_successfully", file=github_file_path, repos_count=len(repos))
+        return github_profile
+        
+    except Exception as e:
+        logger.error("github.file.read_failed", error=str(e))
+        return None
+
+
+def read_linkedin_json_from_file(candidate_uuid: str) -> Optional[LinkedInProfile]:
+    """Read LinkedIn data from stored JSON file instead of API."""
+    try:
+        # Find LinkedIn JSON file for this candidate
+        stored_data_dir = "./stored_data"
+        if not os.path.exists(stored_data_dir):
+            logger.warning("linkedin.file.directory_not_found", directory=stored_data_dir)
+            return None
+        
+        # Look for linkedin_*.json files, prioritize non-cache files
+        linkedin_files = [f for f in os.listdir(stored_data_dir) if f.startswith("linkedin_") and f.endswith(".json") and not f.startswith("cache_")]
+        if not linkedin_files:
+            logger.warning("linkedin.file.not_found", directory=stored_data_dir)
+            return None
+        
+        # Find the best file - prefer files with actual data (non-empty experiences)
+        best_file = None
+        best_file_experiences_count = -1
+        
+        for filename in linkedin_files:
+            file_path = os.path.join(stored_data_dir, filename)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    temp_data = json.load(f)
+                
+                # Count experiences in both formats
+                exp_count = 0
+                if "data" in temp_data:
+                    exp_count = len(temp_data.get("data", {}).get("experience", []))
+                else:
+                    exp_count = len(temp_data.get("experiences", []))
+                
+                if exp_count > best_file_experiences_count:
+                    best_file = file_path
+                    best_file_experiences_count = exp_count
+            except:
+                continue
+        
+        if not best_file:
+            best_file = os.path.join(stored_data_dir, linkedin_files[0])
+        
+        linkedin_file_path = best_file
+        logger.info("linkedin.file.reading", file=linkedin_file_path)
+        
+        with open(linkedin_file_path, "r", encoding="utf-8") as f:
+            json_data = json.load(f)
+        
+        # Extract data from the JSON structure - handle both formats
+        # Format 1: { "data": { "basic_info": {...}, "experience": [...] } }
+        # Format 2: { "experiences": [...], "educations": [...], "full_name": "..." }
+        
+        if "data" in json_data:
+            data = json_data.get("data", {})
+            basic_info = data.get("basic_info", {})
+            
+            # Map experiences
+            experiences_data = data.get("experience", [])
+            experiences = []
+            for exp in experiences_data:
+                start_date_obj = exp.get("start_date", {})
+                end_date_obj = exp.get("end_date", {})
+                start_date = f"{start_date_obj.get('month', '')} {start_date_obj.get('year', '')}".strip() if start_date_obj else ""
+                end_date = f"{end_date_obj.get('month', '')} {end_date_obj.get('year', '')}".strip() if end_date_obj else ""
+                
+                experiences.append(
+                    LinkedInExperience(
+                        title=exp.get("title", ""),
+                        company=exp.get("company", ""),
+                        start_date=start_date,
+                        end_date=end_date,
+                        description=exp.get("description", ""),
+                        is_current=exp.get("is_current", False)
+                    )
+                )
+            
+            # Map education
+            educations_data = data.get("education", [])
+            educations = []
+            for edu in educations_data:
+                start_date_obj = edu.get("start_date", {})
+                end_date_obj = edu.get("end_date", {})
+                start_date = f"{start_date_obj.get('month', '')} {start_date_obj.get('year', '')}".strip() if start_date_obj else ""
+                end_date = f"{end_date_obj.get('month', '')} {end_date_obj.get('year', '')}".strip() if end_date_obj else ""
+                
+                educations.append(
+                    LinkedInEducation(
+                        school=edu.get("school", ""),
+                        degree=edu.get("degree", ""),
+                        field_of_study=edu.get("field_of_study", ""),
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+                )
+            
+            # Create LinkedInProfile
+            linkedin_profile = LinkedInProfile(
+                full_name=basic_info.get("fullname", ""),
+                headline=basic_info.get("headline", ""),
+                profile_url=basic_info.get("profile_url", ""),
+                avatar_url=basic_info.get("profile_picture_url", ""),
+                experiences=experiences,
+                educations=educations,
+                certifications=[]
+            )
+        else:
+            # Format 2: Direct structure
+            experiences_data = json_data.get("experiences", [])
+            experiences = []
+            for exp in experiences_data:
+                experiences.append(
+                    LinkedInExperience(
+                        title=exp.get("title", ""),
+                        company=exp.get("company", ""),
+                        start_date=exp.get("start_date", ""),
+                        end_date=exp.get("end_date", ""),
+                        description=exp.get("description", ""),
+                        is_current=exp.get("is_current", False)
+                    )
+                )
+            
+            educations_data = json_data.get("educations", [])
+            educations = []
+            for edu in educations_data:
+                educations.append(
+                    LinkedInEducation(
+                        school=edu.get("school", ""),
+                        degree=edu.get("degree", ""),
+                        field_of_study=edu.get("field_of_study", ""),
+                        start_date=edu.get("start_date", ""),
+                        end_date=edu.get("end_date", "")
+                    )
+                )
+            
+            linkedin_profile = LinkedInProfile(
+                full_name=json_data.get("full_name", ""),
+                headline=json_data.get("headline", ""),
+                profile_url=json_data.get("profile_url", ""),
+                avatar_url=json_data.get("avatar_url", ""),
+                experiences=experiences,
+                educations=educations,
+                certifications=json_data.get("certifications", [])
+            )
+        
+        logger.info("linkedin.file.loaded_successfully", file=linkedin_file_path, experiences_count=len(linkedin_profile.experiences))
+        return linkedin_profile
+        
+    except Exception as e:
+        logger.error("linkedin.file.read_failed", error=str(e))
+        return None
 
 
 def get_candidate_social_links(candidate_uuid: str) -> CandidateSocialLinks:
@@ -605,49 +809,43 @@ async def enrichment_worker(
             enrichment_status=EnrichmentStatus.IN_PROGRESS
         )
         
+        # Get social links from candidate repository
         social_links = get_candidate_social_links(candidate_uuid)
         
-        tasks = []
+        # 1. Try to read from existing JSON files first (fast path)
+        github_profile = read_github_json_from_file(candidate_uuid)
+        linkedin_profile = read_linkedin_json_from_file(candidate_uuid)
         
-        if social_links.github_username:
-            tasks.append(fetch_github_profile(social_links.github_username, settings))
-        else:
-            tasks.append(asyncio.sleep(0))
+        # Track if data was fetched from API (to avoid saving cached data again)
+        github_fetched_from_api = False
+        linkedin_fetched_from_api = False
         
-        if social_links.linkedin_url:
-            tasks.append(fetch_linkedin_profile(social_links.linkedin_url, candidate_uuid, settings))
-        else:
-            tasks.append(asyncio.sleep(0))
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        github_profile = None
-        linkedin_profile = None
-        
-        if social_links.github_username:
-            if isinstance(results[0], Exception):
-                logger.error("github.fetch.exception", error=str(results[0]), candidate_uuid=candidate_uuid)
+        # 2. Auto-fetch if JSON files not found (new candidate)
+        if not github_profile and social_links.github_username:
+            logger.info("github.file.not_found.triggering_live_fetch", username=social_links.github_username)
+            try:
+                github_profile = await fetch_github_profile(social_links.github_username, settings)
+                github_fetched_from_api = True
+            except Exception as e:
+                logger.error("github.live_fetch.failed", error=str(e))
                 github_profile = None
-            else:
-                github_profile = results[0]
-                # Lưu dữ liệu GitHub vào database
-                if github_profile:
-                    save_github_data(candidate_uuid, github_profile.model_dump())
+            
+        if not linkedin_profile and social_links.linkedin_url:
+            logger.info("linkedin.file.not_found.triggering_live_fetch", url=social_links.linkedin_url)
+            try:
+                linkedin_profile = await fetch_linkedin_profile(social_links.linkedin_url, candidate_uuid, settings)
+                linkedin_fetched_from_api = True
+            except Exception as e:
+                logger.error("linkedin.live_fetch.failed", error=str(e))
+                linkedin_profile = None
         
-        if social_links.linkedin_url:
-            linkedin_result = results[1] if social_links.github_username else results[0]
-            if isinstance(linkedin_result, Exception):
-                logger.error("linkedin.fetch.exception", error=str(linkedin_result), candidate_uuid=candidate_uuid)
-                linkedin_profile = LinkedInProfile(experiences=[], educations=[], certifications=[])
-            elif linkedin_result is None:
-                logger.warning("linkedin.fetch.returned_none", candidate_uuid=candidate_uuid)
-                linkedin_profile = LinkedInProfile(experiences=[], educations=[], certifications=[])
-            else:
-                linkedin_profile = linkedin_result
-                # Dữ liệu LinkedIn đã được lưu trong fetch_linkedin_profile
-        else:
-            linkedin_profile = LinkedInProfile(experiences=[], educations=[], certifications=[])
+        # 3. Save data to database only if fetched from API (avoid duplicating cached files)
+        if github_profile and github_fetched_from_api:
+            save_github_data(candidate_uuid, github_profile.model_dump())
+        if linkedin_profile and linkedin_fetched_from_api:
+            save_linkedin_data(candidate_uuid, linkedin_profile.model_dump())
         
+        # 4. Analyze and generate analytics
         local_analysis = None
         if github_profile and github_profile.repos: # Đảm bảo có data repo để phân tích
             local_analysis = analyze_github_local_fallback(github_profile)

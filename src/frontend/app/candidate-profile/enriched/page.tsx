@@ -12,7 +12,7 @@ import {
   AlertCircle, Clock, Layers, Shield, GitBranch, Cpu, Globe,
   Loader2,
 } from "lucide-react";
-import { D, Dot, Badge, SectionLabel, Divider, radarBase, timelineItems } from "../../../lib/shared";
+import { D, Dot, Badge, SectionLabel, Divider } from "../../../lib/shared";
 import { AppHeader } from "../../../components/AppHeader";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { api } from "../../../services/httpClient";
@@ -38,6 +38,7 @@ interface LinkedinExperience {
   start_date: string | null;
   end_date: string | null;
   description: string | null;
+  is_current?: boolean;
 }
 
 interface LinkedinEducation {
@@ -56,9 +57,24 @@ interface LinkedinCertification {
 }
 
 interface LinkedinProfile {
+  full_name?: string;
+  headline?: string;
+  profile_url?: string;
+  avatar_url?: string;
   experiences: LinkedinExperience[];
   educations: LinkedinEducation[];
   certifications: LinkedinCertification[];
+}
+
+interface TimelineItem {
+  year: string;
+  title: string;
+  org: string;
+  period: string;
+  type: "work" | "edu";
+  current: boolean;
+  note: string;
+  verified: boolean;
 }
 
 interface TechnicalSkillMatrix {
@@ -94,6 +110,62 @@ interface EnrichmentStatusResponse {
   enriched_profile?: EnrichedProfile | null;
 }
 
+// Helper function to convert LinkedIn experiences to timeline items
+function experiencesToTimelineItems(experiences: LinkedinExperience[], educations: LinkedinEducation[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  
+  // Add work experiences
+  experiences.forEach((exp, index) => {
+    const startDate = exp.start_date || "";
+    const endDate = exp.end_date || "Present";
+    const period = `${startDate} — ${endDate}`;
+    
+    // Extract year from start date
+    const yearMatch = startDate.match(/\d{4}/);
+    const year = yearMatch ? yearMatch[0] : "Unknown";
+    
+    items.push({
+      year,
+      title: exp.title,
+      org: exp.company,
+      period,
+      type: "work",
+      current: exp.is_current || !exp.end_date,
+      note: exp.description || "",
+      verified: true
+    });
+  });
+  
+  // Add education
+  educations.forEach((edu) => {
+    const startDate = edu.start_date || "";
+    const endDate = edu.end_date || "";
+    const period = `${startDate} — ${endDate}`;
+    
+    // Extract year from start date
+    const yearMatch = startDate.match(/\d{4}/);
+    const year = yearMatch ? yearMatch[0] : "Unknown";
+    
+    items.push({
+      year,
+      title: edu.degree || edu.school,
+      org: edu.school,
+      period,
+      type: "edu",
+      current: false,
+      note: edu.field_of_study || "",
+      verified: true
+    });
+  });
+  
+  // Sort by year descending (most recent first)
+  return items.sort((a, b) => {
+    const yearA = parseInt(a.year) || 0;
+    const yearB = parseInt(b.year) || 0;
+    return yearB - yearA;
+  });
+}
+
 // ─── GitHub Accordion Card ────────────────────────────────────────────────────
 function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: boolean; onToggle: () => void; data: GithubProfile | null; githubUsername: string | null }) {
   const getLangColor = (lang: string) => {
@@ -123,11 +195,11 @@ function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: bo
     : [];
 
   return (
-    <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "hidden", background: D.canvas }}>
+    <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "visible", background: D.canvas }}>
       <div
         onClick={onToggle}
         style={{
-          display: "flex", alignItems: "center", padding: "12px 16px",
+          display: "flex", alignItems: "center", padding: "14px 16px",
           borderBottom: expanded ? `1px solid ${D.line}` : "none",
           gap: 10, cursor: "pointer",
         }}
@@ -208,12 +280,15 @@ function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: bo
 // ─── LinkedIn Accordion Card ──────────────────────────────────────────────────
 function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boolean; onToggle: () => void; data: LinkedinProfile | null; linkedinUrl: string | null }) {
   const experiences = data?.experiences || [];
+  const fullName = data?.full_name || "Candidate";
+  const profileUrl = data?.profile_url || linkedinUrl;
+  
   return (
-    <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "hidden", background: D.canvas }}>
+    <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "visible", background: D.canvas }}>
       <div
         onClick={onToggle}
         style={{
-          display: "flex", alignItems: "center", padding: "12px 16px",
+          display: "flex", alignItems: "center", padding: "14px 16px",
           borderBottom: expanded ? `1px solid ${D.line}` : "none",
           gap: 10, cursor: "pointer",
         }}
@@ -224,10 +299,10 @@ function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boo
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
             <span style={{ fontSize: 12.5, fontWeight: 600, color: D.ink }}>LinkedIn</span>
-            <Badge color={D.mint} bg={D.mintSoft}><Dot color={D.mint} />Synced</Badge>
+            <Badge color={D.mint} bg={D.mintSoft}><Dot color={D.mint} />Connected</Badge>
           </div>
           <span style={{ fontSize: 10.5, color: "#0A66C2", fontFamily: D.mono, display: "flex", alignItems: "center", gap: 4 }}>
-            {linkedinUrl ? linkedinUrl.replace("https://", "").replace("http://", "") : "LinkedIn data unavailable in current pipeline"} <ExternalLink size={9} strokeWidth={2} color="#0A66C2" />
+            {profileUrl ? profileUrl.replace("https://", "").replace("http://", "") : "LinkedIn data unavailable"} <ExternalLink size={9} strokeWidth={2} color="#0A66C2" />
           </span>
         </div>
         <ChevronDown size={13} strokeWidth={2} color={D.muted}
@@ -244,15 +319,28 @@ function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boo
               <div style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, lineHeight: 1.2 }}>Verified Employment History</div>
               <div style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.4 }}>
                 {experiences.length > 0
-                  ? `${experiences.length} roles mapped with 95% alignment to original CV`
-                  : "No LinkedIn employment history available from the current enrichment pipeline"}
+                  ? `${experiences.length} roles mapped from LinkedIn profile`
+                  : "No LinkedIn employment history available"}
               </div>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.muted }}>Role Alignment Map</div>
-            {experiences.length > 0 ? (
-              experiences.map((role, i) => (
+            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.muted }}>Profile Information</div>
+            {data?.full_name && (
+              <div style={{ fontSize: 11, color: D.sub }}>
+                <span style={{ fontWeight: 600, color: D.ink }}>Name:</span> {data.full_name}
+              </div>
+            )}
+            {data?.headline && (
+              <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.4 }}>
+                <span style={{ fontWeight: 600, color: D.sub }}>Headline:</span> {data.headline}
+              </div>
+            )}
+          </div>
+          {experiences.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.muted }}>Work Experience</div>
+              {experiences.map((role, i) => (
                 <div key={i} style={{
                   display: "flex", alignItems: "center", gap: 8,
                   padding: "7px 10px", borderRadius: 5, background: D.surface, border: `1px solid ${D.lineSoft}`,
@@ -262,20 +350,13 @@ function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boo
                     <div style={{ fontSize: 11, fontWeight: 500, color: D.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{role.title}</div>
                     <div style={{ fontSize: 9.5, color: D.muted }}>{role.company}</div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-                    <div style={{ width: 40, height: 3, borderRadius: 99, background: D.line, overflow: "hidden" }}>
-                      <div style={{ width: `${95 - i * 2}%`, height: "100%", background: i === 0 ? D.mint : D.blue, borderRadius: 99 }} />
-                    </div>
-                    <span style={{ fontSize: 9.5, fontFamily: D.mono, fontWeight: 600, color: i === 0 ? D.mint : D.blue, minWidth: 28, textAlign: "right" }}>{95 - i * 2}%</span>
-                  </div>
+                  {role.is_current && (
+                    <Badge color={D.blue} bg={D.blueSoft}>Current</Badge>
+                  )}
                 </div>
-              ))
-            ) : (
-              <div style={{ padding: "8px 10px", borderRadius: 5, background: D.surface, border: `1px dashed ${D.line}`, fontSize: 10.5, color: D.muted, lineHeight: 1.5 }}>
-                LinkedIn scraping is disabled in the backend, so this view only shows real data once that pipeline is restored.
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -307,7 +388,7 @@ function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
 
       {/* Scrollable — clip + auto */}
       <div style={{
-        flex: 1, overflowY: "auto", overflowX: "clip",
+        flex: 1, overflowY: "auto", overflowX: "visible",
         padding: "18px 16px", display: "flex", flexDirection: "column",
         gap: 14, minHeight: 0,
       }}>
@@ -520,9 +601,15 @@ function MatchConfidence({ analytics }: { analytics: MockAnalytics | null }) {
 }
 
 // ─── Career Timeline (verified) ─────────────────────────────────────────────────
-function CareerTimeline() {
+function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
   const [expanded, setExpanded] = useState(true);
   const [hovered, setHovered] = useState<number | null>(null);
+  
+  // Convert real LinkedIn data to timeline items
+  const timelineItems = data?.linkedin 
+    ? experiencesToTimelineItems(data.linkedin.experiences, data.linkedin.educations)
+    : [];
+  
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, cursor: "pointer" }} onClick={() => setExpanded(!expanded)}>
@@ -535,39 +622,47 @@ function CareerTimeline() {
       </div>
       {expanded && (
         <div style={{ position: "relative" }}>
-          <div style={{ position: "absolute", left: 44, top: 6, bottom: 6, width: 1, background: D.line }} />
-          {timelineItems.map((item, i) => (
-            <div key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
-              style={{ display: "flex", alignItems: "flex-start", marginBottom: i < timelineItems.length - 1 ? 8 : 0, cursor: "default" }}>
-              <div style={{ width: 36, flexShrink: 0, textAlign: "right", paddingTop: 4, fontSize: 9.5, fontWeight: item.current ? 700 : 500, color: item.current ? D.blue : D.dim, fontFamily: D.mono }}>{item.year}</div>
-              <div style={{ width: 18, flexShrink: 0, display: "flex", justifyContent: "center", paddingTop: 6, position: "relative", zIndex: 1, marginLeft: -1 }}>
-                <div style={{
-                  width: item.current ? 9 : 7, height: item.current ? 9 : 7, borderRadius: "50%",
-                  background: item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.dim,
-                  border: `2px solid ${item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.line}`,
-                  transition: "transform 0.12s", transform: hovered === i ? "scale(1.5)" : "scale(1)",
-                  boxShadow: item.current ? `0 0 0 3px ${D.blue}18` : undefined,
-                }} />
-              </div>
-              <div style={{
-                flex: 1, padding: "4px 10px 8px", marginLeft: 4, borderRadius: 6,
-                background: hovered === i ? D.surface : "transparent",
-                border: `1px solid ${hovered === i ? D.line : "transparent"}`,
-                transition: "all 0.15s ease", minWidth: 0,
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 1 }}>
-                  {item.type === "work" ? <Briefcase size={9.5} strokeWidth={2} color={item.current ? D.blue : D.muted} /> : <GraduationCap size={9.5} strokeWidth={2} color={D.purple} />}
-                  <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink }}>{item.title}</span>
-                  {item.current && <Badge color={D.blue} bg={D.blueSoft}>NOW</Badge>}
-                  {item.type === "edu" && <Badge color={D.purple} bg={`${D.purple}10`}>EDU</Badge>}
-                  {item.verified && <Badge color={D.mint} bg={D.mintSoft}><CheckCircle2 size={8} strokeWidth={2} color={D.mint} />Verified</Badge>}
+          {timelineItems.length > 0 ? (
+            <>
+              <div style={{ position: "absolute", left: 44, top: 6, bottom: 6, width: 1, background: D.line }} />
+              {timelineItems.map((item, i) => (
+                <div key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
+                  style={{ display: "flex", alignItems: "flex-start", marginBottom: i < timelineItems.length - 1 ? 8 : 0, cursor: "default" }}>
+                  <div style={{ width: 36, flexShrink: 0, textAlign: "right", paddingTop: 4, fontSize: 9.5, fontWeight: item.current ? 700 : 500, color: item.current ? D.blue : D.dim, fontFamily: D.mono }}>{item.year}</div>
+                  <div style={{ width: 18, flexShrink: 0, display: "flex", justifyContent: "center", paddingTop: 6, position: "relative", zIndex: 1, marginLeft: -1 }}>
+                    <div style={{
+                      width: item.current ? 9 : 7, height: item.current ? 9 : 7, borderRadius: "50%",
+                      background: item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.dim,
+                      border: `2px solid ${item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.line}`,
+                      transition: "transform 0.12s", transform: hovered === i ? "scale(1.5)" : "scale(1)",
+                      boxShadow: item.current ? `0 0 0 3px ${D.blue}18` : undefined,
+                    }} />
+                  </div>
+                  <div style={{
+                    flex: 1, padding: "4px 10px 8px", marginLeft: 4, borderRadius: 6,
+                    background: hovered === i ? D.surface : "transparent",
+                    border: `1px solid ${hovered === i ? D.line : "transparent"}`,
+                    transition: "all 0.15s ease", minWidth: 0,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 1 }}>
+                      {item.type === "work" ? <Briefcase size={9.5} strokeWidth={2} color={item.current ? D.blue : D.muted} /> : <GraduationCap size={9.5} strokeWidth={2} color={D.purple} />}
+                      <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink }}>{item.title}</span>
+                      {item.current && <Badge color={D.blue} bg={D.blueSoft}>NOW</Badge>}
+                      {item.type === "edu" && <Badge color={D.purple} bg={`${D.purple}10`}>EDU</Badge>}
+                      {item.verified && <Badge color={D.mint} bg={D.mintSoft}><CheckCircle2 size={8} strokeWidth={2} color={D.mint} />Verified</Badge>}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: D.sub, marginBottom: 1 }}>{item.org}</div>
+                    <div style={{ fontSize: 9.5, color: D.dim, fontFamily: D.mono, marginBottom: 3 }}>{item.period}</div>
+                    <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.45 }}>{item.note}</div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 10.5, color: D.sub, marginBottom: 1 }}>{item.org}</div>
-                <div style={{ fontSize: 9.5, color: D.dim, fontFamily: D.mono, marginBottom: 3 }}>{item.period}</div>
-                <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.45 }}>{item.note}</div>
-              </div>
+              ))}
+            </>
+          ) : (
+            <div style={{ padding: "12px 16px", borderRadius: 6, background: D.surface, border: `1px dashed ${D.line}`, fontSize: 10.5, color: D.muted, textAlign: "center" }}>
+              No career trajectory data available from LinkedIn enrichment
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
@@ -606,7 +701,7 @@ function EnrichedAnalytics({ data }: { data: EnrichedProfile | null }) {
         <Divider />
         <div style={{ marginBottom: 20 }}><EnrichedRadar analytics={data?.analytics || null} /></div>
         <Divider />
-        <div style={{ marginBottom: 20 }}><CareerTimeline /></div>
+        <div style={{ marginBottom: 20 }}><CareerTimeline data={data} /></div>
         <Divider />
 
         {/* Enrichment Impact Summary */}
