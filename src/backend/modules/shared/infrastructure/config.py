@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     github_api_token: str = Field(default="", alias="GITHUB_API_TOKEN")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    linkedin_cookie: str = Field(default="", alias="LINKEDIN_COOKIE")
+    apify_api_token: str = Field(default="", alias="APIFY_API_TOKEN")
 
     @property
     def cors_origin_list(self) -> list[str]:

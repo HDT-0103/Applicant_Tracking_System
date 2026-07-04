@@ -1,0 +1,218 @@
+[{
+  "basic_info": {
+    "fullname": "Hayden Housen",
+    "first_name": "Hayden",
+    "last_name": "Housen",
+    "headline": "Co-Founder @ Sonauto (YC W24) | CS @ Cornell University",
+    "public_identifier": "hhousen",
+    "profile_url": "https://linkedin.com/in/hhousen",
+    "profile_picture_url": "https://media.licdn.com/dms/image/v2/D4E03AQGw8bGilAvRDw/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1709332046533?e=1784764800&v=beta&t=8XcRhK5xH80Vq9L2iJpKCS2eqQxDeerueEoj4Krnb8U",
+    "about": "Co-founder at Sonauto (YC W24), building an AI music editor that turns prompts, lyrics, and melodies into full songs in any style. Studied computer science at Cornell University. Previously, a software engineering intern at Vocode (YC W23) and an intern on the Machine Learning Team at Ada.\n\nSee https://haydenhousen.com for more details.",
+    "location": {
+      "country": "United States",
+      "city": "Ithaca, New York",
+      "full": "Ithaca, New York, United States",
+      "postal_code": "",
+      "country_code": "US"
+    },
+    "creator_hashtags": [],
+    "is_creator": false,
+    "is_influencer": false,
+    "is_premium": false,
+    "open_to_work": false,
+    "created_timestamp": 1542826706479,
+    "show_follower_count": false,
+    "background_picture_url": "https://media.licdn.com/dms/image/v2/C4E16AQE77oGNW0M4Aw/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1634608510922?e=1784764800&v=beta&t=zAqleD0hEtohlxU04djlkB26EzUZIPKMcwLD5ECmUXQ",
+    "memorialized": false,
+    "is_top_voice": false,
+    "primary_locale": "en_US",
+    "urn": "ACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE",
+    "follower_count": 1582,
+    "connection_count": 1453,
+    "current_company": "Sonauto (YC W24)",
+    "current_company_urn": "102800191",
+    "current_company_url": "https://www.linkedin.com/company/sonautoai",
+    "current_company_logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQExODfMaK0w7A/company-logo_400_400/company-logo_400_400/0/1709845038230?e=1784764800&v=beta&t=GttnrHGjaEchk1XlypLmRZmzUFJqU85TG14H2QqbyUk",
+    "top_education_school": {
+      "name": "Cornell University",
+      "urn": "18946",
+      "url": "https://www.linkedin.com/school/cornell-university",
+      "logo_url": "https://media.licdn.com/dms/image/v2/C560BAQE8SOXGRyv7LA/company-logo_400_400/company-logo_400_400/0/1631339899678?e=1784764800&v=beta&t=lQ4Ww8iChuRcsJR0KAYwn59FZwm1iILjDAaKxFf1mQo"
+    },
+    "is_verified": true,
+    "top_skills": [],
+    "email": null
+  },
+  "experience": [
+    {
+      "title": "Co-Founder",
+      "company": "Sonauto",
+      "location": "San Francisco, California, United States",
+      "description": "https://sonauto.ai\n\nSonauto (YC W24) is an AI music editor that turns prompts, lyrics, or melodies into full songs in any style. For example, in a few minutes with Sonauto you can make an original birthday song for your friend, sung by Frank Sinatra.",
+      "duration": "Jan 2024 - Present · 2 yrs 7 mos",
+      "start_date": {
+        "year": 2024,
+        "month": "Jan"
+      },
+      "is_current": true,
+      "company_linkedin_url": "https://www.linkedin.com/company/102800191/",
+      "company_logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQExODfMaK0w7A/company-logo_400_400/company-logo_400_400/0/1709845038230?e=1784764800&v=beta&t=GttnrHGjaEchk1XlypLmRZmzUFJqU85TG14H2QqbyUk",
+      "employment_type": "Full-time",
+      "location_type": "On-site",
+      "company_id": "102800191"
+    },
+    {
+      "title": "Machine Learning and Software Engineering Intern",
+      "company": "Vocode",
+      "location": "San Francisco, California, United States",
+      "description": "Collaborated directly with founders as a pivotal engineer to shape Vocode's pioneering AI-driven call automation solutions.\nDemonstrated versatility as a fullstack developer by building the FastAPI backend, open-source self-hosted service (Python and asyncio), and frontend dashboard (Next.js), while also resolving issues and reviewing pull requests from the community.\nEvaluated the latencies of multiple LLMs, speech-to-text APIs, and synthesis services to enhance Vocode's performance.",
+      "duration": "May 2023 - Aug 2023 · 4 mos",
+      "start_date": {
+        "year": 2023,
+        "month": "May"
+      },
+      "end_date": {
+        "year": 2023,
+        "month": "Aug"
+      },
+      "is_current": false,
+      "company_linkedin_url": "https://www.linkedin.com/company/90566171/",
+      "company_logo_url": "https://media.licdn.com/dms/image/v2/C560BAQFrYJu-yEGtvQ/company-logo_400_400/company-logo_400_400/0/1677365728019?e=1784764800&v=beta&t=JvOZD472QVjYd4RnVpTFMFCl6BwDw_dU-Xi3miPUxsU",
+      "employment_type": "Internship",
+      "location_type": "On-site",
+      "skills": [
+        "Python (Programming Language)",
+        "PyTorch"
+      ],
+      "company_id": "90566171",
+      "skills_url": "https://www.linkedin.com/in/hhousen/overlay/urn:li:fsd_profilePosition:(ACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE,2178860518)/skill-associations-details?profileUrn=urn%3Ali%3Afsd_profile%3AACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE"
+    },
+    {
+      "title": "Machine Learning Intern",
+      "company": "Ada",
+      "description": "Improved Ada's production accuracy by 8% using only 3% of production data by developing a novel intent classification pipeline. Conducted >60 experiments and trained >110 models to determine the most accurate methodology. Experimented with knowledge transfer, unsupervised learning of sentence embeddings, multi-task learning, and contrastive losses in the context of transformers and support vector machines.",
+      "duration": "May 2022 - Aug 2022 · 4 mos",
+      "start_date": {
+        "year": 2022,
+        "month": "May"
+      },
+      "end_date": {
+        "year": 2022,
+        "month": "Aug"
+      },
+      "is_current": false,
+      "company_linkedin_url": "https://www.linkedin.com/company/16194366/",
+      "company_logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQGxehfxHzJI2w/company-logo_400_400/company-logo_400_400/0/1738955350102/ada_cx_logo?e=1784764800&v=beta&t=s9SpbCsE0oGvKieIEc76RoyJELQrWJl2p5OyBEJqxPQ",
+      "employment_type": "Internship",
+      "skills": [
+        "Python (Programming Language)",
+        "Deep Learning"
+      ],
+      "company_id": "16194366",
+      "skills_url": "https://www.linkedin.com/in/hhousen/overlay/urn:li:fsd_profilePosition:(ACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE,1969719880)/skill-associations-details?profileUrn=urn%3Ali%3Afsd_profile%3AACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE"
+    },
+    {
+      "title": "Undergraduate Student Researcher",
+      "company": "Cornell University",
+      "location": "Ithaca, New York, United States",
+      "description": "Worked with Dr. Kevin Ellis on unsupervised object discovery using Slot Attention and investigated the scaling capabilities of reinforcement learning models (such as DreamerV3).\n\nOvercame bias in paraphrase identification by using transformers & out-of-distribution detection techniques: \"GAPX: Generalized Autoregressive Paraphrase-Identification X.\" Published in NeurIPS 2022 (3rd author). Advised by Dr. Sernam Lim at Meta AI. Experimented with zero-shot image classification via OpenAI’s CLIP model.",
+      "duration": "Sep 2021 - May 2022 · 9 mos",
+      "start_date": {
+        "year": 2021,
+        "month": "Sep"
+      },
+      "end_date": {
+        "year": 2022,
+        "month": "May"
+      },
+      "is_current": false,
+      "company_linkedin_url": "https://www.linkedin.com/company/3523/",
+      "company_logo_url": "https://media.licdn.com/dms/image/v2/C560BAQE8SOXGRyv7LA/company-logo_400_400/company-logo_400_400/0/1631339899678?e=1784764800&v=beta&t=lQ4Ww8iChuRcsJR0KAYwn59FZwm1iILjDAaKxFf1mQo",
+      "employment_type": "Part-time",
+      "skills": [
+        "Python (Programming Language)",
+        "Natural Language Processing (NLP)"
+      ],
+      "company_id": "3523",
+      "skills_url": "https://www.linkedin.com/in/hhousen/overlay/urn:li:fsd_profilePosition:(ACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE,1869206477)/skill-associations-details?profileUrn=urn%3Ali%3Afsd_profile%3AACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE"
+    },
+    {
+      "title": "Machine Learning Intern",
+      "company": "Ada",
+      "description": "Led the discovery and experimentation phases of a project to enable Ada chatbots to better understand non-English languages. Wrote a data processing pipeline to efficiently clean and analyze 9 billion chat messages for machine learning models. Researched novel techniques in multilingual intent prediction and cultivated skills in PyTorch, transformers, and pandas.",
+      "duration": "May 2021 - Aug 2021 · 4 mos",
+      "start_date": {
+        "year": 2021,
+        "month": "May"
+      },
+      "end_date": {
+        "year": 2021,
+        "month": "Aug"
+      },
+      "is_current": false,
+      "company_linkedin_url": "https://www.linkedin.com/company/16194366/",
+      "company_logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQGxehfxHzJI2w/company-logo_400_400/company-logo_400_400/0/1738955350102/ada_cx_logo?e=1784764800&v=beta&t=s9SpbCsE0oGvKieIEc76RoyJELQrWJl2p5OyBEJqxPQ",
+      "employment_type": "Internship",
+      "skills": [
+        "Python (Programming Language)",
+        "Deep Learning"
+      ],
+      "company_id": "16194366",
+      "skills_url": "https://www.linkedin.com/in/hhousen/overlay/urn:li:fsd_profilePosition:(ACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE,1779229831)/skill-associations-details?profileUrn=urn%3Ali%3Afsd_profile%3AACoAACmZ7CcBKBzGNxbEobf2tPMqeRe3um_ptnE"
+    }
+  ],
+  "education": [
+    {
+      "school": "Cornell University",
+      "degree": "Bachelor's of Science, Computer Science",
+      "degree_name": "Bachelor's of Science",
+      "field_of_study": "Computer Science",
+      "duration": "Jul 2021 - May 2025",
+      "school_linkedin_url": "https://www.linkedin.com/company/3523/",
+      "description": "Coursework: Machine Learning, Artificial Intelligence, Functional Programming, Linear Algebra, Object-Oriented Programming and Data Structures, Discrete Structures, Probability and Statistics",
+      "activities": "Cornell University Artificial Intelligence, Cybersecurity Club",
+      "school_logo_url": "https://media.licdn.com/dms/image/v2/C560BAQE8SOXGRyv7LA/company-logo_400_400/company-logo_400_400/0/1631339899678?e=1784764800&v=beta&t=lQ4Ww8iChuRcsJR0KAYwn59FZwm1iILjDAaKxFf1mQo",
+      "start_date": {
+        "year": 2021,
+        "month": "Jul"
+      },
+      "end_date": {
+        "year": 2025,
+        "month": "May"
+      },
+      "school_id": "3523"
+    }
+  ],
+  "projects": [
+    {
+      "name": "Lecture2Notes",
+      "description": "Created a state-of-the-art system to summarize classroom lectures using PyTorch, transformers (BERT), optical character recognition, speech to text, and convolutional neural networks.\nNamed a top 300 scholar in the 2021 Regeneron Science Talent Search, the nation’s oldest and most prestigious science and math competition for high school seniors.\nDeployed ML pipeline in production via a full-stack website powered by Docker, Flask, Celery, Bootstrap, and Stripe.\n\nAt a high level, lecture2notes parses both the visual and auditory components of the video, extracts text from each, combines them, and then summarizes the combined text using automatic summarization algorithms.",
+      "is_current": false
+    },
+    {
+      "name": "Cybersecurity Challenges",
+      "description": "Placed in top 3% on average in the PicoCTF 2019/2021/2022 competitions. Learned ethical hacking skills including web exploitation, cryptography, reverse engineering, and binary exploitation. Worked with popular tools included in Kali Linux.\nWrote technical guides with over 94,000 views to document my learning and help others.\nContinuously practicing cybersecurity principles by solving HackTheBox.com machines and publishing writeups.",
+      "is_current": false
+    }
+  ],
+  "featured": [
+    {
+      "type": "link",
+      "title": "Website",
+      "description": "haydenhousen.com",
+      "url": "https://haydenhousen.com/",
+      "image_url": "https://media.licdn.com/dms/image/v2/D4E2DAQGqnTCWe-xqKg/profile-treasury-image-shrink_8192_8192/profile-treasury-image-shrink_8192_8192/0/1664513242713?e=1783756800&v=beta&t=9wo-cgHDwEUVB49jBaqo7v8oDXsi9KKZky87pZhtv20"
+    }
+  ],
+  "honors": [
+    {
+      "title": "Cornell Rawlings Presidential Research Scholar",
+      "subtitle": "Issued by Cornell University · Aug 2021"
+    },
+    {
+      "title": "National Cyber Scholar with Honors",
+      "subtitle": "Issued by The National Cyber Scholarship Foundation (CyberStart America) · May 2021"
+    }
+  ],
+  "profileUrl": "https://www.linkedin.com/in/hhousen/"
+}]

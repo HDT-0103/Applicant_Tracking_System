@@ -1,21 +1,17 @@
 "use client";
 
-import React from "react";
-import { GoogleOAuthProvider } from "@react-oauth/google";
-import { AuthProvider } from "../contexts/AuthContext";
-import { WorkspaceProvider } from "../contexts/WorkspaceContext";
-import { AuthGuard } from "../components/AuthGuard";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthGuard } from "@/components/AuthGuard";
+import { WorkspaceProvider } from "@/contexts/WorkspaceContext"; // Đã sửa lại đường dẫn ở đây
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
-
   return (
-    <GoogleOAuthProvider clientId={googleClientId}>
-      <AuthProvider>
+    <AuthProvider>
+      <AuthGuard>
         <WorkspaceProvider>
-          <AuthGuard>{children}</AuthGuard>
+          {children}
         </WorkspaceProvider>
-      </AuthProvider>
-    </GoogleOAuthProvider>
+      </AuthGuard>
+    </AuthProvider>
   );
 }

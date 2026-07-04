@@ -1,4 +1,3 @@
-import asyncio
 import structlog
 from typing import Annotated
 
@@ -26,6 +25,24 @@ async def sync_candidate_profile(
     settings: Annotated[Settings, Depends(get_settings)]
 ) -> dict:
     social_links = get_candidate_social_links(candidate_uuid)
+
+    existing = candidate_enrichments.get(candidate_uuid)
+    if existing and existing.enrichment_status in {
+        EnrichmentStatus.QUEUED,
+        EnrichmentStatus.IN_PROGRESS,
+    }:
+        logger.info(
+            "enrichment.sync.already_running",
+            candidate_uuid=candidate_uuid,
+            status=existing.enrichment_status,
+            user_id=current_user.id,
+            user_email=current_user.email,
+        )
+        return {
+            "status": "queued",
+            "redirect": "/candidate-profile/enriched",
+            "candidate_uuid": candidate_uuid,
+        }
     
     # Always queue the enrichment worker regardless of social links - it will generate mock analytics if needed
     candidate_enrichments[candidate_uuid] = CandidateEnrichment(
@@ -78,7 +95,9 @@ async def get_enrichment_status(
 @router.websocket("/ws/v1/analysis/{candidate_uuid}")
 async def websocket_endpoint(websocket: WebSocket, candidate_uuid: str):
     await websocket.accept()
-    
+
+    socket_registered = False
+
     # If enrichment has already completed, send result immediately
     existing = candidate_enrichments.get(candidate_uuid)
     if existing and existing.enrichment_status == EnrichmentStatus.ENRICHED and existing.enriched_profile:
@@ -86,20 +105,25 @@ async def websocket_endpoint(websocket: WebSocket, candidate_uuid: str):
             "status": "ENRICHED",
             "data": existing.enriched_profile.model_dump()
         })
-        await websocket.close()
-        return
-    
-    if candidate_uuid not in active_websockets:
-        active_websockets[candidate_uuid] = []
-    
-    active_websockets[candidate_uuid].append(websocket)
+    else:
+        if candidate_uuid not in active_websockets:
+            active_websockets[candidate_uuid] = []
+        active_websockets[candidate_uuid].append(websocket)
+        socket_registered = True
     
     try:
-        # Keep connection alive without waiting for messages
+        # Read frames so server notices client disconnects immediately.
         while True:
-            await asyncio.sleep(1)
+            message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
     except WebSocketDisconnect:
-        if candidate_uuid in active_websockets:
+        pass
+    except RuntimeError:
+        # Starlette can raise this when receive() is called after disconnect has been consumed.
+        pass
+    finally:
+        if socket_registered and candidate_uuid in active_websockets:
             if websocket in active_websockets[candidate_uuid]:
                 active_websockets[candidate_uuid].remove(websocket)
             if not active_websockets[candidate_uuid]:

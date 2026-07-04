@@ -15,9 +15,10 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 interface AppHeaderProps {
   onRunSync?: () => void;
+  candidateName?: string | null;
 }
 
-export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync }) => {
+export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }) => {
   const router = useRouter();
   const pathname = usePathname();
   const [syncing, setSyncing] = useState(false);
@@ -95,7 +96,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync }) => {
             onClick={() => router.push("/")}
           >Candidates</span>
           <ChevronRight size={11} strokeWidth={2} color={D.dim} />
-          <span style={{ color: D.sub, fontWeight: 500 }}>Alex M. Richardson</span>
+          <span style={{ color: D.sub, fontWeight: 500 }}>{candidateName || "Candidate"}</span>
           {isEnrichedCandidatePage && (
             <>
               <ChevronRight size={11} strokeWidth={2} color={D.dim} />

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CandidateAnalytics } from "../contexts/WorkspaceContext";
+import type { CandidateAnalytics } from "@/contexts/WorkspaceContext";
 
 /* ------------------------------------------------------------------ */
 /*  Sub-component: Candidate Header                                     */

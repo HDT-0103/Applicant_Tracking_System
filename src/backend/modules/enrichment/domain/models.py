@@ -56,6 +56,10 @@ class LinkedInProfile(BaseModel):
     experiences: List[LinkedInExperience]
     educations: List[LinkedInEducation]
     certifications: List[LinkedInCertification]
+    full_name: str | None = None
+    headline: str | None = None
+    profile_url: str | None = None
+    avatar_url: str | None = None
 
 
 class TechnicalSkillMatrix(BaseModel):
@@ -74,6 +78,9 @@ class EnrichedProfile(BaseModel):
     github: GitHubProfile | None = None
     linkedin: LinkedInProfile | None = None
     analytics: MockAnalytics
+    github_username: str | None = None
+    linkedin_url: str | None = None
+    full_name: str | None = None
 
 
 class CandidateEnrichment(BaseModel):

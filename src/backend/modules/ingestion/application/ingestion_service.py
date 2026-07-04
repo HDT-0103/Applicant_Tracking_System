@@ -159,20 +159,19 @@ async def process_cv_resume(candidate_uuid: str, pdf_path: str, settings: Settin
 
     resume_text, embedded_links = extract_text_and_links_from_pdf(pdf_path)
 
-    # First, try to parse GitHub and LinkedIn from embedded links directly
+    # Parse GitHub and LinkedIn from embedded links directly (Gemini disabled)
     github_username, linkedin_url = parse_github_and_linkedin_from_links(embedded_links)
     full_name = None
 
-    # Also try Gemini for more details (full_name, etc.) if available
-    if resume_text and settings.gemini_api_key:
-        parsed = await parse_cv_with_gemini(resume_text, settings)
-        if parsed:
-            full_name = parsed.get("full_name")
-            # Use Gemini's results if we didn't get from links, or override if needed
-            if not github_username:
-                github_username = parsed.get("github_username")
-            if not linkedin_url:
-                linkedin_url = parsed.get("linkedin_url")
+    # Gemini API disabled to avoid quota issues
+    # if resume_text and settings.gemini_api_key:
+    #     parsed = await parse_cv_with_gemini(resume_text, settings)
+    #     if parsed:
+    #         full_name = parsed.get("full_name")
+    #         if not github_username:
+    #             github_username = parsed.get("github_username")
+    #         if not linkedin_url:
+    #             linkedin_url = parsed.get("linkedin_url")
 
     candidate = CandidateRecord(
         uuid=candidate_uuid,
@@ -180,7 +179,7 @@ async def process_cv_resume(candidate_uuid: str, pdf_path: str, settings: Settin
         github_username=github_username,
         linkedin_url=linkedin_url,
         resume_text=resume_text,
-        status="PARSED" if full_name or github_username or linkedin_url else "CREATED",
+        status="PARSED" if github_username or linkedin_url else "CREATED",
     )
 
     save_candidate(candidate)

@@ -15,6 +15,7 @@ import {
 import { D, Dot, Badge, SectionLabel, Divider, radarBase, timelineItems } from "../../../lib/shared";
 import { AppHeader } from "../../../components/AppHeader";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
+import { api } from "../../../services/httpClient";
 
 /* --- Types --- */
 
@@ -76,6 +77,9 @@ interface EnrichedProfile {
   github: GithubProfile | null;
   linkedin: LinkedinProfile | null;
   analytics: MockAnalytics;
+  github_username: string | null;
+  linkedin_url: string | null;
+  full_name: string | null;
 }
 
 interface WSMessage {
@@ -84,8 +88,14 @@ interface WSMessage {
   error?: string;
 }
 
+interface EnrichmentStatusResponse {
+  candidate_uuid: string;
+  enrichment_status: "QUEUED" | "IN_PROGRESS" | "ENRICHED" | "ENRICHMENT_FAILED" | "NO_PROFILES_FOUND";
+  enriched_profile?: EnrichedProfile | null;
+}
+
 // ─── GitHub Accordion Card ────────────────────────────────────────────────────
-function GitHubCard({ expanded, onToggle, data }: { expanded: boolean; onToggle: () => void; data: GithubProfile | null }) {
+function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: boolean; onToggle: () => void; data: GithubProfile | null; githubUsername: string | null }) {
   const getLangColor = (lang: string) => {
     const colors: Record<string, string> = {
       Python: "#3572A5",
@@ -105,12 +115,12 @@ function GitHubCard({ expanded, onToggle, data }: { expanded: boolean; onToggle:
     color: getLangColor(name),
   })) : [];
 
-  const publicReposCount = data?.public_repos_count || 14;
-  const semanticTags = data?.readme_content ? 
-    (["microservices", "kafka", "terraform", "k8s", "docker"].filter(t => 
-      data.readme_content?.toLowerCase().includes(t)
-    ).slice(0, 5)) : 
-    ["microservices", "kafka", "distributed-consensus", "terraform", "k8s"];
+  const publicReposCount = data?.public_repos_count ?? 0;
+  const semanticTags = data?.readme_content
+    ? ["microservices", "kafka", "terraform", "k8s", "docker"]
+        .filter((t) => data.readme_content?.toLowerCase().includes(t))
+        .slice(0, 5)
+    : [];
 
   return (
     <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "hidden", background: D.canvas }}>
@@ -131,7 +141,7 @@ function GitHubCard({ expanded, onToggle, data }: { expanded: boolean; onToggle:
             <Badge color={D.mint} bg={D.mintSoft}><Dot color={D.mint} />Connected</Badge>
           </div>
           <span style={{ fontSize: 10.5, color: D.blue, fontFamily: D.mono, display: "flex", alignItems: "center", gap: 4 }}>
-            github.com/{data ? (data.repos[0]?.name || 'alexmr') : 'alexmr'} <ExternalLink size={9} strokeWidth={2} color={D.blue} />
+            {githubUsername ? `github.com/${githubUsername}` : "repository data unavailable"} <ExternalLink size={9} strokeWidth={2} color={D.blue} />
           </span>
         </div>
         <ChevronDown size={13} strokeWidth={2} color={D.muted}
@@ -146,15 +156,19 @@ function GitHubCard({ expanded, onToggle, data }: { expanded: boolean; onToggle:
             </div>
             <div style={{ padding: "10px 12px", borderRadius: 6, background: D.surface, border: `1px solid ${D.lineSoft}` }}>
               <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: D.muted, marginBottom: 6 }}>Top Languages</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                {langs.map((lang) => (
-                  <div key={lang.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: lang.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 10, fontWeight: 500, color: D.sub, flex: 1 }}>{lang.name}</span>
-                    <span style={{ fontSize: 9.5, color: D.muted, fontFamily: D.mono }}>{lang.pct}%</span>
-                  </div>
-                ))}
-              </div>
+              {langs.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  {langs.map((lang) => (
+                    <div key={lang.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: lang.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: 10, fontWeight: 500, color: D.sub, flex: 1 }}>{lang.name}</span>
+                      <span style={{ fontSize: 9.5, color: D.muted, fontFamily: D.mono }}>{lang.pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 10, color: D.muted, lineHeight: 1.5 }}>No repository language data available yet.</div>
+              )}
             </div>
           </div>
           {langs.length > 0 && (
@@ -175,7 +189,9 @@ function GitHubCard({ expanded, onToggle, data }: { expanded: boolean; onToggle:
               <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: D.blue }}>Latest README.md Semantic Extraction</span>
             </div>
             <p style={{ margin: 0, fontSize: 11, color: D.sub, lineHeight: 1.55, paddingLeft: 2 }}>
-              Corroborated skills in <strong style={{ color: D.blue, fontWeight: 600 }}>Distributed Systems</strong> and <strong style={{ color: D.blue, fontWeight: 600 }}>Cloud Architecture</strong>.
+              {semanticTags.length > 0
+                ? `Corroborated skills extracted from README: ${semanticTags.map((tag) => `#${tag}`).join(", ")}.`
+                : "No README content available yet for semantic extraction."}
             </p>
             <div style={{ display: "flex", gap: 5, marginTop: 7, flexWrap: "wrap", paddingLeft: 2 }}>
               {semanticTags.map((tag) => (
@@ -190,12 +206,8 @@ function GitHubCard({ expanded, onToggle, data }: { expanded: boolean; onToggle:
 }
 
 // ─── LinkedIn Accordion Card ──────────────────────────────────────────────────
-function LinkedInCard({ expanded, onToggle, data }: { expanded: boolean; onToggle: () => void; data: LinkedinProfile | null }) {
-  const experiences = data?.experiences || [
-    { title: "Senior Backend Engineer", company: "Nexus Systems Ltd.", start_date: "2020-01", end_date: null, description: "Building scalable microservices architecture" },
-    { title: "Backend Engineer", company: "DataBridge Inc.", start_date: "2017-06", end_date: "2020-01", description: "API development" },
-    { title: "Junior Developer", company: "TechStack Labs", start_date: "2015-01", end_date: "2017-06", description: "Learning full-stack development" },
-  ];
+function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boolean; onToggle: () => void; data: LinkedinProfile | null; linkedinUrl: string | null }) {
+  const experiences = data?.experiences || [];
   return (
     <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "hidden", background: D.canvas }}>
       <div
@@ -215,7 +227,7 @@ function LinkedInCard({ expanded, onToggle, data }: { expanded: boolean; onToggl
             <Badge color={D.mint} bg={D.mintSoft}><Dot color={D.mint} />Synced</Badge>
           </div>
           <span style={{ fontSize: 10.5, color: "#0A66C2", fontFamily: D.mono, display: "flex", alignItems: "center", gap: 4 }}>
-            linkedin.com/in/alex-m-richardson <ExternalLink size={9} strokeWidth={2} color="#0A66C2" />
+            {linkedinUrl ? linkedinUrl.replace("https://", "").replace("http://", "") : "LinkedIn data unavailable in current pipeline"} <ExternalLink size={9} strokeWidth={2} color="#0A66C2" />
           </span>
         </div>
         <ChevronDown size={13} strokeWidth={2} color={D.muted}
@@ -230,29 +242,39 @@ function LinkedInCard({ expanded, onToggle, data }: { expanded: boolean; onToggl
             <CheckCircle2 size={16} strokeWidth={1.8} color={D.mint} />
             <div>
               <div style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, lineHeight: 1.2 }}>Verified Employment History</div>
-              <div style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.4 }}>{experiences.length} Roles mapped with <strong style={{ color: D.mint }}>95% alignment</strong> to original CV</div>
+              <div style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.4 }}>
+                {experiences.length > 0
+                  ? `${experiences.length} roles mapped with 95% alignment to original CV`
+                  : "No LinkedIn employment history available from the current enrichment pipeline"}
+              </div>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.muted }}>Role Alignment Map</div>
-            {experiences.map((role, i) => (
-              <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "7px 10px", borderRadius: 5, background: D.surface, border: `1px solid ${D.lineSoft}`,
-              }}>
-                <Briefcase size={11} strokeWidth={1.8} color={D.muted} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: D.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{role.title}</div>
-                  <div style={{ fontSize: 9.5, color: D.muted }}>{role.company}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-                  <div style={{ width: 40, height: 3, borderRadius: 99, background: D.line, overflow: "hidden" }}>
-                    <div style={{ width: `${95 - i * 2}%`, height: "100%", background: i === 0 ? D.mint : D.blue, borderRadius: 99 }} />
+            {experiences.length > 0 ? (
+              experiences.map((role, i) => (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "7px 10px", borderRadius: 5, background: D.surface, border: `1px solid ${D.lineSoft}`,
+                }}>
+                  <Briefcase size={11} strokeWidth={1.8} color={D.muted} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: D.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{role.title}</div>
+                    <div style={{ fontSize: 9.5, color: D.muted }}>{role.company}</div>
                   </div>
-                  <span style={{ fontSize: 9.5, fontFamily: D.mono, fontWeight: 600, color: i === 0 ? D.mint : D.blue, minWidth: 28, textAlign: "right" }}>{95 - i * 2}%</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                    <div style={{ width: 40, height: 3, borderRadius: 99, background: D.line, overflow: "hidden" }}>
+                      <div style={{ width: `${95 - i * 2}%`, height: "100%", background: i === 0 ? D.mint : D.blue, borderRadius: 99 }} />
+                    </div>
+                    <span style={{ fontSize: 9.5, fontFamily: D.mono, fontWeight: 600, color: i === 0 ? D.mint : D.blue, minWidth: 28, textAlign: "right" }}>{95 - i * 2}%</span>
+                  </div>
                 </div>
+              ))
+            ) : (
+              <div style={{ padding: "8px 10px", borderRadius: 5, background: D.surface, border: `1px dashed ${D.line}`, fontSize: 10.5, color: D.muted, lineHeight: 1.5 }}>
+                LinkedIn scraping is disabled in the backend, so this view only shows real data once that pipeline is restored.
               </div>
-            ))}
+            )}
           </div>
         </div>
       )}
@@ -301,16 +323,16 @@ function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
             fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0,
           }}>AM</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: D.ink, letterSpacing: "-0.025em", lineHeight: 1.2 }}>Alex M. Richardson</div>
-            <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.4, marginTop: 1 }}>Senior Backend Engineer · San Francisco, CA</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: D.ink, letterSpacing: "-0.025em", lineHeight: 1.2 }}>Enriched candidate profile</div>
+            <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.4, marginTop: 1 }}>Real GitHub and LinkedIn payload rendered from enrichment response</div>
           </div>
           <Badge color={D.blue} bg={D.blueSoft}>Screening</Badge>
         </div>
 
         <SectionLabel>External Platform Integrations</SectionLabel>
 
-        <GitHubCard expanded={openCard === "github"} onToggle={() => toggle("github")} data={data?.github || null} />
-        <LinkedInCard expanded={openCard === "linkedin"} onToggle={() => toggle("linkedin")} data={data?.linkedin || null} />
+        <GitHubCard expanded={openCard === "github"} onToggle={() => toggle("github")} data={data?.github || null} githubUsername={data?.github_username || null} />
+        <LinkedInCard expanded={openCard === "linkedin"} onToggle={() => toggle("linkedin")} data={data?.linkedin || null} linkedinUrl={data?.linkedin_url || null} />
 
         <Divider />
 
@@ -349,14 +371,14 @@ function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
 function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }) {
   const [showBoth, setShowBoth] = useState(true);
   
-  const skillNames = ["Python", "JavaScript", "System Design", "AWS", "Docker"];
-  const preData = analytics?.technical_skill_matrix.pre_enrichment || [75, 70, 65, 80, 72];
-  const postData = analytics?.technical_skill_matrix.post_enrichment || [85, 80, 78, 88, 82];
+  const skillNames = ["Backend", "Frontend", "Cloud Dev", "InfoSec", "ML / AI"];
+  const preData = analytics?.technical_skill_matrix.pre_enrichment || [55, 52, 48, 45, 50];
+  const postData = analytics?.technical_skill_matrix.post_enrichment || [72, 70, 66, 58, 64];
 
   const data = skillNames.map((skill, i) => ({
     skill,
-    "Pre-Enrichment": preData[i],
-    "Post-Enrichment": postData[i],
+    "Pre-Enrichment": Math.max(0, Math.min(100, Math.round(preData[i] ?? 0))),
+    "Post-Enrichment": Math.max(0, Math.min(100, Math.round(postData[i] ?? 0))),
     fullMark: 100,
   }));
 
@@ -554,8 +576,9 @@ function CareerTimeline() {
 
 // ─── Right Panel — Enriched Analytics ───────────────────────────────────────────
 function EnrichedAnalytics({ data }: { data: EnrichedProfile | null }) {
-  const repoCount = data?.github?.public_repos_count || 14;
-  const skillsCount = data?.analytics?.semantic_tags?.length || 11;
+  const repoCount = data?.github?.public_repos_count ?? 0;
+  const skillsCount = data?.analytics?.semantic_tags?.length ?? 0;
+  const roleCount = data?.linkedin?.experiences?.length ?? 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: D.canvas }}>
@@ -592,7 +615,7 @@ function EnrichedAnalytics({ data }: { data: EnrichedProfile | null }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
             {[
               { icon: <GitBranch size={13} strokeWidth={1.8} color={D.blue} />, label: "Repos Corroborating", value: repoCount.toString(), sub: "public repositories", color: D.blue },
-              { icon: <CheckCircle2 size={13} strokeWidth={1.8} color={D.mint} />, label: "Roles Verified", value: "3 / 3", sub: "95% CV alignment", color: D.mint },
+              { icon: <CheckCircle2 size={13} strokeWidth={1.8} color={D.mint} />, label: "Roles Verified", value: roleCount.toString(), sub: "LinkedIn employment entries", color: D.mint },
               { icon: <Cpu size={13} strokeWidth={1.8} color={D.purple} />, label: "Skills Confirmed", value: skillsCount.toString(), sub: "from README analysis", color: D.purple },
             ].map((item, i) => (
               <div key={i} style={{ padding: "11px 13px", borderRadius: 7, background: `${item.color}08`, border: `1px solid ${item.color}20`, display: "flex", flexDirection: "column", gap: 5 }}>
@@ -612,7 +635,7 @@ function EnrichedAnalytics({ data }: { data: EnrichedProfile | null }) {
             <Globe size={10} strokeWidth={2} color={D.muted} />
             <span style={{ fontSize: 10, color: D.muted, flex: 1 }}>
               Sources: <span style={{ color: D.sub, fontWeight: 500 }}>GitHub ({repoCount} repos analyzed)</span>{" · "}
-              <span style={{ color: D.sub, fontWeight: 500 }}>LinkedIn (3 verified positions)</span>
+              <span style={{ color: D.sub, fontWeight: 500 }}>LinkedIn ({roleCount} verified positions)</span>
             </span>
             <span style={{ fontSize: 9, fontFamily: D.mono, color: D.dim }}>Just now</span>
           </div>
@@ -633,6 +656,8 @@ export default function EnrichedCandidateProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const resolvedRef = React.useRef(false);
+  const hasTriggeredSyncRef = React.useRef(false);
+  const isSyncingRef = React.useRef(false);
 
   // Set the candidateUuid in WorkspaceContext if we got a search param
   useEffect(() => {
@@ -643,13 +668,47 @@ export default function EnrichedCandidateProfilePage() {
 
   const wsRef = React.useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualCloseSocketsRef = React.useRef<WeakSet<WebSocket>>(new WeakSet());
+
+  const markResolved = React.useCallback(() => {
+    resolvedRef.current = true;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resolveFromStatus = React.useCallback(async (uuid: string): Promise<boolean> => {
+    try {
+      const status = await api.get<EnrichmentStatusResponse>(`/api/enrichment/${uuid}`);
+      if (status.enrichment_status === "ENRICHED" && status.enriched_profile) {
+        markResolved();
+        setData(status.enriched_profile);
+        setLoading(false);
+        return true;
+      }
+      if (status.enrichment_status === "ENRICHMENT_FAILED") {
+        markResolved();
+        setError("Enrichment failed");
+        setLoading(false);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to resolve enrichment status:", err);
+      return false;
+    }
+  }, [markResolved]);
 
   const connectWebSocket = React.useCallback((uuid: string) => {
+    if (resolvedRef.current) return;
+
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
     const wsUrl = apiBase.replace(/^http/, 'ws') + `/api/enrichment/ws/v1/analysis/${uuid}`;
 
     if (wsRef.current) {
-      wsRef.current.close();
+      manualCloseSocketsRef.current.add(wsRef.current);
+      wsRef.current.close(1000, "replace");
     }
 
     const ws = new WebSocket(wsUrl);
@@ -663,13 +722,17 @@ export default function EnrichedCandidateProfilePage() {
       try {
         const message: WSMessage = JSON.parse(event.data);
         if (message.status === "ENRICHED" && message.data) {
-          resolvedRef.current = true;
+          markResolved();
           setData(message.data);
           setLoading(false);
+          manualCloseSocketsRef.current.add(ws);
+          ws.close(1000, "resolved");
         } else if (message.status === "ENRICHMENT_FAILED") {
-          resolvedRef.current = true;
+          markResolved();
           setError(message.error || "Enrichment failed");
           setLoading(false);
+          manualCloseSocketsRef.current.add(ws);
+          ws.close(1000, "resolved");
         }
       } catch (err) {
         console.error("Failed to parse WebSocket message:", err);
@@ -677,25 +740,40 @@ export default function EnrichedCandidateProfilePage() {
     };
 
     ws.onerror = () => {
-      console.error("WebSocket error for:", wsUrl);
+      // Ignore transient socket errors from stale/closing connections during reconnect.
+      if (resolvedRef.current) return;
+      if (ws !== wsRef.current) return;
+      if (manualCloseSocketsRef.current.has(ws)) return;
+      console.warn("WebSocket transient error for:", wsUrl);
     };
 
     ws.onclose = (event) => {
       console.log("WebSocket disconnected, code:", event.code);
-      if (event.code !== 1000 && !resolvedRef.current) {
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log("WebSocket reconnecting...");
-          connectWebSocket(uuid);
-        }, 2500);
-      }
+      if (manualCloseSocketsRef.current.has(ws)) return;
+      if (resolvedRef.current) return;
+
+      void (async () => {
+        const resolvedByStatus = await resolveFromStatus(uuid);
+        if (!resolvedByStatus) {
+          if (resolvedRef.current) return;
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (resolvedRef.current) return;
+            console.log("WebSocket reconnecting...");
+            connectWebSocket(uuid);
+          }, 2500);
+        }
+      })();
     };
-  }, []);
+  }, [markResolved, resolveFromStatus]);
 
   // Trigger sync on load if needed
   useEffect(() => {
     if (!candidateUuid) return;
+    if (hasTriggeredSyncRef.current || isSyncingRef.current) return;
     
     const triggerSync = async () => {
+      hasTriggeredSyncRef.current = true;
+      isSyncingRef.current = true;
       try {
         setSyncing(true);
         await syncCandidateProfile(candidateUuid);
@@ -703,6 +781,8 @@ export default function EnrichedCandidateProfilePage() {
       } catch (err) {
         console.error("Failed to trigger sync:", err);
         setSyncing(false);
+      } finally {
+        isSyncingRef.current = false;
       }
     };
     
@@ -716,6 +796,7 @@ export default function EnrichedCandidateProfilePage() {
 
     return () => {
       if (wsRef.current) {
+        manualCloseSocketsRef.current.add(wsRef.current);
         wsRef.current.close(1000);
         wsRef.current = null;
       }
@@ -729,7 +810,7 @@ export default function EnrichedCandidateProfilePage() {
   if (loading) {
     return (
       <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <AppHeader />
+        <AppHeader candidateName={null} />
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
           <Loader2 size={24} strokeWidth={2} color={D.blue} style={{ animation: "spin 1s linear infinite" }} />
           <span style={{ fontSize: 14, color: D.sub }}>Enriching candidate profile...</span>
@@ -741,7 +822,7 @@ export default function EnrichedCandidateProfilePage() {
   if (error) {
     return (
       <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <AppHeader />
+        <AppHeader candidateName={null} />
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
           <AlertCircle size={24} strokeWidth={2} color={D.red} />
           <span style={{ fontSize: 14, color: D.sub }}>{error}</span>
@@ -752,7 +833,7 @@ export default function EnrichedCandidateProfilePage() {
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <AppHeader />
+      <AppHeader candidateName={data?.full_name || null} />
       <div style={{ flex: 1, display: "flex", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
         {/* Left — enrichment dashboard */}
         <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
