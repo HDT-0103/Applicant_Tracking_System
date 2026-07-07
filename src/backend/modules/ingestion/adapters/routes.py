@@ -19,7 +19,7 @@ MAX_PDF_BYTES = 10 * 1024 * 1024
 @router.post("/upload")
 async def upload_resume(
     file: Annotated[UploadFile, File(...)],
-    current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin"))],
+    current_user: Annotated[AuthUser, Depends(require_roles("hr", "admin"))],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, str | None]:
     if file.content_type not in {"application/pdf", "application/x-pdf"}:

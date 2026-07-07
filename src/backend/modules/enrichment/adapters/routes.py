@@ -10,6 +10,7 @@ from modules.enrichment.application.enrichment_service import (
     get_candidate_social_links
 )
 from modules.enrichment.domain.models import CandidateEnrichment, EnrichmentStatus
+from modules.shared.infrastructure.abac import apply_abac
 from modules.shared.infrastructure.auth_dependencies import require_roles
 from modules.shared.infrastructure.config import Settings, get_settings
 
@@ -21,7 +22,7 @@ logger = structlog.get_logger(__name__)
 async def sync_candidate_profile(
     candidate_uuid: str,
     background_tasks: BackgroundTasks,
-    current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin"))],
+    current_user: Annotated[AuthUser, Depends(require_roles("hr", "admin"))],
     settings: Annotated[Settings, Depends(get_settings)]
 ) -> dict:
     social_links = get_candidate_social_links(candidate_uuid)
@@ -82,14 +83,18 @@ async def sync_candidate_profile(
 @router.get("/{candidate_uuid}", response_model=CandidateEnrichment)
 async def get_enrichment_status(
     candidate_uuid: str,
-    current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin"))]
+    current_user: Annotated[AuthUser, Depends(require_roles("hr", "admin", "tech_lead"))]
 ) -> CandidateEnrichment:
     if candidate_uuid not in candidate_enrichments:
         return CandidateEnrichment(
             candidate_uuid=candidate_uuid,
             enrichment_status=EnrichmentStatus.QUEUED
         )
-    return candidate_enrichments[candidate_uuid]
+    enrichment = candidate_enrichments[candidate_uuid]
+    if enrichment.enriched_profile and current_user.role == "tech_lead":
+        masked = apply_abac(enrichment.enriched_profile.model_dump(), current_user.role)
+        enrichment.enriched_profile = enrichment.enriched_profile.__class__(**masked)
+    return enrichment
 
 
 @router.websocket("/ws/v1/analysis/{candidate_uuid}")
