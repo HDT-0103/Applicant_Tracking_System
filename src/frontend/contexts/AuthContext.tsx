@@ -85,15 +85,20 @@ const DEMO_USER: AuthUser = {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [user, setUser] = useState<AuthUser | null>(DEMO_USER); // Set immediately for SSR!
-  const [isLoading, setIsLoading] = useState(false); // No loading for demo mode!
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    // Auto-login as demo recruiter for testing!
+    // Restore user session from localStorage on mount
     if (typeof window !== "undefined") {
-      persistUser(DEMO_USER);
-      setStoredTokens("dummy-access-token", "dummy-refresh-token");
+      const storedUser = readStoredUser();
+      const accessToken = getStoredAccessToken();
+      
+      if (storedUser && accessToken) {
+        setUser(storedUser);
+      }
+      setIsLoading(false);
     }
   }, []);
 

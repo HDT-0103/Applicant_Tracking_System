@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     apify_api_token: str = Field(default="", alias="APIFY_API_TOKEN")
 
+    # Azure Cloud Services
+    azure_storage_connection_string: str = Field(
+        default="", alias="AZURE_STORAGE_CONNECTION_STRING"
+    )
+    azure_service_bus_connection_string: str = Field(
+        default="", alias="AZURE_SERVICE_BUS_CONNECTION_STRING"
+    )
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [

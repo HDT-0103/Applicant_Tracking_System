@@ -59,8 +59,9 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 async function getValidAccessToken(): Promise<string | null> {
-  // Always use dummy token for testing
-  return "dummy-access-token";
+  const accessToken = getStoredAccessToken();
+  if (accessToken) return accessToken;
+  return null;
 }
 
 function buildHeaders(

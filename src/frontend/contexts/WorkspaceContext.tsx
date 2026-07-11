@@ -85,12 +85,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
       const formData = new FormData();
       formData.append("file", file);
 
-      const uploadResponse = await api.post<{ uuid: string; full_name: string | null; github_username: string | null; linkedin_url: string | null }>(
-        "/api/ingestion/upload",
+      const uploadResponse = await api.post<{ status: string; candidate_uuid: string; storage_url: string; message: string }>(
+        "/api/v1/ingest",
         formData,
       );
 
-      setCandidateUuid(uploadResponse.uuid);
+      setCandidateUuid(uploadResponse.candidate_uuid);
       setStatus("SUCCESS");
     } catch (error: unknown) {
       setStatus("ERROR");
