@@ -35,6 +35,8 @@ pnpm-debug.log*
 .turbo/
 
 # Local uploads and generated assets
+Prototype Figma/
+workflows/
 uploads/
 storage/
 tmp/
@@ -48,6 +50,7 @@ temp/
 Thumbs.db
 .idea/
 .vscode/
+.cursor/
 
 # Docker and local runtime
 docker-compose.override.yml

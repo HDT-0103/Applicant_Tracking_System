@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState } from "react";
-import { mockAnalyticsService } from "../src/services/mockAnalyticsService";
+import { api } from "../services/httpClient";
 
 /* ------------------------------------------------------------------ */
 /*  Domain Types                                                        */
@@ -48,9 +48,12 @@ interface WorkspaceContextProps {
   status: IngestionStatus;
   pdfUrl: string | null;
   analyticData: CandidateAnalytics | null;
+  candidateUuid: string | null;
   errorMessage: string | null;
   uploadResume: (file: File) => Promise<void>;
   resetWorkspace: () => void;
+  syncCandidateProfile: (uuid?: string) => Promise<{ redirect: string }>;
+  setCandidateUuid: (uuid: string | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextProps | undefined>(
@@ -69,22 +72,26 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   const [analyticData, setAnalyticData] = useState<CandidateAnalytics | null>(
     null,
   );
+  const [candidateUuid, setCandidateUuid] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   /* ------ Upload handler ------ */
   const uploadResume = async (file: File) => {
     setStatus("LOADING");
     setErrorMessage(null);
-    // Create a local object URL so the PDF viewer can render immediately
     setPdfUrl(URL.createObjectURL(file));
 
     try {
-      // ===== MOCK MODE (Phase 1) =====
-      // TODO: replace with real fetch + initWebSocketPipeline() when backend is ready
-      const result = await mockAnalyticsService(file);
-      setAnalyticData(result);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadResponse = await api.post<{ status: string; candidate_uuid: string; storage_url: string; message: string }>(
+        "/api/v1/ingest",
+        formData,
+      );
+
+      setCandidateUuid(uploadResponse.candidate_uuid);
       setStatus("SUCCESS");
-      // ===== END MOCK MODE =====
     } catch (error: unknown) {
       setStatus("ERROR");
       const message =
@@ -93,28 +100,23 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /* ------ WebSocket pipeline (used in REAL MODE) ------ */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _initWebSocketPipeline = (uuid: string) => {
-    const ws = new WebSocket(`wss://ats.internal:8421/stream/${uuid}`);
+  /* ------ Sync Enrichment ------ */
+  const syncCandidateProfile = async (uuid?: string): Promise<{ redirect: string }> => {
+    const targetUuid = uuid || candidateUuid;
+    if (!targetUuid) {
+      throw new Error("No candidate UUID available for sync.");
+    }
 
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data) as {
-        type: string;
-        data: CandidateAnalytics;
-      };
-      if (payload.type === "AI_ANALYTICS_COMPLETE") {
-        setAnalyticData(payload.data);
-        setStatus("SUCCESS");
-        ws.close();
-      }
-    };
+    const response = await api.post<{ status: string; redirect: string; candidate_uuid: string }>(
+      `/api/enrichment/${targetUuid}/sync`,
+    );
 
-    ws.onerror = () => {
-      setStatus("ERROR");
-      setErrorMessage("WebSocket: Asynchronous engine failure or timeout.");
-      ws.close();
-    };
+    // Also update the context's candidateUuid if we passed one
+    if (uuid && candidateUuid !== uuid) {
+      setCandidateUuid(uuid);
+    }
+
+    return response;
   };
 
   /* ------ Reset ------ */
@@ -122,6 +124,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     setStatus("IDLE");
     setPdfUrl(null);
     setAnalyticData(null);
+    setCandidateUuid(null);
     setErrorMessage(null);
   };
 
@@ -131,9 +134,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
         status,
         pdfUrl,
         analyticData,
+        candidateUuid,
         errorMessage,
         uploadResume,
         resetWorkspace,
+        syncCandidateProfile,
+        setCandidateUuid,
       }}
     >
       {children}
