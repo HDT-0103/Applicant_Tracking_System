@@ -73,7 +73,7 @@ class ResumePipeline:
             )
             session.add(embedding_model)
         await session.commit()
-        return new_resume
+        return analysis_schema
     
     def process_batch(self, file_paths: list[str], session: AsyncSession) -> list[ResumeAnalysisSchema]:
         results = []
