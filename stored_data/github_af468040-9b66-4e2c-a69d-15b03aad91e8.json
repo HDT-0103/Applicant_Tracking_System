@@ -1,0 +1,194 @@
+{
+    "data": {
+        "public_repos_count": 36,
+        "top_languages": {
+            "Python": 60.3,
+            "Jupyter Notebook": 10.6,
+            "JavaScript": 10.4
+        },
+        "readme_content": "# HHousen's dotfiles\n\n> HHousen's configuration files managed by [chezmoi](https://github.com/twpayne/chezmoi). Uses [Zsh](https://en.wikipedia.org/wiki/Z_shell), [Antidote](https://antidote.sh/) for plugin management, [powerlevel10k](https://github.com/romkatv/powerlevel10k) as the theme, [Oh My Tmux](https://github.com/gpakosz/.tmux) for custom tmux configuration, [Atuin](https://github.com/atuinsh/atuin) for terminal history, [mise](https://mise.jdx.dev/) for runtime and CLI tool management, and some tools from [modern-unix](https://github.com/ibraheemdev/modern-unix).\n\n## Installation/Setup\n\nOptionally, before following the installation steps below, create the file `~/.config/chezmoi/chezmoi.toml` with any local template data you want to override:\n\n```toml\n[data]\n    atuin_sync_address=\"https://api.atuin.sh\"\n    manage_firefox_user_chrome=true\n    git_email=\"hayden@haydenhousen.com\"\n    git_name=\"Hayden Housen\"\n```\n\nThis file defines variables to be used by [`chezmoi`'s templates](https://github.com/twpayne/chezmoi/blob/master/docs/HOWTO.md#use-templates).\n\nExplanation of the options:\n\n- `atuin_sync_address`: URL of your Atuin sync server. Defaults to `https://api.atuin.sh`.\n- `manage_firefox_user_chrome`: Set to true to symlink [dot_firefoxUserChrome.css](./dot_firefoxUserChrome.css) into `~/.mozilla/firefox/<profile>/chrome/userChrome.css` (where `<profile>` is automatically determined and is probably your default firefox profile). This is carried out by the [run_once_after_firefox_user_chrome.sh.tmpl](./.chezmoiscripts/run_once_after_firefox_user_chrome.sh.tmpl) script. Defaults to false. The options in [dot_firefoxUserChrome.css](./dot_firefoxUserChrome.css) hide the horizontal tabs and are intended to be used with the [Tree Style Tab](https://github.com/piroor/treestyletab) firefox extension.\n- `git_email` and `git_name`: Global git user email and name set in `~/.gitconfig`. If omitted, chezmoi leaves the `[user]` section out of `~/.gitconfig`.\n\n### One Command\n\nRun `sh -c \"$(curl -fsLS git.io/chezmoi)\" -- init --apply HHousen` to get everything downloaded and installed or follow the individual steps below.\n\n### Individual Steps\n\n1. Install `chezmoi` by following [chezmoi's install guide](https://github.com/twpayne/chezmoi/blob/master/docs/INSTALL.md). You can learn more about `chezmoi` by reading their [quick start guide](https://github.com/twpayne/chezmoi/blob/master/docs/QUICKSTART.md) or [how-to guide](https://github.com/twpayne/chezmoi/blob/master/docs/HOWTO.md).\n\n2. Initialize `chezmoi` using this repository: `chezmoi init https://github.com/HHousen/dotfiles.git`.\n\n3. Preview changes that `chezmoi` would make to your `$HOME`: `chezmoi diff`.\n\n4. Apply the changes: `chezmoi apply`. This will automatically install Antidote and packages required for certain plugins using the [run_once_install-packages.sh.tmpl](./.chezmoiscripts/run_once_install-packages.sh.tmpl) script. Upon the first launch, Antidote will initialize the plugins liste\n\n# Speaker Change Detection (and Segmentation)\n\n> Implementation of [\"End-to-end speaker segmentation for overlap-aware resegmentation\"](https://arxiv.org/abs/2104.04045) with modifications for speaker change detection. Learn more in the [presentation](./media/Speaker%20Change%20Detection%20Presentation.pdf).\n\n[![GitHub license](https://img.shields.io/github/license/HHousen/speaker-change-detection.svg)](https://github.com/HHousen/speaker-change-detection/blob/master/LICENSE) [![Github commits](https://img.shields.io/github/last-commit/HHousen/speaker-change-detection.svg)](https://github.com/HHousen/speaker-change-detection/commits/master) [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/) [![GitHub issues](https://img.shields.io/github/issues/HHousen/speaker-change-detection.svg)](https://GitHub.com/HHousen/speaker-change-detection/issues/) [![GitHub pull-requests](https://img.shields.io/github/issues-pr/HHousen/speaker-change-detection.svg)](https://GitHub.com/HHousen/speaker-change-detection/pull/)\n\nThis code is based on [pyannote/pyannote-audio](https://github.com/pyannote/pyannote-audio/). Some functions are identical to those in `pyannote.audio`, some are slightly modified, and some are heavily modified. Additionally, there is novel code to perform speaker change detection and to connect everything together.\n\nThis code can prepare data, train, and perform inference for two different tasks: speaker change detection and speaker segmentation. However, the outputs from both models/configurations can be processed into speaker change points.\n\n**Model Weights** (including short_scd_bigdata.ckpt): [Available from this HuggingFace repo](https://huggingface.co/HHousen/speaker-change-detection/tree/main).\n\nTraining GIFs (more details in the [presentation](./media/Speaker%20Change%20Detection%20Presentation.pdf)):\n\nSpeaker Change Detection | Segmentation\n:-----------------------:|:--------------------:\n![](./media/SCD.gif) | ![](./media/segmentation.gif)\n\nSpeaker change detection identifies timestamps where the active speaker changes. If someone starts speaking, stops speaking, and starting speaking again (and no one else started speaking while they were not speaking), no speaker change occurs. If two people are speaking and one of them stops or another person starts speaking, a speaker change occurs. See slide 6 of [the presentation](./media/Speaker%20Change%20Detection%20Presentation.pdf).\n\nSegmentation splits a conversation into turns. It identifies when people are speaking. This is not voice activity detection since if multiple people are talking the model will output probabilities indicating multiple speakers. This is not speaker diarization because speakers are not identified for the entire length of an audio file.\n\nThe code is mostly organized according to [PyTorch Lightning](https://pytorch-lightning.readthedocs.io/en/latest/)'s structure. Package management is handled by [Poetry](https://\n\n# Lecture2Notes\n\n> Convert lecture videos to notes using AI & machine learning.\n\n[![GitHub license](https://img.shields.io/github/license/HHousen/lecture2notes.svg)](https://github.com/HHousen/lecture2notes/blob/master/LICENSE) [![Github commits](https://img.shields.io/github/last-commit/HHousen/lecture2notes.svg)](https://github.com/HHousen/lecture2notes/commits/master) [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/) [![Documentation Status](https://readthedocs.org/projects/lecture2notes/badge/?version=latest)](https://lecture2notes.readthedocs.io/en/latest/?badge=latest) [![GitHub issues](https://img.shields.io/github/issues/HHousen/lecture2notes.svg)](https://GitHub.com/HHousen/lecture2notes/issues/) [![GitHub pull-requests](https://img.shields.io/github/issues-pr/HHousen/lecture2notes.svg)](https://GitHub.com/HHousen/lecture2notes/pull/) [![DeepSource](https://static.deepsource.io/deepsource-badge-light-mini.svg)](https://deepsource.io/gh/HHousen/lecture2notes/?ref=repository-badge)\n\n**[Website](https://lecture2notes.com/)** / **[Research Paper](https://haydenhousen.com/media/lecture2notes-paper-v1.pdf)** / **[Documentation](https://lecture2notes.readthedocs.io/en/latest)** / **[Project Page](https://haydenhousen.com/projects/lecture2notes/)**\n\n**Lecture2Notes** is a project that **summarizes lectures videos**. At a high level, it parses both the **visual** and **auditory** components of the video, **extracts text** from each, **combines** them, and then **summarizes** the combined text using **automatic** summarization algorithms. These pages document the code for the entirety of \"[Lecture2Notes: Summarizing Lecture Videos by Classifying Slides and Analyzing Text using Machine Learning](https://haydenhousen.com/media/lecture2notes-paper-v1.pdf).\"\n\nCheck out **[the documentation](https://lecture2notes.readthedocs.io/en/latest)** for usage details. To get started summarizing text, visit **[the tutorial](https://lecture2notes.readthedocs.io/en/latest/getting-started/tutorial.html)**.\n\n**Visit [lecture2notes.com](https://lecture2notes.com/) to convert your own lectures to notes!**\n\n## Abstract\n\nNote-taking is a universal activity among students because of its benefits to the learning process. This research focuses on end-to-end generation of formatted summaries of lecture videos. Our automated multimodal approach will decrease the time required to create notes, increase quiz scores and content knowledge, and enable faster learning through enhanced previewing. The project is broken into three main components: the slide classifier, summarization models, and end-to-end-process. The system beings by extracting important keyframes using the slide classifier, a deep CNN. Then, unique slides are determined using a combination of clustering and keypoint matching. The structure of these unique slides is analyzed and converted to a formatted transcript that includes figures present on the slides. \n\n# HHousen's HackTheBox Writeups\n\n> HHousen's writeups to various [HackTheBox](https://hackthebox.com) machines and challenges.\n\n## What is HackTheBox?\n\n\"Hack The Box is an online platform allowing you to test your penetration testing skills and exchange ideas and methodologies with thousands of people in the security field.\" - [hackthebox.com](https://hackthebox.com)\n\n\"**Machines/Boxes** are instances of vulnerable virtual machines. These are virtualized services, virtualized operating systems, and virtualized hardware. Boxes can host different Operating Systems; Linux, Windows, FreeBSD, and more.\"\n\n\"**Challenges** are bite-sized applications for different pentesting techniques.\" They are similar to traditional CTF-style tasks.\n\nMore info about the structure of HackTheBox can be found on the [HTB knowledge base](https://help.hackthebox.com/en/articles/5185158-gs-introduction-to-hack-the-box).\n\n## Machines\n\n1. [9th May 2020 - OpenAdmin (Easy)](Machines/OpenAdmin/README.md) (0 points)\n2. [2nd December 2020 - Doctor (Easy)](Machines/Doctor/README.md) (0 points)\n3. [13th February 2022 - Horizontall (Easy)](Machines/Horizontall/README.md) (0 points)\n4. [14th February 2022 - Paper (Easy)](Machines/Paper/README.md) (10+20 points)\n5. [17th February 2022 - Secret (Easy)](Machines/Secret/README.md) (10+20 points)\n6. [18th February 2022 - Devzat (Medium)](Machines/Secret/README.md) (15+30 points)\n7. [20th February 2022 - Driver (Easy)](Machines/Driver/README.md) (10+20 points)\n8. [21st February 2022 - Backdoor (Easy)](Machines/Backdoor/README.md) (10+20 points)\n9. [23rd February 2022 - Pandora (Easy)](Machines/Pandora/README.md) (10+20 points)\n10. [25th February 2022 - Shibboleth (Medium)](Machines/Shibboleth/README.md) (15+30 points)\n11. [26th February 2022 - Meta (Medium)](Machines/Meta/README.md) (15+30 points)\n12. [28th February 2022 - AdmirerToo (Hard)](Machines/AdmirerToo/README.md) (20+40 points)\n13. [1st March 2022 - RouterSpace (Easy)](Machines/RouterSpace/README.md) (10+20 points)\n14. [24th July 2022 - Timelapse (Easy)](Machines/Timelapse/README.md) (10+20 points)\n15. [25th July 2022 - Noter (Medium)](Machines/Noter/README.md) (15+30 points)\n16. [26th July 2022 - Talkative (Hard)](Machines/Talkative/README.md) (20+40 points)\n17. [27th July 2022 - OpenSource (Easy)](Machines/OpenSource/README.md) (10+20 points)\n18. [28th July 2022 - Faculty (Medium)](Machines/Faculty/README.md) (15+30 points)\n19. [29th July 2022 - StreamIO (Medium)](Machines/StreamIO/README.md) (15+30 points)\n20. [31st July 2022 - Carpediem (Hard)](Machines/Carpediem/README.md) (20+40 points)\n21. [1st August 2022 - RedPanda (Easy)](Machines/RedPanda/README.md) (10+20 points)\n22. [2nd August 2022 - Support (Easy)](Machines/Support/README.md) (10+20 points)\n23. [3rd August 2022 - Shared (Medium)](Machines/Shared/README.md) (15+30 points)\n24. [4th August 2022 - Scrambled (Medium)](Machines/Scrambled/README.md) (15+30 points)\n25. [5th August 2022 - Retired (Medium)](Machines/Retired/RE\n\n![DocSum Logo](docsum.png)\n# DocSum\n> A tool to automatically summarize documents (or plain text) using either the BART or PreSumm Machine Learning Model.\n\n[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/hhousen/docsum/blob/master/DocSum.ipynb)\n\n**BART** ([BART: Denoising Sequence-to-Sequence Pre-training for Natural Language Generation, Translation, and Comprehension](https://arxiv.org/pdf/1910.13461.pdf)) is the state-of-the-art in text summarization as of 02/02/2020. It is a \"sequence-to-sequence model trained with denoising as pretraining objective\" ([Documentation & Examples](https://github.com/pytorch/fairseq/blob/master/examples/bart/README.md)).\n\n**PreSumm** ([Text Summarization with Pretrained Encoders](https://arxiv.org/pdf/1908.08345.pdf)) applies BERT (Bidirectional Encoder Representations from Transformers) to text summarization by using \"a novel document-level encoder based on BERT which is able to express the semantics of a document and obtain representations for its sentences.\" BERT represented \"the latest incarnation of pretrained language models which have recently advanced a wide range of natural language processing tasks\" at the time of writing ([Documentation & Examples](https://github.com/nlpyang/PreSumm)).\n\n## Tasks\n\n1. Convert a PDF to XML and then interpret that XML file using the `font` property of each `text` element using [main.py](main.py). Utilizes the [xml.etree.elementtree](https://docs.python.org/3/library/xml.etree.elementtree.html) python library.\n2. Summarize raw text input using [cmd_summarizer.py](cmd_summarizer.py). You can run this in Google Colaboratory by clicking this button: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/hhousen/docsum/blob/master/DocSum.ipynb)\n3. Summarize multiple text files using [presumm/run_summarization.py](presumm/run_summarization.py)\n\n## Getting Started\nThese instructions will get you a copy of the project up and running on your local machine.\n\n### Prerequisites\n* [Python](https://www.python.org/)\n* [Git](https://git-scm.com/)\n* [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/)\n\n### Installation\n\n```bash\nsudo apt install poppler-utils\ngit clone https://github.com/HHousen/docsum.git\ncd docsum\nconda env create --file environment.yml\nconda activate docsum\n```\n\n### To convert PDF to XML\n\n```\npdftohtml input.pdf -i -s -c -xml output.xml\n```\n\n## Project Structure\n```bash\nDocSum\n├── bart_sum.py\n├── cmd_summarizer.py\n├── docsum.png\n├── environment.yml\n├── LICENSE\n├── main.py\n├── presumm\n│   ├── configuration_bertabs.py\n│   ├── __init__.py\n│   ├── modeling_bertabs.py\n│   ├── presumm.py\n│   ├── run_summarization.py\n│   └── utils_summarization.py\n├── README.md\n└── xml_processor.py\n```\n\n## Usage\nOutput of `python main.py --help`:\n```\nusage: main.py [-h] [-t {pdf,xml}] [-m {bart,presumm}] [--bart_checkpoint PATH] [--bart_state",
+        "repos": [
+            {
+                "name": "dotfiles",
+                "language": "Shell",
+                "size": 52
+            },
+            {
+                "name": "speaker-change-detection",
+                "language": "Jupyter Notebook",
+                "size": 8212
+            },
+            {
+                "name": "lecture2notes",
+                "language": "Jupyter Notebook",
+                "size": 10849
+            },
+            {
+                "name": "hack-the-box",
+                "language": "JavaScript",
+                "size": 32407
+            },
+            {
+                "name": "DocSum",
+                "language": "Python",
+                "size": 117
+            },
+            {
+                "name": "hh-personal",
+                "language": "HTML",
+                "size": 9349
+            },
+            {
+                "name": "hugo-resume",
+                "language": "SCSS",
+                "size": 7865
+            },
+            {
+                "name": "TransformerSum",
+                "language": "Python",
+                "size": 12286
+            },
+            {
+                "name": "PicoCTF-2022",
+                "language": "Python",
+                "size": 2323
+            },
+            {
+                "name": "object-discovery-pytorch",
+                "language": "Python",
+                "size": 11280
+            },
+            {
+                "name": "resume",
+                "language": "HTML",
+                "size": 789
+            },
+            {
+                "name": "PicoCTF-2021",
+                "language": "C",
+                "size": 84652
+            },
+            {
+                "name": "advent-of-code",
+                "language": "Python",
+                "size": 865
+            },
+            {
+                "name": "NCS-Competition",
+                "language": "Python",
+                "size": 37431
+            },
+            {
+                "name": "PicoCTF-2019",
+                "language": "Python",
+                "size": 59690
+            },
+            {
+                "name": "HHousen",
+                "language": null,
+                "size": 8
+            },
+            {
+                "name": "beets",
+                "language": "Python",
+                "size": 24718
+            },
+            {
+                "name": "ArXiv-PubMed-Sum",
+                "language": "Python",
+                "size": 309
+            },
+            {
+                "name": "kadtk",
+                "language": "Python",
+                "size": 171694
+            },
+            {
+                "name": "DeepSpeed",
+                "language": "Python",
+                "size": 206667
+            },
+            {
+                "name": "WikiHow-Dataset",
+                "language": "Python",
+                "size": 1500
+            },
+            {
+                "name": "whisperX",
+                "language": "Python",
+                "size": 24056
+            },
+            {
+                "name": "ai-respiratory-doctor-electron",
+                "language": "CSS",
+                "size": 94300
+            },
+            {
+                "name": "HTB-CyberSanta-2021",
+                "language": "Python",
+                "size": 11675
+            },
+            {
+                "name": "fruit-classifier-app-flask",
+                "language": "Python",
+                "size": 79359
+            },
+            {
+                "name": "willihaveasnowday",
+                "language": "SCSS",
+                "size": 4951
+            },
+            {
+                "name": "try-hack-me",
+                "language": null,
+                "size": 488
+            },
+            {
+                "name": "GPT-Impostor",
+                "language": "Python",
+                "size": 228
+            },
+            {
+                "name": "dreamerv3",
+                "language": "Python",
+                "size": 63
+            },
+            {
+                "name": "ravens",
+                "language": "Python",
+                "size": 5538
+            },
+            {
+                "name": "ai-respiratory-doctor",
+                "language": "Jupyter Notebook",
+                "size": 95476
+            },
+            {
+                "name": "fruit-classifier-app-node",
+                "language": "JavaScript",
+                "size": 79378
+            },
+            {
+                "name": "deepsegment",
+                "language": "Python",
+                "size": 89
+            },
+            {
+                "name": "noaa",
+                "language": "Python",
+                "size": 96
+            },
+            {
+                "name": "learning-seq2seq",
+                "language": "Python",
+                "size": 50
+            },
+            {
+                "name": "hhousen.github.io",
+                "language": null,
+                "size": 16
+            }
+        ]
+    },
+    "saved_at": "2026-07-04T07:49:55.827467+00:00"
+}

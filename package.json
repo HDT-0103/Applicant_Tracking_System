@@ -6,19 +6,23 @@
     "dev": "next dev src/frontend",
     "build": "next build src/frontend",
     "start": "next start src/frontend",
-    "lint": "next lint src/frontend"
+    "lint": "next lint src/frontend",
+    "backend:dev": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --reload --host 0.0.0.0 --port 8000 --app-dir src/backend",
+    "backend:start": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend"
   },
   "dependencies": {
+    "@react-oauth/google": "^0.13.5",
+    "lucide-react": "^0.468.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.468.0",
     "recharts": "^2.15.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.9",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "env-cmd": "^10.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2"
