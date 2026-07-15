@@ -1,0 +1,107 @@
+name: SmartATS Continuous Integration & Deployment
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  # ==========================================
+  # JOB 1: KIỂM THỬ VÀ LÀM SẠCH BACKEND (FASTAPI)
+  # ==========================================
+  backend-ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/backend # Chạy lệnh bên trong folder backend
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip' # Tự động cache các thư viện để lần sau chạy nhanh hơn
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install pytest httpx # Cài thêm công cụ test nếu chưa có trong requirements
+
+    - name: Run Code Linter (Flake8)
+      run: |
+        pip install flake8
+        # Dừng build nếu có lỗi cú pháp hoặc lỗi hệ thống
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Cảnh báo các lỗi format thông thường nhưng không làm sập build
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run Backend Unit Tests (PyTest)
+      env:
+        # Giả lập môi trường test, tránh kết nối thật vào DB hệ thống
+        DATABASE_URL: "postgresql+asyncpg://test:test@localhost:5432/test_db"
+      run: |
+        # Chạy kiểm thử tự động cho các route/gateway ông vừa viết
+        pytest
+
+  # ==========================================
+  # JOB 2: KIỂM THỬ VÀ BUILD FRONTEND (REACT)
+  # ==========================================
+  frontend-ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend # Chạy lệnh bên trong folder frontend
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: 'npm' # Tự động cache node_modules
+
+    - name: Install Frontend Dependencies
+      run: npm ci # Sử dụng 'ci' thay vì 'install' để đảm bảo cài đúng version trong package-lock.json
+
+    - name: Check Code Quality & Formatting
+      run: npm run lint --if-present
+
+    - name: Build React Application
+      run: npm run build
+
+  # ==========================================
+  # JOB 3: DEPLOYMENT (CHỈ CHẠY KHI MERGE VÀO MAIN VÀ CI TRÊN ĐÃ PASS)
+  # ==========================================
+  deploy:
+    needs: [backend-ci, frontend-ci] # Phải pass hết test ở trên mới cho deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Cloud Deployment Placeholder
+      run: |
+        echo "Tất cả các bài test cho Ingestion Module và Frontend đã PASS!"
+        echo "Đang kích hoạt quy trình CD để đẩy container lên Azure..."
+        # Sau này khi deploy lên Azure, ông sẽ thêm các step dùng Azure login 
+        # và Azure Web App deploy/Docker build vào đây.
+
+  database-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Supabase CLI
+      run: npm install -g supabase
+
+    - name: Start Supabase Local Emulator
+      run: supabase start
+
+    - name: Verify Database Migrations
+      run: supabase db test # Chạy các bài test schema để đảm bảo không ai làm lỗi cấu trúc DB
