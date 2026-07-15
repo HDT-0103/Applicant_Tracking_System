@@ -4,10 +4,10 @@ from backend.app.services.llm_provider import GroqProvider
 from backend.app.services.llm_service import LLMService
 from backend.app.services.embedding_service import EmbeddingService
 from backend.app.services.parser_service import ParserService
-from backend.app.schemas.resume_analysis import ResumeAnalysis
+from backend.app.schemas.resume_analysis import ResumeAnalysis as ResumeAnalysisSchema
 from backend.app.repositories.resume_analysis_repository import ResumeAnalysisRepository
 from backend.app.repositories.resume_repository import ResumeRepository
-from backend.app.models import Resume, ResumeAnalysis, ResumeEmbedding
+from backend.app.models import Resume, ResumeAnalysis as ResumeAnalysisModel, ResumeEmbedding as ResumeEmbeddingModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 class ResumePipeline:
@@ -16,7 +16,7 @@ class ResumePipeline:
         self.llm_service = LLMService(provider=GroqProvider()) 
         self.embedding_service = EmbeddingService()
         
-    async def process(self, file_path: str, user_id: int, session: AsyncSession) -> ResumeAnalysis:
+    async def process(self, file_path: str, user_id: int, session: AsyncSession) -> ResumeAnalysisSchema:
         resume_repo = ResumeRepository(session)
         analysis_repo = ResumeAnalysisRepository(session)
         embedding_repo = ResumeEmbeddingRepository(session)
@@ -36,13 +36,13 @@ class ResumePipeline:
         strengths = self.llm_service.extract_strengths(analysis)
         # Step 7: Extract weaknesses from the resume
         weaknesses = self.llm_service.extract_weaknesses(analysis)
-        analysis = ResumeAnalysis(
+        analysis_schema = ResumeAnalysisSchema(
             summary=summary,
             skills=skills,
             strengths=strengths,
             weaknesses=weaknesses,
-            experience=experience
-        )
+            experience=experience,
+)
         # Step 8: Generate embeddings for the resume
         embeddings = self.embedding_service.embed_resume(analysis)
         
@@ -52,25 +52,30 @@ class ResumePipeline:
             await session.flush() # Bắt buộc flush để có new_resume.id
 
             # Lưu Analysis
-            analysis = ResumeAnalysis(resume_id=new_resume.id, 
-                                      summary=summary,
-                                      skills=skills,
-                                      strengths=strengths,
-                                      weaknesses=weaknesses,
-                                      experience=experience)
-            session.add(analysis)
+            analysis_model = ResumeAnalysisModel(
+                resume_id=new_resume.id,
+                model_name="groq",
+                summary=summary,
+                skills=skills,
+                strengths=strengths,
+                weaknesses=weaknesses,
+                experience=experience,
+            )
+            session.add(analysis_model)
 
             # Lưu Embedding
-            embeddings = ResumeEmbedding(resume_id=new_resume.id,
-                                         summary_embedding=embeddings['summary_embedding'],
-                                         skills_embedding=embeddings['skills_embedding'], 
-                                         experience_embedding=embeddings['experience_embedding'],
-                                         model_name=embeddings['model_name'])
-            session.add(embeddings)
+            embedding_model = ResumeEmbeddingModel(
+                resume_id=new_resume.id,
+                summary_embedding=embeddings.summary_embedding,
+                skills_embedding=embeddings.skills_embedding,
+                experience_embedding=embeddings.experience_embedding,
+                model_name="intfloat/multilingual-e5-base",
+            )
+            session.add(embedding_model)
         await session.commit()
-        return new_resume
+        return analysis_schema
     
-    def process_batch(self, file_paths: list[str], session: AsyncSession) -> list[ResumeAnalysis]:
+    def process_batch(self, file_paths: list[str], session: AsyncSession) -> list[ResumeAnalysisSchema]:
         results = []
         for file_path in file_paths:
             result = self.process(file_path, session)
