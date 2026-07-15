@@ -14,17 +14,21 @@ class WebSocketConnectionManager:
         self.active_connections[job_id].append(websocket)
 
     async def disconnect(self, job_id: str, websocket: WebSocket):
-        if job_id in self.active_connections:
-            self.active_connections[job_id].remove(websocket)
-            if not self.active_connections[job_id]:
-                del self.active_connections[job_id]
+        connections = self.active_connections.get(job_id)
+        if not connections:
+            return
+        try:
+            connections.remove(websocket)
+        except ValueError:
+            return
+        if not connections:
+            del self.active_connections[job_id]
 
     async def broadcast(self, job_id: str, message: dict):
-        if job_id in self.active_connections:
-            for connection in self.active_connections[job_id]:
-                try:
-                    await connection.send_text(json.dumps(message))
-                except Exception:
-                    await self.disconnect(job_id, connection)
+        for connection in list(self.active_connections.get(job_id, [])):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                await self.disconnect(job_id, connection)
 
 manager = WebSocketConnectionManager()
