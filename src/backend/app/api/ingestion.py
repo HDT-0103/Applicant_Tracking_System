@@ -12,8 +12,8 @@ async def upload_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db_session)
 ):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail = "Only PDF files are accepted!")
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted!")
     headerBytes = await file.read(4)
     await file.seek(0)
     if headerBytes != b'%PDF': 
