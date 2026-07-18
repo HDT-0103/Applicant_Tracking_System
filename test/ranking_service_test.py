@@ -1,9 +1,9 @@
-from backend.app.services.embedding_service import EmbeddingService
-from backend.app.services.ranking_service import RankingService
+from src.backend.app.services.embedding_service import EmbeddingService
+from src.backend.app.services.ranking_service import RankingService
 
 
-from backend.app.schemas.resume_analysis import ResumeAnalysis
-from backend.app.schemas.requirement_analysis import RequirementAnalysis
+from src.backend.app.schemas.resume_analysis import ResumeAnalysis
+from src.backend.app.schemas.requirement_analysis import RequirementAnalysis
 
 
 requirement = RequirementAnalysis(
