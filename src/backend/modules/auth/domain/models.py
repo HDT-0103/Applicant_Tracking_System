@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
-UserRole = Literal["recruiter", "interviewer", "admin"]
+UserRole = Literal["recruiter", "interviewer", "admin", "tech_lead", "hr"]
 
 
 class AuthUser(BaseModel):

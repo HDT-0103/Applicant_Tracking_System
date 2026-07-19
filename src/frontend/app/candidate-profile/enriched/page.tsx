@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis,
   PolarRadiusAxis, ResponsiveContainer, Tooltip,
@@ -10,12 +10,17 @@ import {
   Github, Linkedin, CheckCircle2, ChevronDown, TrendingUp,
   BookOpen, Briefcase, GraduationCap, ExternalLink, Zap,
   AlertCircle, Clock, Layers, Shield, GitBranch, Cpu, Globe,
-  Loader2,
+  Loader2, Calendar,
 } from "lucide-react";
 import { D, Dot, Badge, SectionLabel, Divider } from "../../../lib/shared";
 import { AppHeader } from "../../../components/AppHeader";
+import { useAuth } from "../../../contexts/AuthContext";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { api } from "../../../services/httpClient";
+import {
+  submitReview, getReviewStatus, resolveConflict,
+  type ReviewStatus, type ReviewDecision,
+} from "../../../services/reviewService";
 
 /* --- Types --- */
 
@@ -670,10 +675,14 @@ function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
 }
 
 // ─── Right Panel — Enriched Analytics ───────────────────────────────────────────
-function EnrichedAnalytics({ data }: { data: EnrichedProfile | null }) {
+function EnrichedAnalytics({ data, userRole, candidateUuid, reviewStatus, onRefreshReview }: {
+  data: EnrichedProfile | null; userRole: string; candidateUuid: string; reviewStatus: ReviewStatus | null; onRefreshReview: () => void;
+}) {
+  const router = useRouter();
   const repoCount = data?.github?.public_repos_count ?? 0;
   const skillsCount = data?.analytics?.semantic_tags?.length ?? 0;
   const roleCount = data?.linkedin?.experiences?.length ?? 0;
+  const canSchedule = userRole === "hr" && reviewStatus?.overall_status === "ready_to_schedule";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: D.canvas }}>
@@ -735,7 +744,157 @@ function EnrichedAnalytics({ data }: { data: EnrichedProfile | null }) {
             <span style={{ fontSize: 9, fontFamily: D.mono, color: D.dim }}>Just now</span>
           </div>
         </div>
+        <Divider />
+        <ReviewPanel candidateUuid={candidateUuid} userRole={userRole} reviewStatus={reviewStatus} onRefresh={onRefreshReview} />
+        {canSchedule ? (
+          <button
+            onClick={() => router.push(`/schedule?name=${encodeURIComponent(data?.full_name || "Candidate")}`)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              padding: "10px 14px", border: "none", borderRadius: 6,
+              background: D.blue, color: "#fff", fontSize: 12, fontWeight: 700,
+              cursor: "pointer", width: "100%", transition: "all 0.15s ease",
+            }}
+          >
+            <Calendar size={13} strokeWidth={2} />
+            Schedule Interview
+          </button>
+        ) : userRole === "hr" && (
+          <div style={{ fontSize: 10, color: D.muted, textAlign: "center", padding: "8px", border: `1px dashed ${D.line}`, borderRadius: 5 }}>
+            {reviewStatus?.overall_status === "waiting" ? "⏳ Waiting for both reviewers to approve before scheduling" :
+             reviewStatus?.overall_status === "rejected" ? "❌ Candidate rejected — scheduling unavailable" :
+             reviewStatus?.overall_status === "conflict" ? "⚠️ Resolve the split decision before scheduling" :
+             "Submit your review above"}
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ─── Review Panel ──────────────────────────────────────────────────────────────
+function ReviewPanel({
+  candidateUuid, userRole, reviewStatus, onRefresh,
+}: {
+  candidateUuid: string; userRole: string; reviewStatus: ReviewStatus | null; onRefresh: () => void;
+}) {
+  const [decision, setDecision] = useState<ReviewDecision | null>(null);
+  const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [resolveDec, setResolveDec] = useState<ReviewDecision | null>(null);
+
+  const myDecision = userRole === "hr" ? reviewStatus?.hr_decision : reviewStatus?.tl_decision;
+  const otherLabel = userRole === "hr" ? "Tech Lead" : "HR";
+  const otherDecision = userRole === "hr" ? reviewStatus?.tl_decision : reviewStatus?.hr_decision;
+  const otherText = userRole === "hr" ? reviewStatus?.tl_review_text : reviewStatus?.hr_review_text;
+
+  const handleSubmit = async () => {
+    if (!decision) return;
+    setSubmitting(true);
+    try {
+      await submitReview(candidateUuid, decision, text);
+      onRefresh();
+    } catch { /* ignore */ }
+    setSubmitting(false);
+  };
+
+  const handleResolve = async () => {
+    if (!resolveDec) return;
+    setSubmitting(true);
+    try {
+      await resolveConflict(candidateUuid, resolveDec);
+      onRefresh();
+    } catch { /* ignore */ }
+    setSubmitting(false);
+  };
+
+  const status = reviewStatus?.overall_status || "waiting";
+
+  return (
+    <div style={{ marginBottom: 20, padding: "12px 14px", borderRadius: 7, border: `1px solid ${D.line}`, background: D.surface }}>
+      <SectionLabel>CV Review</SectionLabel>
+
+      {!reviewStatus ? (
+        <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 5, border: `1px solid ${D.line}`, background: D.surface }}>
+          <div style={{ fontSize: 10, color: D.muted, textAlign: "center" }}>⏳ Loading review status…</div>
+        </div>
+      ) : myDecision === "pending" && userRole === "hr" && reviewStatus.tl_decision === "pending" ? (
+        <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 5, border: `1px solid ${D.amber}30`, background: `${D.amber}08` }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: D.amber, textAlign: "center" }}>
+            ⏳ Tech Lead must submit their review first
+          </div>
+        </div>
+      ) : myDecision === "pending" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => setDecision("approved")}
+              style={{ flex: 1, padding: "6px 0", border: `1px solid ${decision === "approved" ? D.mint : D.line}`, borderRadius: 5, background: decision === "approved" ? D.mintSoft : D.canvas, fontSize: 11, fontWeight: 600, color: decision === "approved" ? D.mint : D.sub, cursor: "pointer" }}>
+              ✓ Approve
+            </button>
+            <button onClick={() => setDecision("rejected")}
+              style={{ flex: 1, padding: "6px 0", border: `1px solid ${decision === "rejected" ? D.red : D.line}`, borderRadius: 5, background: decision === "rejected" ? "#FEE2E2" : D.canvas, fontSize: 11, fontWeight: 600, color: decision === "rejected" ? D.red : D.sub, cursor: "pointer" }}>
+              ✗ Reject
+            </button>
+          </div>
+          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Add notes (required if rejecting)…"
+            style={{ width: "100%", minHeight: 50, padding: "6px 8px", border: `1px solid ${D.line}`, borderRadius: 4, fontSize: 10.5, fontFamily: D.font, resize: "vertical" }} />
+          <button onClick={handleSubmit} disabled={!decision || submitting}
+            style={{ padding: "6px 0", border: "none", borderRadius: 5, background: D.blue, color: "#fff", fontSize: 11, fontWeight: 600, cursor: decision && !submitting ? "pointer" : "default", opacity: decision && !submitting ? 1 : 0.5 }}>
+            {submitting ? "Submitting…" : "Submit Review"}
+          </button>
+        </div>
+      )}
+
+      {/* Status display */}
+      <div style={{ marginTop: 10, fontSize: 10.5, display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: D.muted }}>Your decision:</span>
+          <span style={{ fontWeight: 600, color: myDecision === "approved" ? D.mint : myDecision === "rejected" ? D.red : D.dim }}>
+            {myDecision === "pending" ? "Not submitted" : myDecision === "approved" ? "Approved" : "Rejected"}
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: D.muted }}>{otherLabel}:</span>
+          <span style={{ fontWeight: 600, color: otherDecision === "approved" ? D.mint : otherDecision === "rejected" ? D.red : D.dim }}>
+            {otherDecision === "pending" ? "Waiting…" : otherDecision === "approved" ? "Approved" : "Rejected"}
+          </span>
+        </div>
+      </div>
+
+      {otherText && otherDecision !== "pending" && (
+        <div style={{ marginTop: 6, fontSize: 10, color: D.muted, padding: "5px 8px", background: D.canvas, borderRadius: 4, border: `1px solid ${D.line}` }}>
+          <strong>{otherLabel}'s notes:</strong> {otherText}
+        </div>
+      )}
+
+      {/* Status alerts */}
+      {status === "waiting" && <div style={{ marginTop: 8, fontSize: 10, color: D.amber, fontWeight: 600, textAlign: "center" }}>⏳ Waiting for both reviewers to submit…</div>}
+      {status === "ready_to_schedule" && <div style={{ marginTop: 8, fontSize: 10, color: D.mint, fontWeight: 600, textAlign: "center" }}>✅ Both approved — ready to schedule</div>}
+      {status === "rejected" && <div style={{ marginTop: 8, fontSize: 10, color: D.red, fontWeight: 600, textAlign: "center" }}>❌ Both rejected — notification sent</div>}
+
+      {status === "conflict" && (
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 5, border: `1px solid ${D.amber}30`, background: `${D.amber}08` }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: D.amber, marginBottom: 6 }}>⚠️ Split decision — {userRole === "hr" ? "you make the final call" : "waiting for HR"}</div>
+          {userRole === "hr" && (
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => setResolveDec("approved")}
+                style={{ flex: 1, padding: "5px 0", border: `1px solid ${resolveDec === "approved" ? D.mint : D.line}`, borderRadius: 4, background: resolveDec === "approved" ? D.mintSoft : D.canvas, fontSize: 10.5, fontWeight: 600, color: resolveDec === "approved" ? D.mint : D.sub, cursor: "pointer" }}>
+                Override Accept
+              </button>
+              <button onClick={() => setResolveDec("rejected")}
+                style={{ flex: 1, padding: "5px 0", border: `1px solid ${resolveDec === "rejected" ? D.red : D.line}`, borderRadius: 4, background: resolveDec === "rejected" ? "#FEE2E2" : D.canvas, fontSize: 10.5, fontWeight: 600, color: resolveDec === "rejected" ? D.red : D.sub, cursor: "pointer" }}>
+                Reject
+              </button>
+            </div>
+          )}
+          {userRole === "hr" && resolveDec && (
+            <button onClick={handleResolve} disabled={submitting}
+              style={{ marginTop: 6, width: "100%", padding: "5px 0", border: "none", borderRadius: 4, background: D.blue, color: "#fff", fontSize: 10.5, fontWeight: 600, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.5 : 1 }}>
+              {submitting ? "Submitting…" : "Confirm Final Decision"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -745,11 +904,13 @@ export default function EnrichedCandidateProfilePage() {
   const searchParams = useSearchParams();
   const candidateUuid = searchParams.get('uuid');
   const { syncCandidateProfile, setCandidateUuid } = useWorkspace();
+  const { user, hasRole } = useAuth();
   
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<EnrichedProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState<ReviewStatus | null>(null);
   const resolvedRef = React.useRef(false);
   const hasTriggeredSyncRef = React.useRef(false);
   const isSyncingRef = React.useRef(false);
@@ -902,6 +1063,18 @@ export default function EnrichedCandidateProfilePage() {
     };
   }, [candidateUuid, connectWebSocket]);
 
+  const fetchReviewStatus = React.useCallback(async () => {
+    if (!candidateUuid) return;
+    try {
+      const s = await getReviewStatus(candidateUuid);
+      setReviewStatus(s);
+    } catch { /* ignore, review module may not be available */ }
+  }, [candidateUuid]);
+
+  useEffect(() => {
+    if (data) fetchReviewStatus();
+  }, [data, fetchReviewStatus, user?.role]);
+
   if (loading) {
     return (
       <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -926,6 +1099,33 @@ export default function EnrichedCandidateProfilePage() {
     );
   }
 
+  if (hasRole("tech_lead")) {
+    const candidateLabel = data?.full_name && data.full_name !== "***" ? data.full_name : `Candidate ${candidateUuid?.slice(0, 8) || ""}`;
+    return (
+      <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <AppHeader candidateName={candidateLabel} />
+        <div style={{
+          height: 30, background: `${D.amber}08`, borderBottom: `1px solid ${D.amber}20`,
+          display: "flex", alignItems: "center", padding: "0 20px", gap: 6, flexShrink: 0,
+        }}>
+          <Shield size={11} color={D.amber} />
+          <span style={{ fontSize: 10, color: D.amber, fontWeight: 600 }}>
+            Technical Review — PII restricted per ABAC policy
+          </span>
+        </div>
+        <div style={{ flex: 1, display: "flex", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
+          <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
+            <EnrichmentPanel data={data} />
+          </div>
+          <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+            <EnrichedAnalytics data={data} userRole={user?.role || "tech_lead"} candidateUuid={candidateUuid || ""} reviewStatus={reviewStatus} onRefreshReview={fetchReviewStatus} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <AppHeader candidateName={data?.full_name || null} />
@@ -938,7 +1138,7 @@ export default function EnrichedCandidateProfilePage() {
         <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
         {/* Right — enriched analytics */}
         <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-          <EnrichedAnalytics data={data} />
+          <EnrichedAnalytics data={data} userRole={user?.role || "hr"} candidateUuid={candidateUuid || ""} reviewStatus={reviewStatus} onRefreshReview={fetchReviewStatus} />
         </div>
       </div>
     </div>
