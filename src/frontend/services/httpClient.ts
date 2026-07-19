@@ -70,8 +70,9 @@ export function setStoredDemoRole(role: string): void {
 }
 
 async function getValidAccessToken(): Promise<string | null> {
-  const role = getStoredDemoRole();
-  return `dummy-access-token::${role}`;
+  const accessToken = getStoredAccessToken();
+  if (accessToken) return accessToken;
+  return null;
 }
 
 function buildHeaders(

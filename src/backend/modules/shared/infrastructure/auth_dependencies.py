@@ -23,20 +23,6 @@ def get_current_user(
     ],
     jwt_service: Annotated[JwtService, Depends(get_jwt_service)],
 ) -> AuthUser:
-    # Demo mode: accept dummy-access-token for testing
-    # Role can be embedded as "dummy-access-token::{role}" for role switching
-    if credentials and credentials.scheme.lower() == "bearer" and credentials.credentials.startswith("dummy-access-token"):
-        parts = credentials.credentials.split("::", 1)
-        demo_role = parts[1] if len(parts) > 1 else "hr"
-        if demo_role not in ("hr", "tech_lead", "admin"):
-            demo_role = "hr"
-        return AuthUser(
-            id="demo-12345",
-            email="demo@smartats.com",
-            name="Demo Recruiter",
-            role=demo_role,
-        )
-    
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

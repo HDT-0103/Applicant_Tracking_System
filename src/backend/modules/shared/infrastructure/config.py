@@ -58,17 +58,13 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     apify_api_token: str = Field(default="", alias="APIFY_API_TOKEN")
 
-    slack_webhook_url: str = Field(default="", alias="SLACK_WEBHOOK_URL")
-    scheduling_work_start: str = Field(default="07:30", alias="SCHEDULING_WORK_START")
-    scheduling_work_end: str = Field(default="17:00", alias="SCHEDULING_WORK_END")
-    scheduling_min_slot_minutes: int = Field(default=45, alias="SCHEDULING_MIN_SLOT_MINUTES")
-    scheduling_default_range_days: int = Field(default=14, alias="SCHEDULING_DEFAULT_RANGE_DAYS")
-
-    smtp_host: str = Field(default="smtp.gmail.com", alias="SMTP_HOST")
-    smtp_port: int = Field(default=587, alias="SMTP_PORT")
-    smtp_username: str = Field(default="", alias="SMTP_USERNAME")
-    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
-    smtp_from_email: str = Field(default="", alias="SMTP_FROM_EMAIL")
+    # Azure Cloud Services
+    azure_storage_connection_string: str = Field(
+        default="", alias="AZURE_STORAGE_CONNECTION_STRING"
+    )
+    azure_service_bus_connection_string: str = Field(
+        default="", alias="AZURE_SERVICE_BUS_CONNECTION_STRING"
+    )
 
     @property
     def cors_origin_list(self) -> list[str]:
