@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth, landingPathForRole } from "../contexts/AuthContext";
 
 const ROLE_ROUTE_MAP: Array<{ pattern: RegExp; allowed: string[] }> = [
   { pattern: /^\/schedule/, allowed: ["hr"] },
@@ -17,34 +17,21 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   const pathname = usePathname();
   const router = useRouter();
 
-  const isLoginRoute = pathname === "/login";
+  const isPublicRoute = pathname === "/login" || pathname === "/register";
 
   useEffect(() => {
     if (isLoading) return;
 
-    if (!isAuthenticated && !isLoginRoute) {
+    if (!isAuthenticated && !isPublicRoute) {
       router.replace("/login");
       return;
     }
 
-    if (isAuthenticated && isLoginRoute) {
-      router.replace("/");
-      return;
+    if (isAuthenticated && isPublicRoute) {
+      router.replace(landingPathForRole(user?.role));
     }
-
-    if (isAuthenticated && user) {
-      for (const entry of ROLE_ROUTE_MAP) {
-        if (entry.pattern.test(pathname)) {
-          if (!entry.allowed.includes(user.role)) {
-            router.replace("/");
-            return;
-          }
-          break;
-        }
-      }
-    }
-  }, [isAuthenticated, isLoading, isLoginRoute, router, pathname, user]);
-
+  }, [isAuthenticated, isLoading, isPublicRoute, router, user]);
+ 
   if (isLoading) {
     return (
       <div className="auth-loading">
@@ -53,8 +40,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
       </div>
     );
   }
-
-  if (!isAuthenticated && !isLoginRoute) {
+ 
+  if (!isAuthenticated && !isPublicRoute) {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
@@ -62,8 +49,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
       </div>
     );
   }
-
-  if (isAuthenticated && isLoginRoute) {
+ 
+  if (isAuthenticated && isPublicRoute) {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />

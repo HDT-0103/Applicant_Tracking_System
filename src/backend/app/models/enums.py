@@ -5,6 +5,7 @@ class RoleType(str, enum.Enum):
     RECRUITER = "recruiter"
     CANDIDATE = "candidate"
     ADMIN = "admin"
+    INTERVIEWER = "interviewer"
     
 class StatusType(str, enum.Enum):
     WAITING = "waiting"
