@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class SemanticPipeline:
     def __init__(self, ranking_service: RankingService, resume_repo: ResumeRepository, req_emb_repo: RequirementEmbeddingRepository):
         self.ranking_service = ranking_service
-
+    # đáng lẽ nên trả về list of User từ supabase
     async def rank_all_resumes_for_requirement(
         self, 
         requirement_id: uuid.UUID, 
