@@ -17,9 +17,16 @@ class Meeting(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     scheduled_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
     
+    # values_callable để lưu .value chữ thường ("waiting") thay vì .name ("WAITING"),
+    # khớp với enum status_type trong Postgres.
     status: Mapped[StatusType] = mapped_column(
-        Enum(StatusType, native_enum=True), 
-        nullable=False, 
+        Enum(
+            StatusType,
+            name="status_type",
+            native_enum=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
         server_default=text("'waiting'")
     )
     meeting_link: Mapped[Optional[str]] = mapped_column(String(512))

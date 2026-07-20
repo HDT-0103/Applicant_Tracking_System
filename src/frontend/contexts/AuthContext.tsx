@@ -22,6 +22,11 @@ import {
 
 export type UserRole = "recruiter" | "interviewer" | "admin";
 
+/** Post-auth landing route: admins go straight to the Admin Panel. */
+export function landingPathForRole(role?: UserRole): string {
+  return role === "admin" ? "/admin" : "/";
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -41,6 +46,8 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   loginWithGoogle: (credential: string) => Promise<void>;
+  loginWithEmailPassword: (email: string, password: string) => Promise<void>;
+  registerWithEmailPassword: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   canUpload: boolean;
@@ -113,7 +120,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setStoredTokens(data.accessToken, data.refreshToken);
       persistUser(data.user);
       setUser(data.user);
-      router.replace("/");
+      router.replace(landingPathForRole(data.user.role));
+    },
+    [router],
+  );
+
+  const loginWithEmailPassword = useCallback(
+    async (email: string, password: string) => {
+      const data = await api.post<GoogleAuthResponse>(
+        "/api/auth/login",
+        { email, password },
+        { skipAuth: true },
+      );
+
+      setStoredTokens(data.accessToken, data.refreshToken);
+      persistUser(data.user);
+      setUser(data.user);
+      router.replace(landingPathForRole(data.user.role));
+    },
+    [router],
+  );
+
+  const registerWithEmailPassword = useCallback(
+    async (name: string, email: string, password: string) => {
+      // Role is assigned server-side (recruiter); never sent from the client.
+      const data = await api.post<GoogleAuthResponse>(
+        "/api/auth/register",
+        { name, email, password },
+        { skipAuth: true },
+      );
+
+      setStoredTokens(data.accessToken, data.refreshToken);
+      persistUser(data.user);
+      setUser(data.user);
+      router.replace(landingPathForRole(data.user.role));
     },
     [router],
   );
@@ -144,11 +184,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       isAuthenticated: Boolean(user),
       isLoading,
       loginWithGoogle,
+      loginWithEmailPassword,
+      registerWithEmailPassword,
       logout,
       hasRole,
       canUpload,
     }),
-    [user, isLoading, loginWithGoogle, logout, hasRole, canUpload],
+    [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, logout, hasRole, canUpload],
   );
 
   return (

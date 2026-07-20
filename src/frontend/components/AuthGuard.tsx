@@ -2,32 +2,32 @@
 
 import React, { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth, landingPathForRole } from "../contexts/AuthContext";
 
 interface AuthGuardProps {
   children: React.ReactNode;
 }
 
 export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
-  const isLoginRoute = pathname === "/login";
+  const isPublicRoute = pathname === "/login" || pathname === "/register";
 
   useEffect(() => {
     if (isLoading) return;
 
-    if (!isAuthenticated && !isLoginRoute) {
+    if (!isAuthenticated && !isPublicRoute) {
       router.replace("/login");
       return;
     }
 
-    if (isAuthenticated && isLoginRoute) {
-      router.replace("/");
+    if (isAuthenticated && isPublicRoute) {
+      router.replace(landingPathForRole(user?.role));
     }
-  }, [isAuthenticated, isLoading, isLoginRoute, router]);
-
+  }, [isAuthenticated, isLoading, isPublicRoute, router, user]);
+ 
   if (isLoading) {
     return (
       <div className="auth-loading">
@@ -36,8 +36,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
       </div>
     );
   }
-
-  if (!isAuthenticated && !isLoginRoute) {
+ 
+  if (!isAuthenticated && !isPublicRoute) {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
@@ -45,8 +45,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
       </div>
     );
   }
-
-  if (isAuthenticated && isLoginRoute) {
+ 
+  if (isAuthenticated && isPublicRoute) {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />

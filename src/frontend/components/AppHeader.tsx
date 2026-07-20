@@ -130,6 +130,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
 
       {/* Right actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        {/* Admin Dashboard link if user is Admin */}
+        {user?.role === "admin" && (
+          <button
+            onClick={() => router.push("/admin")}
+            style={{
+              padding: "6px 14px",
+              border: `1px solid ${D.blue}`,
+              borderRadius: 6,
+              background: "rgba(99, 102, 241, 0.08)",
+              cursor: "pointer",
+              fontSize: 11.5, fontWeight: 600,
+              color: "#818cf8",
+              fontFamily: D.font,
+              transition: "all 0.2s ease",
+            }}
+          >
+            Admin Panel
+          </button>
+        )}
+
         {/* Run Sync button */}
         {showRunSync && (
           <button
@@ -162,9 +182,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
             )}
           </button>
         )}
-
+ 
         <div style={{ width: 1, height: 16, background: D.line }} />
-
+ 
         <button style={{
           position: "relative", background: "none", border: "none", cursor: "pointer",
           display: "flex", alignItems: "center", width: 28, height: 28,
@@ -175,6 +195,25 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
             position: "absolute", top: 5, right: 5, width: 5, height: 5,
             borderRadius: "50%", background: D.red, border: `1.5px solid ${D.canvas}`,
           }} />
+        </button>
+ 
+        <div style={{ width: 1, height: 16, background: D.line }} />
+ 
+        <button
+          onClick={logout}
+          style={{
+            padding: "6px 14px",
+            border: `1px solid rgba(239, 68, 68, 0.2)`,
+            borderRadius: 6,
+            background: "rgba(239, 68, 68, 0.05)",
+            cursor: "pointer",
+            fontSize: 11.5, fontWeight: 600,
+            color: "#f87171",
+            fontFamily: D.font,
+            transition: "all 0.2s ease",
+          }}
+        >
+          Logout
         </button>
 
         <div style={{ width: 1, height: 16, background: D.line }} />
@@ -191,7 +230,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
           </div>
         </div>
       </div>
-
+ 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>

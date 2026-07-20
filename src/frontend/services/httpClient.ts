@@ -147,6 +147,12 @@ export const api = {
     options?: RequestOptions,
   ) => httpClient<T>(path, { ...options, method: "PUT", body }),
 
+  patch: <T>(
+    path: string,
+    body?: RequestOptions["body"],
+    options?: RequestOptions,
+  ) => httpClient<T>(path, { ...options, method: "PATCH", body }),
+
   delete: <T>(path: string, options?: RequestOptions) =>
     httpClient<T>(path, { ...options, method: "DELETE" }),
 };
