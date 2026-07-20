@@ -24,7 +24,7 @@ def get_azure_ingestion_service(
     blob_service = AzureBlobService(settings)
     service_bus_service = AzureServiceBusService(settings)
     return AzureIngestionService(
-        blob_service=blob_service, service_bus_service=service_bus_service
+        blob_service=blob_service, service_bus_service=service_bus_service, settings=settings
     )
 
 
@@ -70,7 +70,7 @@ async def ingest_cv(
         )
 
     try:
-        result = azure_service.ingest_pdf(file_content)
+        result = await azure_service.ingest_pdf(file_content)
         return result
     except ValueError as exc:
         logger.error(

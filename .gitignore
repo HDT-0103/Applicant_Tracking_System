@@ -44,6 +44,7 @@ temp/
 *.log
 *.sqlite
 *.sqlite3
+my-skills/
 
 # IDE and OS files
 .DS_Store

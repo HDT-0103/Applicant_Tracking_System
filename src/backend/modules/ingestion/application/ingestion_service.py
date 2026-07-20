@@ -1,5 +1,6 @@
 import json
 import structlog
+from typing import Optional
 
 import pypdf
 import google.generativeai as genai
@@ -154,8 +155,8 @@ async def parse_cv_with_gemini(resume_text: str, settings: Settings) -> dict | N
         return None
 
 
-async def process_cv_resume(candidate_uuid: str, pdf_path: str, settings: Settings) -> CandidateRecord:
-    logger.info("ingestion.process.start", uuid=candidate_uuid, path=pdf_path)
+async def process_cv_resume(candidate_uuid: str, pdf_path: str, settings: Settings, cv_file_path: Optional[str] = None) -> CandidateRecord:
+    logger.info("ingestion.process.start", uuid=candidate_uuid, path=pdf_path, cv_file_path=cv_file_path)
 
     resume_text, embedded_links = extract_text_and_links_from_pdf(pdf_path)
 
@@ -179,6 +180,7 @@ async def process_cv_resume(candidate_uuid: str, pdf_path: str, settings: Settin
         github_username=github_username,
         linkedin_url=linkedin_url,
         resume_text=resume_text,
+        cv_file_path=cv_file_path,  # Azure Blob Storage URL
         status="PARSED" if github_username or linkedin_url else "CREATED",
     )
 
@@ -190,6 +192,7 @@ async def process_cv_resume(candidate_uuid: str, pdf_path: str, settings: Settin
         full_name=candidate.full_name,
         github_username=candidate.github_username,
         linkedin_url=candidate.linkedin_url,
+        cv_file_path=candidate.cv_file_path,
         status=candidate.status,
     )
 
