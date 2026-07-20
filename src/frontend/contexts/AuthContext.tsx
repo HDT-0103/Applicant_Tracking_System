@@ -13,6 +13,7 @@ import {
   api,
   clearStoredTokens,
   getStoredAccessToken,
+  setStoredDemoRole,
   setStoredTokens,
 } from "../services/httpClient";
 
@@ -20,7 +21,7 @@ import {
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type UserRole = "recruiter" | "interviewer" | "admin";
+export type UserRole = "recruiter" | "interviewer" | "admin" | "tech_lead" | "hr";
 
 /** Post-auth landing route: admins go straight to the Admin Panel. */
 export function landingPathForRole(role?: UserRole): string {
@@ -51,6 +52,7 @@ interface AuthContextValue {
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   canUpload: boolean;
+  devSetRole: (role: UserRole) => void;
 }
 
 const USER_STORAGE_KEY = "smartats_user";
@@ -85,7 +87,7 @@ const DEMO_USER: AuthUser = {
   id: "demo-12345",
   email: "demo@smartats.com",
   name: "Demo Recruiter",
-  role: "recruiter",
+  role: "hr",
   picture: "https://ui-avatars.com/api/?name=Demo+Recruiter&background=0d6efd&color=fff&size=128"
 };
 
@@ -174,9 +176,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const canUpload = useMemo(
-    () => hasRole("recruiter", "admin"),
+    () => hasRole("hr", "admin"),
     [hasRole],
   );
+
+  const devSetRole = useCallback((role: UserRole) => {
+    setUser((prev) => (prev && prev.id === "demo-12345" ? { ...prev, role } : prev));
+    setStoredDemoRole(role);
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -189,6 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       logout,
       hasRole,
       canUpload,
+      devSetRole,
     }),
     [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, logout, hasRole, canUpload],
   );

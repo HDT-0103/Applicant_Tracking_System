@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from 'next/navigation';
-import { Bell, Search, RefreshCw, ChevronRight, Loader2 } from "lucide-react";
+import { Bell, Search, RefreshCw, ChevronRight, Loader2, Shield } from "lucide-react";
 import { D, Dot, Badge, globalStyles } from "../lib/shared";
 import { useAuth, type UserRole } from "../contexts/AuthContext";
 import { useWorkspace } from "../contexts/WorkspaceContext";
@@ -11,6 +11,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
   recruiter: "Recruiter",
   interviewer: "Interviewer",
   admin: "Admin",
+  tech_lead: "Tech Lead",
+  hr: "HR Manager",
 };
 
 interface AppHeaderProps {
@@ -22,8 +24,18 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
   const router = useRouter();
   const pathname = usePathname();
   const [syncing, setSyncing] = useState(false);
-  const { user, logout, canUpload } = useAuth();
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
+  const roleRef = useRef<HTMLDivElement>(null);
+  const { user, logout, canUpload, devSetRole } = useAuth();
   const { syncCandidateProfile, candidateUuid } = useWorkspace();
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (roleRef.current && !roleRef.current.contains(e.target as Node)) setShowRoleMenu(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const isLanding  = pathname === "/";
   const isCandidatePage   = pathname === "/candidate-profile";
@@ -218,16 +230,42 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
 
         <div style={{ width: 1, height: 16, background: D.line }} />
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-          <div style={{
-            width: 26, height: 26, borderRadius: "50%", background: D.blue,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 9.5, fontWeight: 700, color: "#fff",
-          }}>{user?.name.charAt(0).toUpperCase()}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 500, color: D.ink, lineHeight: 1.1 }}>{user?.name}</span>
-            <span style={{ fontSize: 9.5, color: D.dim, lineHeight: 1.2 }}>{user?.role ? ROLE_LABELS[user.role] : ''}</span>
+        <div ref={roleRef} style={{ position: "relative" }}>
+          <div
+            onClick={() => setShowRoleMenu((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+          >
+            <div style={{
+              width: 26, height: 26, borderRadius: "50%", background: D.blue,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 9.5, fontWeight: 700, color: "#fff",
+            }}>{user?.name.charAt(0).toUpperCase()}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 500, color: D.ink, lineHeight: 1.1 }}>{user?.name}</span>
+              <span style={{ fontSize: 9.5, color: D.dim, lineHeight: 1.2 }}>{user?.role ? ROLE_LABELS[user.role] : ''}</span>
+            </div>
           </div>
+          {showRoleMenu && user?.id === "demo-12345" && (
+            <div style={{
+              position: "absolute", top: "100%", right: 0, marginTop: 6, minWidth: 160,
+              background: D.canvas, border: `1px solid ${D.line}`, borderRadius: 6,
+              boxShadow: "0 4px 16px rgba(0,0,0,0.08)", zIndex: 100, overflow: "hidden",
+            }}>
+              <div style={{ padding: "6px 10px", fontSize: 9.5, fontWeight: 600, color: D.muted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Demo Role</div>
+              {(["hr", "tech_lead"] as const).map((r) => (
+                <div key={r} onClick={() => { devSetRole(r); setShowRoleMenu(false); }}
+                  style={{
+                    padding: "6px 10px", fontSize: 11.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
+                    background: user?.role === r ? D.blueSoft : "transparent",
+                    color: user?.role === r ? D.blue : D.ink, fontWeight: user?.role === r ? 600 : 400,
+                  }}
+                >
+                  <Shield size={10} strokeWidth={2} color={user?.role === r ? D.blue : D.dim} />
+                  {ROLE_LABELS[r]}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
  

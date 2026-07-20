@@ -1,0 +1,46 @@
+[
+  {
+    "id": "interviewer-sarah-chen",
+    "name": "Sarah Chen",
+    "email": "",
+    "role": "Staff Engineer",
+    "initials": "SC",
+    "color": "#6366F1",
+    "cal_connected": true,
+    "calendar_api_key": "AIzaSyDfRw7MDk8d",
+    "calendar_id": "primary"
+  },
+  {
+    "id": "interviewer-mike-park",
+    "name": "Mike Park",
+    "email": "",
+    "role": "Tech Lead",
+    "initials": "MP",
+    "color": "#10B981",
+    "cal_connected": true,
+    "calendar_api_key": "AIzaSyDfRw7MDk8dhT-6sZy5eobO0",
+    "calendar_id": "primary"
+  },
+  {
+    "id": "interviewer-lisa-wong",
+    "name": "Lisa Wong",
+    "email": "",
+    "role": "Engineering Manager",
+    "initials": "LW",
+    "color": "#F59E0B",
+    "cal_connected": true,
+    "calendar_api_key": "AIzaSyDfRw7MDk8dhT-6sZy5eobO0muwLSPLPv8",
+    "calendar_id": "primary"
+  },
+  {
+    "id": "interviewer-david-kim",
+    "name": "David Kim",
+    "email": "",
+    "role": "Senior Engineer",
+    "initials": "DK",
+    "color": "#EC4899",
+    "cal_connected": true,
+    "calendar_api_key": "AIzaSyDfRw7MDk8dhT-6sZy5eobO0muwLSPLPv8",
+    "calendar_id": "primary"
+  }
+]

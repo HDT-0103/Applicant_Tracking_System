@@ -4,6 +4,10 @@ import React, { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth, landingPathForRole } from "../contexts/AuthContext";
 
+const ROLE_ROUTE_MAP: Array<{ pattern: RegExp; allowed: string[] }> = [
+  { pattern: /^\/schedule/, allowed: ["hr"] },
+];
+
 interface AuthGuardProps {
   children: React.ReactNode;
 }
@@ -32,7 +36,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Loading session…</p>
+        <p>Loading session&hellip;</p>
       </div>
     );
   }
@@ -41,7 +45,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to login…</p>
+        <p>Redirecting to login&hellip;</p>
       </div>
     );
   }
@@ -50,7 +54,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to workspace…</p>
+        <p>Redirecting to workspace&hellip;</p>
       </div>
     );
   }
