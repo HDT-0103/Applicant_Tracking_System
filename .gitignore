@@ -57,3 +57,6 @@ docker-compose.override.yml
 *.pid
 
 context.md
+
+# Local Postgres data directory (không được commit)
+.postgres_data/
