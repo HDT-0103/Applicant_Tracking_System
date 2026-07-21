@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AppHeader } from "../../../components/AppHeader";
 import { LeftSidebar } from "../../../components/LeftSidebar";
 import { D } from "../../../lib/shared";
+import { supabase } from "../../../lib/supabase";
 import {
   Plus,
   X,
@@ -270,8 +271,8 @@ function PreviewCard({ jd }: { jd: JDState }) {
   const loc = jd.location || "Location";
   const mode = jd.workMode || "On-site";
   const seniority = jd.seniority || "Mid";
-  const allMustHave = jd.mustHaveSkills.length > 0 ? jd.mustHaveSkills : ["Python", "Retrieval", "ML Ops"];
-  const allNiceToHave = jd.niceToHaveSkills.length > 0 ? jd.niceToHaveSkills : ["LLM evaluation", "Ray"];
+  const allMustHave = jd.mustHaveSkills.length > 0 ? jd.mustHaveSkills : [];
+  const allNiceToHave = jd.niceToHaveSkills.length > 0 ? jd.niceToHaveSkills : [];
 
   return (
     <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
@@ -351,12 +352,10 @@ function PreviewCard({ jd }: { jd: JDState }) {
 function PublishModal({
   open,
   onClose,
-  onGoToPortal,
   jobTitle,
 }: {
   open: boolean;
   onClose: () => void;
-  onGoToPortal: () => void;
   jobTitle: string;
 }) {
   if (!open) return null;
@@ -410,17 +409,6 @@ function PublishModal({
           <div className="flex flex-col gap-2.5">
             <button
               type="button"
-              onClick={onGoToPortal}
-              className="w-full h-11 rounded-lg bg-[#4f46e5] text-white text-sm font-semibold
-                flex items-center justify-center gap-2
-                hover:bg-[#4338ca] active:scale-[0.99] transition-all shadow-sm shadow-[#4f46e5]/20"
-            >
-              <Globe className="w-4 h-4" />
-              Go to Careers / Candidate Web Portal
-              <ArrowRight className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
               onClick={onClose}
               className="w-full h-9 rounded-lg border border-border bg-white text-sm font-medium
                 text-foreground hover:bg-[#f4f5f7] transition-colors"
@@ -444,8 +432,8 @@ export default function CreateJobPostingPage() {
     seniority: "",
     targetApplicants: "",
     employmentType: "",
-    mustHaveSkills: ["Python", "Retrieval", "Transformers", "FastAPI"],
-    niceToHaveSkills: ["LLM evaluation", "Ray", "Kubernetes"],
+    mustHaveSkills: [],
+    niceToHaveSkills: [],
     overview: "",
     responsibilities: "",
     requirements: "",
@@ -454,16 +442,74 @@ export default function CreateJobPostingPage() {
     salaryMax: "",
   });
 
+  const [postingId, setPostingId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [savingError, setSavingError] = useState<string | null>(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [currentStep] = useState(1);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jdRef = useRef(jd);
+  jdRef.current = jd;
+
+  const saveToSupabase = async (status: 'DRAFT' | 'PUBLISHED') => {
+    const data = jdRef.current;
+    setSaveStatus("saving");
+    setSavingError(null);
+
+    const payload = {
+      job_title: data.title || 'Untitled',
+      department: data.department || null,
+      location: data.location || null,
+      seniority_level: data.seniority || null,
+      employment_type: data.employmentType || null,
+      work_mode: data.workMode || null,
+      target_openings: data.targetApplicants ? parseInt(data.targetApplicants, 10) : null,
+      salary_min: data.salaryMin ? parseFloat(data.salaryMin) : null,
+      salary_max: data.salaryMax ? parseFloat(data.salaryMax) : null,
+      must_have_skills: data.mustHaveSkills,
+      nice_to_have_skills: data.niceToHaveSkills,
+      description: data.overview || null,
+      key_responsibilities: data.responsibilities || null,
+      requirements: data.requirements || null,
+      nice_to_have_qualifications: data.niceToHaveQuals || null,
+      status,
+      ...(status === 'PUBLISHED' ? { posted_at: new Date().toISOString() } : {}),
+      ...(postingId ? {} : { last_saved_at: new Date().toISOString() }),
+    };
+
+    try {
+      if (postingId) {
+        const { error } = await supabase
+          .from('jobs_posting')
+          .update({ ...payload, last_saved_at: new Date().toISOString() })
+          .eq('id', postingId);
+        if (error) throw error;
+      } else {
+        const { data: inserted, error } = await supabase
+          .from('jobs_posting')
+          .insert(payload)
+          .select('id')
+          .single();
+        if (error) throw error;
+        setPostingId(inserted.id);
+      }
+      setSaveStatus("saved");
+      if (status === 'PUBLISHED') {
+        setShowPublishModal(true);
+      }
+    } catch (err) {
+      console.error('Failed to save to Supabase:', err);
+      setSavingError(err instanceof Error ? err.message : 'Save failed');
+      setSaveStatus("idle");
+    }
+  };
 
   const set = <K extends keyof JDState>(k: K, v: JDState[K]) => {
     setJD((prev) => ({ ...prev, [k]: v }));
     setSaveStatus("saving");
+    setSavingError(null);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => setSaveStatus("saved"), 1200);
+    saveTimer.current = setTimeout(() => saveToSupabase('DRAFT'), 1500);
   };
 
   const addMust = (v: string) => set("mustHaveSkills", [...jd.mustHaveSkills, v]);
@@ -472,13 +518,7 @@ export default function CreateJobPostingPage() {
   const removeNice = (v: string) => set("niceToHaveSkills", jd.niceToHaveSkills.filter((s) => s !== v));
 
   const handlePublish = () => {
-    setSaveStatus("saved");
-    setShowPublishModal(true);
-  };
-
-  const handleGoToPortal = () => {
-    setShowPublishModal(false);
-    router.push("/careers");
+    saveToSupabase('PUBLISHED');
   };
 
   const inputCls = "h-10 text-sm border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-[#4f46e5] focus:ring-2 focus:ring-[#4f46e5]/20 transition-all outline-none rounded-md px-3";
@@ -515,6 +555,11 @@ export default function CreateJobPostingPage() {
               </div>
               {/* Auto-save status */}
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-[90px]">
+                {savingError && (
+                  <span className="text-destructive text-[10px] max-w-[160px] truncate" title={savingError}>
+                    {savingError}
+                  </span>
+                )}
                 {saveStatus === "saving" && (
                   <>
                     <Clock className="w-3.5 h-3.5 animate-pulse text-amber-500" />
@@ -527,7 +572,7 @@ export default function CreateJobPostingPage() {
                     <span className="text-emerald-600">Draft saved</span>
                   </>
                 )}
-                {saveStatus === "idle" && (
+                {saveStatus === "idle" && !savingError && (
                   <>
                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />
                     <span>Unsaved</span>
@@ -826,7 +871,7 @@ export default function CreateJobPostingPage() {
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => { setSaveStatus("saving"); setTimeout(() => setSaveStatus("saved"), 900); }}
+                      onClick={() => saveToSupabase('DRAFT')}
                       className="gap-1.5 border-[rgba(15,17,23,0.15)] h-9 px-4 rounded-md text-sm transition-all flex items-center"
                     >
                       <Save className="w-4 h-4" />
@@ -863,15 +908,7 @@ export default function CreateJobPostingPage() {
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     This card appears on the candidate portal. Clicking "Apply Now" opens the full application form with GitHub and LinkedIn enrichment.
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleGoToPortal}
-                    className="mt-1 w-full text-xs text-[#4f46e5] hover:underline flex items-center gap-1"
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    Open Candidate Portal
-                    <ExternalLink className="w-3 h-3 ml-auto" />
-                  </button>
+
                 </div>
 
                 <div className="rounded-lg border border-border bg-white p-3.5">
@@ -928,7 +965,6 @@ export default function CreateJobPostingPage() {
       <PublishModal
         open={showPublishModal}
         onClose={() => setShowPublishModal(false)}
-        onGoToPortal={handleGoToPortal}
         jobTitle={jd.title}
       />
     </div>

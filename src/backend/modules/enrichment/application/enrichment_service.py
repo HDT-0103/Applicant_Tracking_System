@@ -59,6 +59,150 @@ def get_candidate_social_links(candidate_uuid: str) -> CandidateSocialLinks:
     return CandidateSocialLinks(github_username=None, linkedin_url=None)
 
 
+async def check_existing_enrichment(
+    candidate_uuid: str,
+    settings: Settings
+) -> CandidateEnrichment | None:
+    """Check if enrichment data already exists in Supabase and restore it to in-memory store."""
+    supabase_client = get_supabase_client(settings, use_admin=True)
+    if not supabase_client:
+        return None
+
+    try:
+        github_service = GitHubIngestionService(settings, supabase_client)
+        linkedin_service = LinkedInIngestionService(settings, supabase_client)
+
+        github_resp = github_service.get_github_profile_by_candidate(candidate_uuid)
+        linkedin_resp = linkedin_service.get_linkedin_profile_by_candidate(candidate_uuid)
+
+        has_github = github_resp.data is not None
+        has_linkedin = linkedin_resp.data is not None
+
+        if not has_github and not has_linkedin:
+            return None
+
+        # Try to get social links from Supabase candidates table
+        candidate_service = SupabaseCandidateService(settings, supabase_client)
+        candidate_data = await candidate_service.get_candidate(candidate_uuid)
+        github_username = candidate_data.get("github_username") if candidate_data else None
+        linkedin_url = candidate_data.get("linkedin_url") if candidate_data else None
+
+        github_profile = None
+        linkedin_profile = None
+
+        if has_github:
+            g = github_resp.data
+            repos = []
+            for repo in g.get("repos", []):
+                try:
+                    repos.append(GitHubRepo(**repo))
+                except Exception as repo_err:
+                    logger.warning("enrichment.check_existing.repo_parse_failed", repo_name=repo.get("name"), error=str(repo_err))
+            github_profile = GitHubProfile(
+                public_repos_count=g.get("public_repos_count", 0),
+                top_languages=g.get("top_languages", {}),
+                readme_content=g.get("readme_content"),
+                repos=repos
+            )
+
+        if has_linkedin:
+            l = linkedin_resp.data
+
+            experiences = []
+            for exp in l.get("experiences", []):
+                try:
+                    if isinstance(exp, dict):
+                        start = exp.get("start_date", "")
+                        end = exp.get("end_date", "")
+                        if isinstance(start, dict):
+                            parts = []
+                            if start.get("month"): parts.append(str(start["month"]))
+                            if start.get("year"): parts.append(str(start["year"]))
+                            start = " ".join(parts)
+                        if isinstance(end, dict):
+                            parts = []
+                            if end.get("month"): parts.append(str(end["month"]))
+                            if end.get("year"): parts.append(str(end["year"]))
+                            end = " ".join(parts)
+                        experiences.append(LinkedInExperience(
+                            title=exp.get("title", ""),
+                            company=exp.get("company", ""),
+                            start_date=str(start) if start else None,
+                            end_date=str(end) if end else None,
+                            description=exp.get("description")
+                        ))
+                    else:
+                        experiences.append(exp)
+                except Exception as exp_err:
+                    logger.warning("enrichment.check_existing.exp_parse_failed", error=str(exp_err))
+
+            educations = []
+            for edu in l.get("educations", []):
+                try:
+                    if isinstance(edu, dict):
+                        start = edu.get("start_date", "")
+                        end = edu.get("end_date", "")
+                        if isinstance(start, dict):
+                            parts = []
+                            if start.get("month"): parts.append(str(start["month"]))
+                            if start.get("year"): parts.append(str(start["year"]))
+                            start = " ".join(parts)
+                        if isinstance(end, dict):
+                            parts = []
+                            if end.get("month"): parts.append(str(end["month"]))
+                            if end.get("year"): parts.append(str(end["year"]))
+                            end = " ".join(parts)
+                        educations.append(LinkedInEducation(
+                            school=edu.get("school", ""),
+                            degree=edu.get("degree"),
+                            field_of_study=edu.get("field_of_study"),
+                            start_date=str(start) if start else None,
+                            end_date=str(end) if end else None,
+                        ))
+                    else:
+                        educations.append(edu)
+                except Exception as edu_err:
+                    logger.warning("enrichment.check_existing.edu_parse_failed", error=str(edu_err))
+
+            linkedin_profile = LinkedInProfile(
+                full_name=l.get("full_name"),
+                headline=l.get("headline"),
+                profile_url=l.get("profile_url"),
+                avatar_url=l.get("avatar_url"),
+                experiences=experiences,
+                educations=educations,
+                certifications=[LinkedInCertification(**c) for c in l.get("certifications", [])] if isinstance(l.get("certifications"), list) else []
+            )
+
+        local_analysis = None
+        if github_profile and github_profile.repos:
+            local_analysis = analyze_github_local_fallback(github_profile)
+
+        analytics = generate_analytics(
+            readme_content=github_profile.readme_content if github_profile else None,
+            linkedin_profile=linkedin_profile,
+            local_github_analysis=local_analysis
+        )
+
+        enriched = EnrichedProfile(
+            github=github_profile,
+            linkedin=linkedin_profile,
+            analytics=analytics,
+            github_username=github_username,
+            linkedin_url=linkedin_url,
+            full_name=linkedin_profile.full_name if linkedin_profile else None
+        )
+
+        return CandidateEnrichment(
+            candidate_uuid=candidate_uuid,
+            enrichment_status=EnrichmentStatus.ENRICHED,
+            enriched_profile=enriched
+        )
+    except Exception as e:
+        logger.error("enrichment.check_existing.failed", candidate_uuid=candidate_uuid, error=str(e))
+        return None
+
+
 async def fetch_github_profile(
     github_username: str,
     settings: Annotated[Settings, Depends(get_settings)]
@@ -600,7 +744,6 @@ async def enrichment_worker(
             phone=phone,
             linkedin_url=linkedin_url,
             github_username=github_username,
-            job_id=job_id,
         )
         
         if not candidate_created:

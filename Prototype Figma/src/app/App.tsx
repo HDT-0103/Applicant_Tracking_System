@@ -526,7 +526,7 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
 
       {/* SECTION 3 – INTERN PROGRAM QUESTIONS */}
       <section>
-        <SectionHeading label="Intern Program Questions 2026" />
+        <SectionHeading label="Application Questions" />
         <div className="flex flex-col gap-6">
 
           {/* Q1 */}

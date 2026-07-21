@@ -12,51 +12,64 @@ import {
   Briefcase,
   ChevronRight
 } from "lucide-react";
+import { supabase } from "../lib/supabase";
 
 interface JobPosting {
   id: string;
   title: string;
-  status: "open" | "draft";
+  status: string;
   applicant_count: number;
-}
-
-interface JobPostingsData {
-  jobs: JobPosting[];
 }
 
 export const LeftSidebar: React.FC = () => {
   const router = useRouter();
-  const [activeJobId, setActiveJobId] = useState<string>("job-1");
+  const [activeJobId, setActiveJobId] = useState<string>("");
   const [jobPostings, setJobPostings] = useState<JobPosting[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
 
-  const workspaceItems = [
-    { icon: <Layers size={14} strokeWidth={1.8} />, label: "Orchestra", badge: null },
-    { icon: <FileText size={14} strokeWidth={1.8} />, label: "CV Analysis", badge: "Active" },
-    { icon: <BarChart3 size={14} strokeWidth={1.8} />, label: "Semantic Ranking", badge: null },
-    { icon: <Sparkles size={14} strokeWidth={1.8} />, label: "AI Assistant", badge: "Beta" },
-    { icon: <Calendar size={14} strokeWidth={1.8} />, label: "Interview Scheduling", badge: null },
-  ];
+  const workspaceItems: {
+    icon: React.ReactNode;
+    label: string;
+    badge: string | null;
+  }[] = [];
 
-  // Load job postings from JSON file
   useEffect(() => {
     const loadJobPostings = async () => {
       try {
-        const response = await fetch('/job_postings.json');
-        if (!response.ok) {
-          throw new Error('Failed to fetch job postings');
-        }
-        const data: JobPostingsData = await response.json();
-        setJobPostings(data.jobs || []);
-        
-        // Set first open job as active
-        const firstOpenJob = data.jobs?.find(j => j.status === 'open');
-        if (firstOpenJob) {
-          setActiveJobId(firstOpenJob.id);
+        const { data, error } = await supabase
+          .from('jobs_posting')
+          .select('id, job_title, status')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const { data: appCounts, error: appError } = await supabase
+          .from('applications')
+          .select('job_posting_id')
+          .not('job_posting_id', 'is', null);
+
+        if (appError) throw appError;
+
+        const countMap: Record<string, number> = {};
+        (appCounts || []).forEach((a) => {
+          countMap[a.job_posting_id] = (countMap[a.job_posting_id] || 0) + 1;
+        });
+
+        const mapped: JobPosting[] = (data || []).map((job) => ({
+          id: job.id,
+          title: job.job_title,
+          status: job.status,
+          applicant_count: countMap[job.id] || 0,
+        }));
+
+        setJobPostings(mapped);
+
+        const firstPublished = mapped.find(j => j.status === 'PUBLISHED');
+        if (firstPublished) {
+          setActiveJobId(firstPublished.id);
         }
       } catch (err) {
         console.error('Failed to load job postings:', err);
-        // Fallback to empty array
         setJobPostings([]);
       } finally {
         setLoadingJobs(false);
@@ -168,7 +181,7 @@ export const LeftSidebar: React.FC = () => {
             {jobPostings.map((job) => (
               <div
                 key={job.id}
-                onClick={() => setActiveJobId(job.id)}
+                onClick={() => router.push(`/careers/${encodeURIComponent(job.title)}`)}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -200,7 +213,7 @@ export const LeftSidebar: React.FC = () => {
                   width: 8, 
                   height: 8, 
                   borderRadius: "50%", 
-                  background: job.status === "open" ? D.mint : D.muted,
+                  background: job.status === "PUBLISHED" ? D.mint : D.muted,
                   flexShrink: 0,
                   marginLeft: activeJobId === job.id ? 4 : 0
                 }} />

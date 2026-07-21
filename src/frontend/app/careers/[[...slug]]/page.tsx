@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, KeyboardEvent } from "react";
-import { useRouter, useSearchParams } from 'next/navigation';
-import { D } from "../../lib/shared";
+import { useRouter, useParams } from 'next/navigation';
+import { D } from "../../../lib/shared";
+import { supabase } from "../../../lib/supabase";
 import {
   Upload,
   FileText,
@@ -47,12 +48,11 @@ interface FormData {
   workEligibility: string;
   officeAttendance: string;
   university: string;
-  faculty: string;
-  gradYear: string;
-  availableAgain: string;
+  fieldOfStudy: string;
+  educationLevel: string;
+  availability: string;
   hearAbout: string;
   talentNetwork: string;
-  startInPerson: string;
   anythingElse: string;
   ageGroup: string;
   genderIdentity: string;
@@ -112,47 +112,7 @@ const PRONOUNS_GRID = [
   { value: "hu/hu", label: "Hu/hu" },
 ];
 
-const UNIVERSITIES = [
-  "Massachusetts Institute of Technology (MIT)",
-  "Stanford University",
-  "Harvard University",
-  "University of California, Berkeley",
-  "Carnegie Mellon University",
-  "University of Oxford",
-  "University of Cambridge",
-  "ETH Zurich",
-  "National University of Singapore (NUS)",
-  "Nanyang Technological University (NTU)",
-  "University of Toronto",
-  "University of Waterloo",
-  "Tsinghua University",
-  "Peking University",
-  "Seoul National University",
-  "The University of Tokyo",
-  "Vietnam National University, Ho Chi Minh City",
-  "Ho Chi Minh City University of Technology (HCMUT)",
-  "University of Information Technology (UIT), VNU-HCM",
-  "FPT University",
-  "RMIT University Vietnam",
-  "Hanoi University of Science and Technology",
-  "University of Science, VNU-HCM",
-  "Fulbright University Vietnam",
-  "McGill University",
-  "New York University (NYU)",
-  "Columbia University",
-  "Princeton University",
-  "Yale University",
-  "Georgia Institute of Technology",
-  "University of Illinois Urbana-Champaign",
-  "University of Michigan",
-  "University of Edinburgh",
-  "Imperial College London",
-  "King's College London",
-  "Delft University of Technology",
-  "EPFL – Ecole Polytechnique Federale de Lausanne",
-  "University of Melbourne",
-  "University of Sydney",
-];
+
 
 const RACE_OPTIONS = [
   { value: "american-indian", label: "American Indian or Alaska Native" },
@@ -171,26 +131,24 @@ const textareaCls = "rounded-md border border-[rgba(15,17,23,0.15)] hover:border
 
 interface JobPosting {
   id: string;
-  title: string;
-  location: string;
-  department: string;
-  type: string;
+  job_title: string;
+  department: string | null;
+  location: string | null;
+  work_mode: string | null;
+  employment_type: string | null;
+  seniority_level: string | null;
+  target_openings: number | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  must_have_skills: string[];
+  nice_to_have_skills: string[];
+  description: string | null;
+  key_responsibilities: string | null;
+  requirements: string | null;
+  nice_to_have_qualifications: string | null;
   status: string;
-  applicant_count: number;
-  description: string;
-  requirements: { must_have: string[]; nice_to_have: string[] };
-  salary: string;
-  posted_date: string;
+  posted_at: string | null;
 }
-
-interface JobPostingsData { jobs: JobPosting[]; }
-
-const JD_REQUIREMENTS = [
-  { heading: "Mobile Forensics & Analysis", items: ["iOS / Android filesystem artefact extraction", "Memory acquisition and analysis", "App data reverse engineering", "Digital evidence chain of custody"] },
-  { heading: "Security Research Skills", items: ["Static & dynamic malware analysis", "Binary reverse engineering (Ghidra, Frida)", "OWASP Mobile Top-10 familiarity", "Vulnerability research fundamentals"] },
-  { heading: "Programming & Tooling", items: ["Python scripting for automation", "Swift / Kotlin / Java familiarity", "ADB / libimobiledevice toolchains", "Git version control"] },
-  { heading: "Academic Requirements", items: ["Enrolled in CS / InfoSec / CE programme", "Graduating Sept 2026 – Aug 2027", "Eligible to work in Vietnam (on-site)", "Available for 4-month internship term"] },
-];
 
 function ResumeUploader({ file, onChange, error }: { file: File | null; onChange: (f: File | null) => void; error?: string }) {
   const [drag, setDrag] = useState(false);
@@ -248,9 +206,10 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
 function UniversitySelect({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: string }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [results, setResults] = useState<{ id: number; name: string; country: string }[]>([]);
+  const [searching, setSearching] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-
-  const filtered = UNIVERSITIES.filter(u => u.toLowerCase().includes(search.toLowerCase()));
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -259,6 +218,23 @@ function UniversitySelect({ value, onChange, error }: { value: string; onChange:
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = search.trim();
+    if (!q) { setResults([]); setSearching(false); return; }
+    setSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      const { data } = await supabase
+        .from("universities")
+        .select("id, name, country")
+        .ilike("name", `%${q}%`)
+        .limit(10);
+      setResults(data ?? []);
+      setSearching(false);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
 
   return (
     <div className="relative" ref={ref}>
@@ -279,18 +255,23 @@ function UniversitySelect({ value, onChange, error }: { value: string; onChange:
             <Search className="w-4 h-4 shrink-0 text-muted-foreground" />
             <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Search institutions…" className="h-10 text-sm border-0 outline-none bg-transparent flex-1" />
+            {searching && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground shrink-0" />}
           </div>
           <div className="max-h-[260px] overflow-y-auto">
-            {filtered.length === 0 && (
+            {!search.trim() ? (
+              <p className="py-6 text-sm text-center text-muted-foreground">Type to search institutions…</p>
+            ) : results.length === 0 && !searching ? (
               <p className="py-4 text-sm text-center text-muted-foreground">No institution found.</p>
+            ) : (
+              results.map((uni) => (
+                <button key={uni.id} type="button" onClick={() => { onChange(uni.name); setOpen(false); setSearch(""); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-[#f5f3ff] transition-colors text-left">
+                  <Check className={cn("w-4 h-4 text-[#4f46e5] shrink-0", value === uni.name ? "opacity-100" : "opacity-0")} />
+                  <span className="flex-1">{uni.name}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{uni.country}</span>
+                </button>
+              ))
             )}
-            {filtered.map((uni) => (
-              <button key={uni} type="button" onClick={() => { onChange(uni); setOpen(false); setSearch(""); }}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm hover:bg-[#f5f3ff] transition-colors text-left">
-                <Check className={cn("w-4 h-4 text-[#4f46e5] shrink-0", value === uni ? "opacity-100" : "opacity-0")} />
-                {uni}
-              </button>
-            ))}
           </div>
         </div>
       )}
@@ -328,67 +309,17 @@ function LoadingScreen() {
 
 function ResultsPanel({ name, onReset }: { name: string; onReset: () => void }) {
   return (
-    <div className="flex flex-col gap-7">
-      <div className="rounded-xl bg-gradient-to-r from-[#4f46e5] to-[#6d28d9] px-6 py-5 flex items-center gap-4">
-        <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-          <CheckCircle2 className="w-5 h-5 text-white" />
-        </div>
-        <div className="flex-1">
-          <p className="font-semibold text-white">Application Submitted</p>
-          <p className="text-sm text-white/70 mt-0.5">{name} — profile enrichment complete. Hiring team notified.</p>
-        </div>
-        <button onClick={onReset} className="text-xs text-white/60 hover:text-white transition-colors underline underline-offset-2 shrink-0">
-          New application
-        </button>
+    <div className="flex flex-col items-center gap-6 py-12 text-center">
+      <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+        <CheckCircle2 className="w-8 h-8 text-green-600" />
       </div>
-
-      <div className="flex items-center gap-4">
-        <div className="flex-1 h-px bg-border" />
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Profile Enrichment · Auto-collected from public sources
-        </span>
-        <div className="flex-1 h-px bg-border" />
+      <div>
+        <p className="text-2xl font-semibold text-foreground">Thank you {name}!</p>
+        <p className="text-muted-foreground mt-1">Your application has been submitted successfully. We will contact you as soon as possible.</p>
       </div>
-
-      <div className="grid grid-cols-2 gap-5">
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#0d1117] flex items-center justify-center">
-                <Github className="w-4 h-4 text-white" />
-              </div>
-              <p className="text-sm font-semibold text-foreground">GitHub Profile</p>
-            </div>
-          </div>
-          <div className="p-5 flex flex-col gap-4 text-center">
-            <div className="w-16 h-16 rounded-full bg-[#f0f0f0] mx-auto flex items-center justify-center">
-              <Github className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground">GitHub enrichment data will appear here after processing.</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#0a66c2] flex items-center justify-center">
-                <Linkedin className="w-4 h-4 text-white" />
-              </div>
-              <p className="text-sm font-semibold text-foreground">LinkedIn Profile</p>
-            </div>
-          </div>
-          <div className="p-5 flex flex-col gap-4 text-center">
-            <div className="w-16 h-16 rounded-full bg-[#f0f0f0] mx-auto flex items-center justify-center">
-              <Linkedin className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground">LinkedIn enrichment data will appear here after processing.</p>
-          </div>
-        </div>
-      </div>
-
-      <p className="text-xs text-muted-foreground text-center pb-2">
-        Data sourced from public profiles only · Not shared with third parties · Handled per our Privacy Policy
-      </p>
+      <button onClick={onReset} className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
+        Nộp đơn mới
+      </button>
     </div>
   );
 }
@@ -397,8 +328,8 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
   const [form, setForm] = useState<FormData>({
     resume: null, fullName: "", pronouns: "", customPronoun: "", email: "", phone: "",
     location: "", company: "", linkedin: "", github: "", portfolio: "", website: "",
-    workEligibility: "", officeAttendance: "", university: "", faculty: "",
-    gradYear: "", availableAgain: "", hearAbout: "", talentNetwork: "", startInPerson: "",
+    workEligibility: "", officeAttendance: "", university: "", fieldOfStudy: "",
+    educationLevel: "", availability: "", hearAbout: "", talentNetwork: "",
     anythingElse: "", ageGroup: "", genderIdentity: "", race: [], military: "", disability: "",
   });
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -419,12 +350,10 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
     if (!form.phone.trim()) e.phone = "Phone number is required";
     if (!form.workEligibility) e.workEligibility = "Please select your work eligibility";
     if (!form.officeAttendance) e.officeAttendance = "Please indicate office attendance availability";
-    if (!form.university) e.university = "Please select your university";
-    if (!form.gradYear) e.gradYear = "Please select your expected graduation year";
-    if (!form.availableAgain) e.availableAgain = "Please select an option";
+    if (!form.educationLevel) e.educationLevel = "Please select your education level";
+    if (!form.availability) e.availability = "Please select your availability";
     if (!form.hearAbout) e.hearAbout = "Please select how you heard about this role";
     if (!form.talentNetwork) e.talentNetwork = "Please select an option";
-    if (!form.startInPerson) e.startInPerson = "Please indicate if you can start in-person";
     return e;
   };
 
@@ -527,21 +456,21 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
         </div>
       </section>
 
-      {/* SECTION 3 – INTERN PROGRAM QUESTIONS */}
+      {/* SECTION 3 – APPLICATION QUESTIONS */}
       <section>
-        <SectionHeading label="Intern Program Questions 2026" />
+        <SectionHeading label="Application Questions" />
         <div className="flex flex-col gap-6">
 
           <div>
-            <FieldLabel required>Are you legally entitled to work in the location of this job posting?</FieldLabel>
+            <FieldLabel required>Are you legally authorized to work in the location of this job posting?</FieldLabel>
             <div className="relative">
               <select value={form.workEligibility} onChange={(e) => set("workEligibility", e.target.value)}
                 className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.workEligibility ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
                 <option value="">Select…</option>
-                <option value="fulltime">Full-time eligibility</option>
-                <option value="parttime">Part-time eligibility</option>
-                <option value="pgwp">PGWP processing</option>
-                <option value="not-eligible">Not eligible</option>
+                <option value="authorized">Yes, fully authorized (Full-time / Part-time)</option>
+                <option value="sponsorship">Requires visa sponsorship</option>
+                <option value="pending">Pending work authorization / In process</option>
+                <option value="not-authorized">Not currently authorized</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>
@@ -550,72 +479,73 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
 
           <div>
             <FieldLabel required>
-              We have an in-person office attendance policy. Are you able to be in the location of this position by the start date?
+              We have an in-person / hybrid office attendance policy. Are you able to work at the specified office location by your start date?
             </FieldLabel>
             <div className="flex flex-col gap-2 mt-1">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input type="radio" name="officeAttendance" value="yes" checked={form.officeAttendance === "yes"}
                   onChange={(e) => set("officeAttendance", e.target.value)} className="mt-0.5 shrink-0 accent-[#4f46e5]" />
-                <span className="text-sm text-foreground leading-snug">Yes, I am able to work in-person at the office location posted</span>
+                <span className="text-sm text-foreground leading-snug">Yes, I am able to meet the in-person attendance requirements at this location</span>
               </label>
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input type="radio" name="officeAttendance" value="no" checked={form.officeAttendance === "no"}
                   onChange={(e) => set("officeAttendance", e.target.value)} className="mt-0.5 shrink-0 accent-[#4f46e5]" />
-                <span className="text-sm text-foreground leading-snug">I will not be able to work in the office of the location posted</span>
+                <span className="text-sm text-foreground leading-snug">No, I am unable to work at this office location</span>
               </label>
             </div>
             <FieldError msg={errors.officeAttendance} />
           </div>
 
           <div>
-            <FieldLabel required>
+            <FieldLabel>
               University / College{" "}
-              <span className="text-muted-foreground font-normal text-xs">(if your school is not there, please fill in the next question)</span>
+              <span className="text-muted-foreground font-normal text-xs">(Optional / If applicable — Select from list or type if not listed)</span>
             </FieldLabel>
             <UniversitySelect value={form.university} onChange={(v) => set("university", v)} error={errors.university} />
           </div>
 
           <div>
-            <FieldLabel htmlFor="faculty">
-              Please add your faculty, program or co-op department{" "}
-              <span className="text-muted-foreground font-normal text-xs">(E.G. "SFU BA Psychology Honours" ... E.G. "Stanford Physics Co-op")</span>
+            <FieldLabel htmlFor="fieldOfStudy">
+              Field of Study / Major / Degree Program{" "}
+              <span className="text-muted-foreground font-normal text-xs">(If applicable)</span>
             </FieldLabel>
-            <textarea id="faculty" rows={3} value={form.faculty} onChange={(e) => set("faculty", e.target.value)} className={textareaCls} />
+            <input id="fieldOfStudy" type="text" value={form.fieldOfStudy}
+              onChange={(e) => set("fieldOfStudy", e.target.value)}
+              placeholder='E.g. "Computer Science", "Business Administration", "Electrical Engineering"'
+              className={inputCls()} />
           </div>
 
           <div>
-            <FieldLabel required>What is your expected graduation year?</FieldLabel>
+            <FieldLabel required>What is your highest level of education completed or expected completion year?</FieldLabel>
             <div className="relative">
-              <select value={form.gradYear} onChange={(e) => set("gradYear", e.target.value)}
-                className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.gradYear ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
+              <select value={form.educationLevel} onChange={(e) => set("educationLevel", e.target.value)}
+                className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.educationLevel ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
                 <option value="">Select…</option>
-                <option value="recent">Recently graduated</option>
-                <option value="sept-2026">Sept 2026</option>
-                <option value="dec-2026">Dec 2026</option>
-                <option value="may-2027">May 2027</option>
-                <option value="aug-2027">August 2027</option>
-                <option value="dec-2027">Dec 2027</option>
-                <option value="2028-later">2028 or later</option>
+                <option value="high-school">High School / Secondary</option>
+                <option value="bachelors-completed">Bachelor's Degree (Completed)</option>
+                <option value="masters-doctorate">Master's / Doctorate Degree (Completed)</option>
+                <option value="currently-enrolled">Currently Enrolled (Expected graduation: 2026 or later)</option>
+                <option value="other">Other</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>
-            <FieldError msg={errors.gradYear} />
+            <FieldError msg={errors.educationLevel} />
           </div>
 
           <div>
-            <FieldLabel required>Are you potentially available for another internship term after this one?</FieldLabel>
+            <FieldLabel required>What is your current employment status and availability to start?</FieldLabel>
             <div className="relative">
-              <select value={form.availableAgain} onChange={(e) => set("availableAgain", e.target.value)}
-                className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.availableAgain ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
+              <select value={form.availability} onChange={(e) => set("availability", e.target.value)}
+                className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.availability ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
                 <option value="">Select…</option>
-                <option value="yes-definitely">Yes, definitely</option>
-                <option value="yes-possibly">Yes, possibly</option>
-                <option value="no">No</option>
-                <option value="unsure">Not sure yet</option>
+                <option value="immediate">Available immediately</option>
+                <option value="2-4-weeks">Requires 2–4 weeks' notice period</option>
+                <option value="1-2-months">Requires 1–2 months' notice period</option>
+                <option value="other">Other</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>
-            <FieldError msg={errors.availableAgain} />
+            <FieldError msg={errors.availability} />
           </div>
 
           <div>
@@ -625,7 +555,7 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
                 className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.hearAbout ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
                 <option value="">Select…</option>
                 <option value="linkedin">LinkedIn</option>
-                <option value="company-website">Company Website</option>
+                <option value="company-website">Company Website / Careers Page</option>
                 <option value="referral">Employee Referral</option>
                 <option value="job-board">Job Board (Indeed, Glassdoor…)</option>
                 <option value="university">University / Career Fair</option>
@@ -638,7 +568,7 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
           </div>
 
           <div>
-            <FieldLabel required>Are you part of GeoComply's Preferred Talent Network?</FieldLabel>
+            <FieldLabel required>Are you part of our Preferred Talent Network?</FieldLabel>
             <div className="relative">
               <select value={form.talentNetwork} onChange={(e) => set("talentNetwork", e.target.value)}
                 className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.talentNetwork ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
@@ -653,25 +583,8 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
           </div>
 
           <div>
-            <FieldLabel required>Can you start in-person at the location of this internship as of the start date?</FieldLabel>
-            <div className="flex flex-col gap-2 mt-1">
-              <label className="flex items-center gap-2.5 cursor-pointer">
-                <input type="radio" name="startInPerson" value="yes" checked={form.startInPerson === "yes"}
-                  onChange={(e) => set("startInPerson", e.target.value)} className="shrink-0 accent-[#4f46e5]" />
-                <span className="text-sm text-foreground">Yes</span>
-              </label>
-              <label className="flex items-center gap-2.5 cursor-pointer">
-                <input type="radio" name="startInPerson" value="no" checked={form.startInPerson === "no"}
-                  onChange={(e) => set("startInPerson", e.target.value)} className="shrink-0 accent-[#4f46e5]" />
-                <span className="text-sm text-foreground">No</span>
-              </label>
-            </div>
-            <FieldError msg={errors.startInPerson} />
-          </div>
-
-          <div>
             <FieldLabel htmlFor="anythingElse">
-              Anything else we should know? :){" "}
+              Anything else you would like us to know?{" "}
               <span className="font-normal text-muted-foreground">(Optional)</span>
             </FieldLabel>
             <textarea id="anythingElse" rows={4} value={form.anythingElse}
@@ -682,9 +595,9 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
 
       {/* SECTION 4 – DIVERSITY SURVEY */}
       <section>
-        <SectionHeading label="Diversity Survey for GeoComply" />
+        <SectionHeading label="Diversity Survey" />
         <div className="rounded-lg border border-[rgba(79,70,229,0.18)] bg-[#faf9ff] p-5 mb-7 text-sm text-foreground leading-relaxed">
-          Diversity, equity, and inclusion are an important part of who we are at GeoComply. We strive to be reflective
+          Diversity, equity, and inclusion are an important part of who we are. We strive to be reflective
           of our local communities and are proactive in our efforts to advance diversity, inclusion, and equity. To help
           us evaluate our DEI efforts, we invite you to complete this optional survey. Submission of the information on
           this form is strictly voluntary. If you choose to participate or not, it will not subject you to any adverse
@@ -800,47 +713,65 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
   );
 }
 
-function Sidebar() {
+function Sidebar({ job }: { job: JobPosting | null }) {
   return (
     <aside className="w-[320px] shrink-0 flex flex-col bg-white border-r border-border overflow-y-auto">
       <div className="px-7 pt-7 pb-6 border-b border-border">
         <div className="flex items-center gap-2 mb-5">
           <div className="w-8 h-8 rounded-lg bg-[#4f46e5] flex items-center justify-center">
-            <span className="text-white font-bold text-[10px] tracking-tight">GC</span>
+            <span className="text-white font-bold text-[10px] tracking-tight">CP</span>
           </div>
-          <span className="text-sm font-semibold text-foreground">GeoComply</span>
-          <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Hiring
-          </span>
+          <span className="text-sm font-semibold text-foreground">Career Page</span>
+          {job && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              {job.status === 'PUBLISHED' ? 'Open' : job.status}
+            </span>
+          )}
         </div>
         <h1 className="text-base font-semibold text-foreground leading-snug tracking-tight mb-2">
-          Mobile Security Engineer Intern – Forensics
+          {job?.job_title || 'Position'}
         </h1>
-        <p className="text-xs text-muted-foreground">Ho Chi Minh, Vietnam</p>
+        <p className="text-xs text-muted-foreground">{job?.location || 'Location'}</p>
         <div className="flex flex-wrap gap-1.5 mt-3">
-          {["Technology – Engineering", "Intern", "On-site"].map((tag) => (
+          {[job?.department, job?.employment_type, job?.work_mode].filter(Boolean).map((tag) => (
             <span key={tag} className="text-[11px] text-muted-foreground bg-[#f4f4f6] rounded px-2 py-0.5 border border-border">{tag}</span>
           ))}
         </div>
       </div>
-      <div className="px-7 py-6 flex-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-5">Job Requirements</p>
-        <div className="flex flex-col gap-5">
-          {JD_REQUIREMENTS.map((sec) => (
-            <div key={sec.heading}>
-              <p className="text-xs font-semibold text-foreground mb-2">{sec.heading}</p>
-              <ul className="flex flex-col gap-1.5">
-                {sec.items.map((item) => (
-                  <li key={item} className="flex items-start gap-2">
-                    <div className="mt-[5px] w-1.5 h-1.5 rounded-full bg-[#4f46e5]/30 shrink-0" />
-                    <span className="text-xs text-muted-foreground leading-snug">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+      <div className="px-7 py-6 flex-1 flex flex-col gap-6">
+        {job?.must_have_skills && job.must_have_skills.length > 0 && (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">Must-Have Skills</p>
+            <ul className="flex flex-col gap-1.5">
+              {job.must_have_skills.map((skill) => (
+                <li key={skill} className="flex items-start gap-2">
+                  <div className="mt-[5px] w-1.5 h-1.5 rounded-full bg-[#4f46e5]/30 shrink-0" />
+                  <span className="text-xs text-muted-foreground leading-snug">{skill}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {job?.nice_to_have_skills && job.nice_to_have_skills.length > 0 && (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">Nice-to-Have Skills</p>
+            <ul className="flex flex-col gap-1.5">
+              {job.nice_to_have_skills.map((skill) => (
+                <li key={skill} className="flex items-start gap-2">
+                  <div className="mt-[5px] w-1.5 h-1.5 rounded-full bg-[#4f46e5]/30 shrink-0" />
+                  <span className="text-xs text-muted-foreground leading-snug">{skill}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {job?.requirements && (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">Requirements</p>
+            <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">{job.requirements}</p>
+          </div>
+        )}
       </div>
       <div className="px-7 py-5 border-t border-border bg-[#fafafa]">
         <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -853,10 +784,9 @@ function Sidebar() {
 
 export default function CareersPortalPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const jobId = searchParams.get('jobId');
+  const params = useParams();
+  const slug = params?.slug ? (Array.isArray(params.slug) ? params.slug[0] : params.slug) : null;
 
-  const [jobData, setJobData] = useState<JobPostingsData | null>(null);
   const [selectedJob, setSelectedJob] = useState<JobPosting | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -867,16 +797,25 @@ export default function CareersPortalPage() {
   useEffect(() => {
     const loadJobData = async () => {
       try {
-        const response = await fetch('/job_postings.json');
-        if (!response.ok) throw new Error('Failed to fetch job postings');
-        const data: JobPostingsData = await response.json();
-        setJobData(data);
-        if (jobId) {
-          const job = data.jobs.find(j => j.id === jobId);
-          setSelectedJob(job || data.jobs[0]);
+        let query = supabase
+          .from('jobs_posting')
+          .select('*');
+
+        if (slug) {
+          const decoded = decodeURIComponent(slug);
+          query = query.ilike('job_title', decoded);
         } else {
-          const firstOpenJob = data.jobs.find(j => j.status === 'open');
-          setSelectedJob(firstOpenJob || data.jobs[0]);
+          query = query.eq('status', 'PUBLISHED');
+        }
+
+        const { data, error: fetchError } = await query.order('created_at', { ascending: false }).limit(1);
+
+        if (fetchError) throw fetchError;
+
+        if (data && data.length > 0) {
+          setSelectedJob(data[0] as JobPosting);
+        } else {
+          setError('No published job found');
         }
       } catch (err) {
         console.error('Failed to load job data:', err);
@@ -886,7 +825,7 @@ export default function CareersPortalPage() {
       }
     };
     loadJobData();
-  }, [jobId]);
+  }, [slug]);
 
   const handleSubmit = async (form: FormData) => {
     setSubmitting(true);
@@ -902,6 +841,7 @@ export default function CareersPortalPage() {
       formDataUpload.append('linkedin_url', form.linkedin);
       formDataUpload.append('github_url', form.github);
       formDataUpload.append('job_id', selectedJob?.id || '');
+      formDataUpload.append('job_title', selectedJob?.job_title || '');
 
       setPhase("loading");
 
@@ -917,9 +857,81 @@ export default function CareersPortalPage() {
 
       const ingestData = await ingestResponse.json();
       const candidateUuid = ingestData.candidate_uuid;
+      const storageUrl = ingestData.storage_url;
 
       if (!candidateUuid) {
         throw new Error('No candidate UUID returned from ingest API');
+      }
+
+      // Save additional candidate fields to Supabase
+      const githubUsername = form.github
+        ? form.github.replace(/\/+$/, '').split('/').pop() || null
+        : null;
+
+      const { error: candidateError } = await supabase
+        .from('candidates')
+        .upsert({
+          uuid: candidateUuid,
+          full_name: form.fullName,
+          email: form.email,
+          phone: form.phone,
+          current_location: form.location || null,
+          current_company: form.company || null,
+          pronouns: form.pronouns || null,
+          custom_pronouns: form.customPronoun || null,
+          linkedin_url: form.linkedin || null,
+          github_username: githubUsername,
+          portfolio_url: form.portfolio || null,
+          website_url: form.website || null,
+          university: form.university || null,
+          faculty_program: form.fieldOfStudy || null,
+          graduation_year: form.educationLevel || null,
+          age_group: form.ageGroup || null,
+          gender_identity: form.genderIdentity || null,
+          race: form.race.length > 0 ? form.race : [],
+          military_status: form.military || null,
+          disability_status: form.disability || null,
+          cv_file_path: storageUrl || null,
+        }, { onConflict: 'uuid' });
+
+      if (candidateError) {
+        console.error('candidate upsert error:', candidateError);
+        throw new Error(candidateError.message || 'Failed to save candidate');
+      }
+
+      // Create resume record
+      const { data: resumeData, error: resumeError } = await supabase
+        .from('resumes')
+        .insert({
+          candidate_uuid: candidateUuid,
+          filename: form.resume?.name || 'resume.pdf',
+          file_path: storageUrl || null,
+        })
+        .select('id')
+        .single();
+
+      if (resumeError) {
+        console.error('resume insert error:', resumeError);
+        throw new Error(resumeError.message || 'Failed to save resume');
+      }
+
+      // Create application record
+      const { error: applicationError } = await supabase
+        .from('applications')
+        .insert({
+          candidate_uuid: candidateUuid,
+          job_posting_id: selectedJob?.id,
+          resume_id: resumeData.id,
+          work_authorization: form.workEligibility === 'authorized',
+          office_attendance: form.officeAttendance === 'yes',
+          referral_source: form.hearAbout || null,
+          preferred_talent_network: form.talentNetwork === 'yes',
+          additional_information: form.anythingElse || null,
+        });
+
+      if (applicationError) {
+        console.error('application insert error:', applicationError);
+        throw new Error(applicationError.message || 'Failed to save application');
       }
 
       setSubmitting(false);
@@ -960,20 +972,20 @@ export default function CareersPortalPage() {
       <header className="h-12 bg-white border-b border-border flex items-center px-7 gap-3 shrink-0 z-20 mt-8">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded bg-[#4f46e5] flex items-center justify-center">
-            <span className="text-white font-bold text-[9px] tracking-tight">GC</span>
+            <span className="text-white font-bold text-[9px] tracking-tight">CP</span>
           </div>
-          <span className="text-sm font-semibold text-foreground">GeoComply</span>
+          <span className="text-sm font-semibold text-foreground">Career Page</span>
         </div>
         <div className="w-px h-3.5 bg-border mx-1" />
-        <span className="text-sm text-muted-foreground">{selectedJob?.title || "Careers"}</span>
+        <span className="text-sm text-muted-foreground">{selectedJob?.job_title || "Careers"}</span>
         <div className="ml-auto">
-          <a href="#" className="text-sm text-[#4f46e5] hover:underline font-medium">GeoComply Home Page</a>
+          <a href="#" className="text-sm text-[#4f46e5] hover:underline font-medium">Go to Home Page</a>
         </div>
       </header>
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+        <Sidebar job={selectedJob} />
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-[740px] mx-auto px-10 py-9">
 
@@ -988,10 +1000,10 @@ export default function CareersPortalPage() {
               <>
                 <div className="mb-7">
                   <h2 className="text-xl font-semibold text-foreground tracking-tight">
-                    {selectedJob?.title || "Position"}
+                    {selectedJob?.job_title || "Position"}
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {selectedJob?.location || "Location"} &nbsp;·&nbsp; {selectedJob?.department || "Department"} / {selectedJob?.type || "Type"} / On-site
+                    {selectedJob?.location || "Location"} &nbsp;·&nbsp; {selectedJob?.department || "Department"} / {selectedJob?.employment_type || "Type"} / {selectedJob?.work_mode || "On-site"}
                   </p>
                 </div>
                 <div className="bg-white rounded-xl border border-border p-8 shadow-sm">
@@ -1003,13 +1015,7 @@ export default function CareersPortalPage() {
             {phase === "loading" && <LoadingScreen />}
 
             {phase === "results" && (
-              <>
-                <div className="mb-7">
-                  <h2 className="text-xl font-semibold text-foreground tracking-tight">Application Review</h2>
-                  <p className="text-sm text-muted-foreground mt-1">Profile enrichment complete. Here's what we collected from public sources.</p>
-                </div>
-                <ResultsPanel name={submittedName} onReset={() => setPhase("form")} />
-              </>
+              <ResultsPanel name={submittedName} onReset={() => setPhase("form")} />
             )}
 
           </div>

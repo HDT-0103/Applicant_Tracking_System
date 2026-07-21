@@ -1,10 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from 'next/navigation';
 import { AppHeader } from "../components/AppHeader";
 import { LeftSidebar } from "../components/LeftSidebar";
 import { D } from "../lib/shared";
+import { supabase } from "../lib/supabase";
 import { 
   Users, 
   Briefcase, 
@@ -12,26 +13,80 @@ import {
   Clock,
   CheckCircle,
   ArrowRight,
-  BarChart3
+  BarChart3,
+  Loader2,
 } from "lucide-react";
+
+interface RecentCandidate {
+  uuid: string;
+  name: string;
+  role: string;
+  status: string;
+  time: string;
+  score: number | null;
+}
 
 export default function HomePage() {
   const router = useRouter();
+  const [recentCandidates, setRecentCandidates] = useState<RecentCandidate[]>([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(true);
 
-  const stats = [
-    { label: "Total Candidates", value: "1,247", icon: <Users size={20} strokeWidth={1.5} color={D.blue} />, change: "+12%", positive: true },
-    { label: "Open Positions", value: "3", icon: <Briefcase size={20} strokeWidth={1.5} color={D.purple} />, change: "+1", positive: true },
-    { label: "Applications Today", value: "24", icon: <TrendingUp size={20} strokeWidth={1.5} color={D.mint} />, change: "+8%", positive: true },
-    { label: "Pending Reviews", value: "18", icon: <Clock size={20} strokeWidth={1.5} color={D.amber} />, change: "-3", positive: true },
-  ];
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('candidates')
+        .select(`
+          uuid,
+          full_name,
+          created_at,
+          applications!left (
+            job_posting_id,
+            jobs_posting!left (job_title)
+          ),
+          enrichment_profiles!left (
+            enrichment_status,
+            match_confidence_score
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-  const recentCandidates = [
-    { name: "Maya Lindqvist", role: "Senior ML Engineer", status: "Enriched", time: "2 hours ago", score: 92 },
-    { name: "James Chen", role: "Full Stack Developer", status: "Enriched", time: "4 hours ago", score: 88 },
-    { name: "Sarah Miller", role: "DevOps Engineer", status: "Processing", time: "6 hours ago", score: null },
-    { name: "Alex Johnson", role: "Data Scientist", status: "Enriched", time: "1 day ago", score: 85 },
-    { name: "Emily Davis", role: "Mobile Security Intern", status: "New", time: "1 day ago", score: null },
-  ];
+      if (!mounted) return;
+      setLoadingCandidates(false);
+      if (error || !data) return;
+
+      const mapped: RecentCandidate[] = data.map((c: any) => {
+        const app = c.applications?.[0];
+        const ep = c.enrichment_profiles?.[0];
+        const statusRaw = ep?.enrichment_status || 'CREATED';
+        let status = 'Created';
+        if (statusRaw === 'ENRICHED') status = 'Enriched';
+        else if (statusRaw === 'QUEUED' || statusRaw === 'IN_PROGRESS') status = 'Processing';
+        else if (statusRaw === 'ENRICHMENT_FAILED' || statusRaw === 'NO_PROFILES_FOUND') status = 'Failed';
+
+        const ts = c.created_at ? new Date(c.created_at).getTime() : Date.now();
+        const elapsed = Date.now() - ts;
+        let time: string;
+        if (elapsed < 60000) time = 'Just now';
+        else if (elapsed < 3600000) time = `${Math.floor(elapsed / 60000)}m ago`;
+        else if (elapsed < 86400000) time = `${Math.floor(elapsed / 3600000)}h ago`;
+        else time = `${Math.floor(elapsed / 86400000)}d ago`;
+
+        return {
+          uuid: c.uuid,
+          name: c.full_name || 'Unknown',
+          role: app?.jobs_posting?.job_title || 'N/A',
+          status,
+          time,
+          score: ep?.match_confidence_score ?? null,
+        };
+      });
+
+      setRecentCandidates(mapped);
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -53,112 +108,14 @@ export default function HomePage() {
               </p>
             </div>
 
-            {/* Stats Grid */}
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(4, 1fr)", 
-              gap: 20, 
-              marginBottom: 32 
-            }}>
-              {stats.map((stat, index) => (
-                <div
-                  key={index}
-                  style={{
-                    padding: "20px",
-                    borderRadius: 12,
-                    background: D.canvas,
-                    border: `1px solid ${D.line}`,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ 
-                      width: 40, 
-                      height: 40, 
-                      borderRadius: 8, 
-                      background: `${D.blue}08`,
-                      display: "flex", 
-                      alignItems: "center", 
-                      justifyContent: "center" 
-                    }}>
-                      {stat.icon}
-                    </div>
-                    <div style={{
-                      padding: "4px 8px",
-                      borderRadius: 99,
-                      background: stat.positive ? `${D.mint}10` : `${D.red}10`,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: stat.positive ? D.mint : D.red
-                    }}>
-                      {stat.change}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 28, fontWeight: 800, color: D.ink, letterSpacing: "-0.04em", lineHeight: 1 }}>
-                      {stat.value}
-                    </div>
-                    <div style={{ fontSize: 12, color: D.muted, marginTop: 2 }}>
-                      {stat.label}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+
 
             {/* Quick Actions */}
             <div style={{ marginBottom: 32 }}>
               <h2 style={{ fontSize: 18, fontWeight: 600, color: D.ink, marginBottom: 16 }}>
                 Quick Actions
               </h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
-                <button
-                  onClick={() => router.push("/careers")}
-                  style={{
-                    padding: "20px",
-                    borderRadius: 12,
-                    background: D.canvas,
-                    border: `1px solid ${D.line}`,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    transition: "all 0.2s ease",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 16
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = `${D.blue}08`;
-                    e.currentTarget.style.borderColor = D.blue;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = D.canvas;
-                    e.currentTarget.style.borderColor = D.line;
-                  }}
-                >
-                  <div style={{ 
-                    width: 48, 
-                    height: 48, 
-                    borderRadius: 10, 
-                    background: `${D.blue}10`,
-                    display: "flex", 
-                    alignItems: "center", 
-                    justifyContent: "center",
-                    flexShrink: 0
-                  }}>
-                    <Briefcase size={24} strokeWidth={1.5} color={D.blue} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: D.ink, marginBottom: 4 }}>
-                      View Careers Portal
-                    </div>
-                    <div style={{ fontSize: 12, color: D.muted }}>
-                      Manage job postings and applications
-                    </div>
-                  </div>
-                  <ArrowRight size={18} strokeWidth={1.5} color={D.muted} />
-                </button>
+              <div style={{ display: "flex", flexDirection: "column" }}>
 
                 <button
                   style={{
@@ -235,9 +192,18 @@ export default function HomePage() {
                 border: `1px solid ${D.line}`,
                 overflow: "hidden"
               }}>
-                {recentCandidates.map((candidate, index) => (
+                {loadingCandidates ? (
+                  <div style={{ padding: "24px", textAlign: "center" }}>
+                    <Loader2 size={20} strokeWidth={2} color={D.muted} style={{ animation: "spin 1s linear infinite" }} />
+                  </div>
+                ) : recentCandidates.length === 0 ? (
+                  <div style={{ padding: "24px", textAlign: "center" }}>
+                    <p style={{ fontSize: 13, color: D.muted }}>No candidates yet</p>
+                  </div>
+                ) : recentCandidates.map((candidate, index) => (
                   <div
-                    key={index}
+                    key={candidate.uuid}
+                    onClick={() => router.push(`/candidate-profile/enriched?uuid=${candidate.uuid}`)}
                     style={{
                       padding: "16px 20px",
                       borderBottom: index < recentCandidates.length - 1 ? `1px solid ${D.line}` : "none",

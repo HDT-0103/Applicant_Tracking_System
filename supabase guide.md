@@ -32,21 +32,6 @@ create index IF not exists idx_audit_log_action on public.audit_log using btree 
 
 create index IF not exists idx_audit_log_created on public.audit_log using btree (created_at) TABLESPACE pg_default;
 
----
-create table public.candidate_details (
-  id uuid not null default gen_random_uuid (),
-  resume_id uuid not null,
-  phone character varying(20) null,
-  address text null,
-  salary_expectation numeric(12, 2) null,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  constraint pk_candidate_detail primary key (id),
-  constraint fk_candidate_details_resume foreign KEY (resume_id) references resumes (id) on delete CASCADE
-) TABLESPACE pg_default;
-
-create index IF not exists idx_candidate_details_resume_id on public.candidate_details using btree (resume_id) TABLESPACE pg_default;
-
 
 ---
 create table public.candidates (
@@ -59,6 +44,25 @@ create table public.candidates (
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
   cv_file_path text null,
+  email character varying(255) null,
+  current_location character varying(255) null,
+  current_company character varying(255) null,
+  pronouns character varying(50) null,
+  custom_pronouns character varying(100) null,
+  github_url text null,
+  portfolio_url text null,
+  website_url text null,
+  university character varying(255) null,
+  faculty_program text null,
+  graduation_year character varying(20) null,
+  age_group character varying(50) null,
+  gender_identity character varying(100) null,
+  race text[] not null default '{}'::text[],
+  military_status character varying(50) null,
+  disability_status character varying(50) null,
+  phone character varying(20) null,
+  address text null,
+  salary_expectation numeric(12, 2) null,
   constraint pk_candidate primary key (uuid)
 ) TABLESPACE pg_default;
 
@@ -66,7 +70,64 @@ create index IF not exists idx_candidates_status on public.candidates using btre
 
 create index IF not exists idx_candidates_full_name on public.candidates using btree (full_name) TABLESPACE pg_default;
 
+create index IF not exists idx_candidates_email on public.candidates using btree (email) TABLESPACE pg_default;
+
+create trigger trg_candidates_updated_at BEFORE
+update on candidates for EACH row
+execute FUNCTION update_updated_at_column ();
+
 ---
+create table public.applications (
+  id uuid not null default gen_random_uuid (),
+  candidate_uuid character varying(36) not null,
+  job_posting_id uuid not null,
+  resume_id uuid not null,
+  status character varying(50) not null default 'SUBMITTED'::character varying,
+  cover_letter text null,
+  work_authorization boolean null,
+  office_attendance boolean null,
+  referral_source character varying(255) null,
+  preferred_talent_network boolean null,
+  additional_information text null,
+  submitted_at timestamp with time zone not null default now(),
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  constraint pk_applications primary key (id),
+  constraint fk_application_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE,
+  constraint fk_application_job_posting foreign KEY (job_posting_id) references jobs_posting (id) on delete CASCADE,
+  constraint fk_application_resume foreign KEY (resume_id) references resumes (id) on delete CASCADE,
+  constraint ck_application_status check (
+    (
+      (status)::text = any (
+        array[
+          ('SUBMITTED'::character varying)::text,
+          ('SCREENING'::character varying)::text,
+          ('INTERVIEW'::character varying)::text,
+          ('OFFER'::character varying)::text,
+          ('HIRED'::character varying)::text,
+          ('REJECTED'::character varying)::text,
+          ('WITHDRAWN'::character varying)::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create index IF not exists idx_applications_candidate on public.applications using btree (candidate_uuid) TABLESPACE pg_default;
+
+create index IF not exists idx_applications_job on public.applications using btree (job_posting_id) TABLESPACE pg_default;
+
+create index IF not exists idx_applications_resume on public.applications using btree (resume_id) TABLESPACE pg_default;
+
+create index IF not exists idx_applications_status on public.applications using btree (status) TABLESPACE pg_default;
+
+create index IF not exists idx_applications_created_at on public.applications using btree (created_at) TABLESPACE pg_default;
+
+create trigger trg_applications_updated_at BEFORE
+update on applications for EACH row
+execute FUNCTION update_updated_at_column ();
+---
+
 create table public.confirmed_slots (
   id character varying(36) not null,
   candidate_uuid character varying(36) not null,
@@ -199,4 +260,85 @@ create table public.users (
 ) TABLESPACE pg_default;
 
 create index IF not exists idx_users_role on public.users using btree (role) TABLESPACE pg_default;
+---
+
+create table public.jobs_posting (
+  id uuid not null default gen_random_uuid (),
+  job_title character varying(255) not null,
+  department character varying(100) null,
+  location character varying(255) null,
+  seniority_level character varying(100) null,
+  employment_type character varying(100) null,
+  work_mode character varying(100) null,
+  target_openings integer null,
+  salary_min numeric(12, 2) null,
+  salary_max numeric(12, 2) null,
+  must_have_skills text[] not null default '{}'::text[],
+  nice_to_have_skills text[] not null default '{}'::text[],
+  description text null,
+  key_responsibilities text null,
+  requirements text null,
+  nice_to_have_qualifications text null,
+  status character varying(50) not null default 'DRAFT'::character varying,
+  posted_at timestamp with time zone null,
+  expires_at timestamp with time zone null,
+  created_by uuid null,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  last_saved_at timestamp with time zone not null default now(),
+  constraint pk_jobs_posting primary key (id),
+  constraint fk_jobs_posting_created_by foreign KEY (created_by) references users (id) on delete set null,
+  constraint ck_jobs_posting_status check (
+    (
+      (status)::text = any (
+        (
+          array[
+            'DRAFT'::character varying,
+            'PUBLISHED'::character varying,
+            'CLOSED'::character varying,
+            'ARCHIVED'::character varying
+          ]
+        )::text[]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_title on public.jobs_posting using btree (job_title) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_department on public.jobs_posting using btree (department) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_location on public.jobs_posting using btree (location) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_status on public.jobs_posting using btree (status) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_created_by on public.jobs_posting using btree (created_by) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_posted_at on public.jobs_posting using btree (posted_at) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_expires_at on public.jobs_posting using btree (expires_at) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_skills on public.jobs_posting using gin (must_have_skills) TABLESPACE pg_default;
+
+create index IF not exists idx_jobs_posting_preferred_skills on public.jobs_posting using gin (nice_to_have_skills) TABLESPACE pg_default;
+
+create trigger trg_jobs_posting_updated_at BEFORE
+update on jobs_posting for EACH row
+execute FUNCTION update_updated_at_column ();
+
+---
+
+create table public.universities (
+  id bigserial not null,
+  name text not null,
+  country text not null,
+  alpha_two_code character varying(10) null,
+  state_province text null,
+  domains text[] null,
+  web_pages text[] null,
+  constraint universities_pkey primary key (id)
+) TABLESPACE pg_default;
+
+create index IF not exists idx_universities_name_lower on public.universities using btree (lower(name)) TABLESPACE pg_default;
+
 ---

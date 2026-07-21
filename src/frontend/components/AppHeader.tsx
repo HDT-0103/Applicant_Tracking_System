@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter, usePathname } from 'next/navigation';
-import { Bell, Search, RefreshCw, ChevronRight, Loader2, Briefcase } from "lucide-react";
+import { Bell, Search, RefreshCw, ChevronRight, Loader2 } from "lucide-react";
 import { D, Dot, Badge, globalStyles } from "../lib/shared";
 import { useAuth, type UserRole } from "../contexts/AuthContext";
 import { useWorkspace } from "../contexts/WorkspaceContext";
@@ -130,38 +130,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
 
       {/* Right actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        {/* Careers Portal button */}
-        <button
-          onClick={() => router.push("/careers")}
-          style={{
-            display: "flex", alignItems: "center", gap: 6,
-            padding: "6px 14px",
-            border: `1px solid ${D.line}`,
-            borderRadius: 6,
-            background: D.surface,
-            cursor: "pointer",
-            fontSize: 11.5, fontWeight: 600,
-            color: D.sub,
-            fontFamily: D.font,
-            transition: "all 0.2s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = `${D.blue}08`;
-            e.currentTarget.style.borderColor = D.blue;
-            e.currentTarget.style.color = D.blue;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = D.surface;
-            e.currentTarget.style.borderColor = D.line;
-            e.currentTarget.style.color = D.sub;
-          }}
-        >
-          <Briefcase size={11} strokeWidth={2} />
-          Careers Portal
-        </button>
-
-        <div style={{ width: 1, height: 16, background: D.line }} />
-
         {/* Run Sync button */}
         {showRunSync && (
           <button

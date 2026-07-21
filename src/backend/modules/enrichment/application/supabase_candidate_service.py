@@ -31,25 +31,10 @@ class SupabaseCandidateService:
         phone: Optional[str] = None,
         linkedin_url: Optional[str] = None,
         github_username: Optional[str] = None,
-        job_id: Optional[str] = None,
     ) -> bool:
         """
         Ensure candidate exists in public.candidates table
-        If not exists, create a new record with minimal data matching exact schema
-        
-        Schema DDL for public.candidates:
-        - uuid (varchar(36), PK)
-        - full_name (varchar(255), nullable)
-        - email (varchar(255), nullable)
-        - phone (varchar(50), nullable)
-        - github_username (varchar(255), nullable)
-        - linkedin_url (text, nullable)
-        - resume_text (text, nullable)
-        - status (varchar(50), NOT NULL, default 'CREATED')
-        - created_at (timestamptz, NOT NULL, default now())
-        - updated_at (timestamptz, NOT NULL, default now())
-        - cv_file_path (text, nullable)
-        - job_id (varchar(50), nullable)
+        Uses UPSERT to handle race conditions where the record may already exist.
         
         Args:
             candidate_uuid: The UUID of the candidate
@@ -59,39 +44,17 @@ class SupabaseCandidateService:
             phone: Candidate's phone (optional)
             linkedin_url: LinkedIn profile URL (optional)
             github_username: GitHub username (optional)
-            job_id: Job ID applied for (optional)
         
         Returns:
             True if candidate exists or was created successfully
         """
         try:
-            # Check if candidate exists
-            result = self._client.table('candidates').select('*').eq(
-                'uuid', candidate_uuid
-            ).execute()
-            
-            if result.data and len(result.data) > 0:
-                logger.info(
-                    "candidate.exists",
-                    candidate_uuid=candidate_uuid
-                )
-                return True
-            
-            # Candidate doesn't exist - create minimal record matching exact schema
-            logger.info(
-                "candidate.not_found.creating",
-                candidate_uuid=candidate_uuid,
-                cv_file_path=cv_file_path
-            )
-            
-            # Only include fields that exist in schema (Rule B: No invalid columns)
             new_candidate = {
                 "uuid": candidate_uuid,
                 "status": "CREATED",
                 "cv_file_path": cv_file_path
             }
             
-            # Add optional fields if provided
             if full_name:
                 new_candidate["full_name"] = full_name
             if email:
@@ -102,23 +65,24 @@ class SupabaseCandidateService:
                 new_candidate["linkedin_url"] = linkedin_url
             if github_username:
                 new_candidate["github_username"] = github_username
-            if job_id:
-                new_candidate["job_id"] = job_id
             
-            insert_result = self._client.table('candidates').insert(new_candidate).execute()
+            result = self._client.table('candidates').upsert(
+                new_candidate,
+                on_conflict='uuid'
+            ).execute()
             
-            if insert_result.data:
+            if result.data:
                 logger.info(
-                    "candidate.created",
+                    "candidate.upserted",
                     candidate_uuid=candidate_uuid,
                     cv_file_path=cv_file_path
                 )
                 return True
             else:
                 logger.error(
-                    "candidate.create_failed",
+                    "candidate.upsert_failed",
                     candidate_uuid=candidate_uuid,
-                    error="No data returned from insert"
+                    error="No data returned from upsert"
                 )
                 return False
                 
@@ -148,13 +112,16 @@ class SupabaseCandidateService:
             True if update successful
         """
         try:
-            update_data = {"updated_at": "now()"}
+            update_data = {}
             
             if github_username is not None:
                 update_data["github_username"] = github_username
             
             if linkedin_url is not None:
                 update_data["linkedin_url"] = linkedin_url
+            
+            if not update_data:
+                return True
             
             result = self._client.table('candidates').update(
                 update_data
