@@ -526,7 +526,7 @@ export default function SchedulePage() {
                 padding: "40px 20px", gap: 8,
               }}>
                 <Calendar size={28} strokeWidth={1.5} color={D.dim} />
-                <span style={{ fontSize: 12, color: D.muted }}>Select interviewers and date range, then click "Find Available Slots"</span>
+                <span style={{ fontSize: 12, color: D.muted }}>Select interviewers and date range, then click &quot;Find Available Slots&quot;</span>
               </div>
             )}
           </div>

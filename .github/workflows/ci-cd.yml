@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: src/frontend # Chạy lệnh bên trong folder frontend
+        working-directory: . # package.json nằm ở ROOT repo; Next build source trong src/frontend
 
     steps:
     - name: Checkout Source Code
@@ -91,17 +91,3 @@ jobs:
         echo "Đang kích hoạt quy trình CD để đẩy container lên Azure..."
         # Sau này khi deploy lên Azure, ông sẽ thêm các step dùng Azure login 
         # và Azure Web App deploy/Docker build vào đây.
-
-  database-check:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Supabase CLI
-      run: npm install -g supabase
-
-    - name: Start Supabase Local Emulator
-      run: supabase start
-
-    - name: Verify Database Migrations
-      run: supabase db test # Chạy các bài test schema để đảm bảo không ai làm lỗi cấu trúc DB

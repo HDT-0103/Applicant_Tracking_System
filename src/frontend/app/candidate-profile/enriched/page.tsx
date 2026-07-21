@@ -863,7 +863,7 @@ function ReviewPanel({
 
       {otherText && otherDecision !== "pending" && (
         <div style={{ marginTop: 6, fontSize: 10, color: D.muted, padding: "5px 8px", background: D.canvas, borderRadius: 4, border: `1px solid ${D.line}` }}>
-          <strong>{otherLabel}'s notes:</strong> {otherText}
+          <strong>{otherLabel}&apos;s notes:</strong> {otherText}
         </div>
       )}
 

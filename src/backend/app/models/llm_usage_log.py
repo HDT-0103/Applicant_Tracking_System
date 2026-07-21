@@ -3,7 +3,12 @@ from datetime import datetime
 from sqlalchemy import String, text, TIMESTAMP, Integer, Numeric, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING
 from backend.app.models.base import Base
+
+if TYPE_CHECKING:
+    from backend.app.models.user import User
+
 
 class LlmUsageLog(Base):
     __tablename__ = "llm_usage_logs"
