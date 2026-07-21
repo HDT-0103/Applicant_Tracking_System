@@ -1,0 +1,168 @@
+name: cv-analysis-semantic-ranking-agent
+version: 2.0.0
+description: AI Agent for CV parsing (Gemini), LinkedIn/GitHub enrichment, and skill analysis in SmartATS
+
+model:
+  provider: google
+  model: gemini-2.0-flash
+  temperature: 0.1
+  max_tokens: 4096
+  fallback_provider: openai
+  fallback_model: gpt-4o-mini
+
+tools:
+  - name: gemini_resume_parser
+    description: Parse CV PDF into structured JSON candidate profile using Google Gemini 2.0 Flash
+    type: function
+    parameters:
+      type: object
+      properties:
+        pdf_sas_url:
+          type: string
+          description: Azure Blob SAS URL for the PDF file
+        candidate_uuid:
+          type: string
+          description: UUID of the candidate record
+      required:
+        - pdf_sas_url
+        - candidate_uuid
+
+  - name: enrich_candidate_github
+    description: Fetch GitHub profile data (repos, languages, README) for a candidate
+    type: function
+    parameters:
+      type: object
+      properties:
+        github_username:
+          type: string
+          description: GitHub username
+        candidate_uuid:
+          type: string
+          description: UUID of candidate to update
+      required:
+        - github_username
+        - candidate_uuid
+
+  - name: enrich_candidate_linkedin
+    description: Scrape LinkedIn profile via Apify Actor (GOvL4O4RwFqsdIqXF)
+    type: function
+    parameters:
+      type: object
+      properties:
+        linkedin_url:
+          type: string
+          description: Full LinkedIn profile URL
+        candidate_uuid:
+          type: string
+          description: UUID of candidate to update
+      required:
+        - linkedin_url
+        - candidate_uuid
+
+  - name: compute_skill_matrix
+    description: Compute 5-category technical skill matrix (Frontend, Backend, Cloud Dev, InfoSec, ML/AI) with affinity score
+    type: function
+    parameters:
+      type: object
+      properties:
+        candidate_uuid:
+          type: string
+          description: UUID of the candidate
+      required:
+        - candidate_uuid
+
+  - name: trigger_enrichment_sync
+    description: Trigger full enrichment pipeline (Gemini parse + GitHub + LinkedIn + skill matrix) via BackgroundTasks
+    type: function
+    parameters:
+      type: object
+      properties:
+        candidate_uuid:
+          type: string
+          description: UUID of the candidate
+      required:
+        - candidate_uuid
+
+dependencies:
+  python:
+    - httpx>=0.27,<1.0
+    - google-genai>=1.0,<2.0
+    - pydantic>=2.0,<3.0
+    - structlog>=24.4,<25.0
+    - supabase>=2.0,<3.0
+    - apify-client>=1.0,<2.0
+    - azure-storage-blob>=12.0,<13.0
+    - azure-servicebus>=7.0,<8.0
+
+  node:
+    - "@react-oauth/google": "^0.13.5"
+    - "lucide-react": "^0.468.0"
+    - "recharts": "^2.15.0"
+
+env_vars:
+  required:
+    - GOOGLE_API_KEY
+    - GEMINI_MODEL
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_KEY
+    - JWT_SECRET
+  optional:
+    - GITHUB_API_TOKEN
+    - APIFY_API_TOKEN
+    - AZURE_STORAGE_CONNECTION_STRING
+    - AZURE_SERVICE_BUS_CONNECTION_STRING
+    - OPENAI_API_KEY
+
+mcp:
+  enabled: true
+  server_name: "smartats-cv-analysis"
+  tools:
+    - gemini_resume_parser
+    - enrich_candidate_github
+    - enrich_candidate_linkedin
+    - compute_skill_matrix
+    - trigger_enrichment_sync
+
+workflows:
+  cv_ingestion_pipeline:
+    description: "Upload + validate + parse + enrich CV"
+    steps:
+      - tool: upload_to_azure_blob
+        description: "Store raw PDF in Azure Blob Storage"
+      - tool: gemini_resume_parser
+        description: "Parse PDF with Gemini 2.0 Flash into structured JSON"
+      - tool: enrich_candidate_github
+        description: "Fetch GitHub repos and languages"
+        optional: true
+      - tool: enrich_candidate_linkedin
+        description: "Scrape LinkedIn profile via Apify"
+        optional: true
+      - tool: compute_skill_matrix
+        description: "Compute final skill radar chart scores"
+
+logging:
+  level: INFO
+  format: json
+  include_timestamps: true
+  log_llm_calls: true
+  log_token_usage: true
+
+security:
+  pii_masking:
+    enabled: true
+    fields:
+      - email
+      - phone
+      - address
+  abac:
+    enabled: true
+    policies:
+      - resource: candidate_analysis
+        action: read
+        roles:
+          - recruiter
+          - admin
+      - resource: candidate_analysis
+        action: write
+        roles:
+          - admin

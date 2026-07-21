@@ -581,12 +581,27 @@ async def enrichment_worker(
         )
         
         # STEP 1: Ensure candidate exists in Supabase (synchronous)
-        # Get cv_file_path from candidate repository (Azure Blob Storage URL)
+        # Get candidate data from candidate repository (Azure Blob Storage URL + form fields)
         candidate = get_candidate(candidate_uuid)
         cv_file_path = candidate.cv_file_path if candidate else None
+        full_name = candidate.full_name if candidate else None
+        email = candidate.email if candidate else None
+        phone = candidate.phone if candidate else None
+        linkedin_url = candidate.linkedin_url if candidate else None
+        github_username = candidate.github_username if candidate else None
+        job_id = candidate.job_id if candidate else None
         
         logger.info("enrichment.step1.ensure_candidate", candidate_uuid=candidate_uuid, cv_file_path=cv_file_path)
-        candidate_created = await candidate_service.ensure_candidate_exists(candidate_uuid, cv_file_path)
+        candidate_created = await candidate_service.ensure_candidate_exists(
+            candidate_uuid,
+            cv_file_path,
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            linkedin_url=linkedin_url,
+            github_username=github_username,
+            job_id=job_id,
+        )
         
         if not candidate_created:
             logger.error("enrichment.step1.candidate_creation_failed", candidate_uuid=candidate_uuid)
@@ -703,14 +718,39 @@ async def enrichment_worker(
                 candidate_uuid=candidate_uuid
             )
             try:
-                # Map to match sample_linkedin.json structure and linkedin_profiles DDL
+                def _parse_date_str(val):
+                    if not val or not isinstance(val, str) or not val.strip():
+                        return None
+                    parts = val.strip().split()
+                    d = {}
+                    if len(parts) >= 1:
+                        try:
+                            d["year"] = int(parts[-1])
+                        except ValueError:
+                            pass
+                    if len(parts) >= 2:
+                        d["month"] = parts[0]
+                    return d if d else None
+
+                def _exp_to_supabase(exp):
+                    d = exp.model_dump()
+                    for field in ("start_date", "end_date"):
+                        d[field] = _parse_date_str(d.get(field))
+                    return d
+
+                def _edu_to_supabase(edu):
+                    d = edu.model_dump()
+                    for field in ("start_date", "end_date"):
+                        d[field] = _parse_date_str(d.get(field))
+                    return d
+
                 scraped_linkedin_data = {
                     "full_name": linkedin_profile.full_name,
                     "headline": linkedin_profile.headline,
                     "profile_url": linkedin_profile.profile_url,
                     "avatar_url": linkedin_profile.avatar_url,
-                    "experience": [exp.model_dump() for exp in linkedin_profile.experiences],
-                    "education": [edu.model_dump() for edu in linkedin_profile.educations],
+                    "experience": [_exp_to_supabase(exp) for exp in linkedin_profile.experiences],
+                    "education": [_edu_to_supabase(edu) for edu in linkedin_profile.educations],
                     "certifications": [cert.model_dump() for cert in linkedin_profile.certifications] if linkedin_profile.certifications else []
                 }
                 linkedin_ingestion_service.save_scraped_linkedin_data(candidate_uuid, scraped_linkedin_data)

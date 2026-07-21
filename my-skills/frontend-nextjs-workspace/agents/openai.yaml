@@ -1,0 +1,60 @@
+name: frontend-nextjs-workspace-agent
+version: 1.0.0
+description: Agent for SmartATS Next.js 15 frontend components, pages, and workspace UI
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: get_auth_status
+    description: Check current auth state from AuthContext
+    type: function
+
+  - name: trigger_candidate_sync
+    description: Call enrichment sync endpoint and open WebSocket listener
+    type: function
+    parameters:
+      type: object
+      properties:
+        candidate_uuid:
+          type: string
+      required:
+        - candidate_uuid
+
+  - name: upload_resume
+    description: Upload CV PDF via careers portal multipart form
+    type: function
+    parameters:
+      type: object
+      properties:
+        file:
+          type: string
+        full_name:
+          type: string
+        email:
+          type: string
+      required:
+        - file
+        - full_name
+        - email
+
+  - name: render_radar_chart
+    description: Render skill radar chart from TechnicalSkillMatrix data
+    type: function
+    parameters:
+      type: object
+      properties:
+        skill_scores:
+          type: object
+      required:
+        - skill_scores
+
+dependencies:
+  node:
+    - next: ^15.0.0
+    - react: ^19.0.0
+    - recharts: ^2.15.0
+    - lucide-react: ^0.468.0
+    - "@react-oauth/google": "^0.13.5"

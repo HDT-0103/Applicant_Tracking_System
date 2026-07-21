@@ -1,0 +1,51 @@
+name: shared-infrastructure-agent
+version: 1.0.0
+description: Agent for FastAPI app config, Supabase client, CORS, auth dependencies, and logging
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: get_app_settings
+    description: Read current FastAPI application settings from env
+    type: function
+
+  - name: verify_database_connection
+    description: Test Supabase client connection
+    type: function
+
+  - name: validate_jwt_token
+    description: Decode and validate a JWT access token
+    type: function
+    parameters:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+
+  - name: check_auth_role
+    description: Check if a given role is authorized for a resource
+    type: function
+    parameters:
+      type: object
+      properties:
+        user_role:
+          type: string
+          enum: [admin, recruiter, interviewer]
+        required_roles:
+          type: array
+          items:
+            type: string
+      required:
+        - user_role
+        - required_roles
+
+env_vars:
+  required:
+    - JWT_SECRET
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_KEY

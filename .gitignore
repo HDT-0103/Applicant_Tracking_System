@@ -35,7 +35,6 @@ pnpm-debug.log*
 .turbo/
 
 # Local uploads and generated assets
-Prototype Figma/
 workflows/
 uploads/
 storage/
@@ -44,7 +43,6 @@ temp/
 *.log
 *.sqlite
 *.sqlite3
-my-skills/
 
 # IDE and OS files
 .DS_Store

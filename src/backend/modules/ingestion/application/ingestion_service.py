@@ -155,14 +155,32 @@ async def parse_cv_with_gemini(resume_text: str, settings: Settings) -> dict | N
         return None
 
 
-async def process_cv_resume(candidate_uuid: str, pdf_path: str, settings: Settings, cv_file_path: Optional[str] = None) -> CandidateRecord:
+async def process_cv_resume(
+    candidate_uuid: str,
+    pdf_path: str,
+    settings: Settings,
+    cv_file_path: Optional[str] = None,
+    full_name: Optional[str] = None,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    linkedin_url: Optional[str] = None,
+    github_username: Optional[str] = None,
+    job_id: Optional[str] = None,
+) -> CandidateRecord:
     logger.info("ingestion.process.start", uuid=candidate_uuid, path=pdf_path, cv_file_path=cv_file_path)
 
     resume_text, embedded_links = extract_text_and_links_from_pdf(pdf_path)
 
-    # Parse GitHub and LinkedIn from embedded links directly (Gemini disabled)
-    github_username, linkedin_url = parse_github_and_linkedin_from_links(embedded_links)
-    full_name = None
+    # Use form fields if provided, otherwise parse from PDF
+    parsed_github_username, parsed_linkedin_url = parse_github_and_linkedin_from_links(embedded_links)
+    
+    # Prioritize form fields over parsed values
+    if not github_username:
+        github_username = parsed_github_username
+    if not linkedin_url:
+        linkedin_url = parsed_linkedin_url
+    
+    # full_name, email, phone come from form fields (not parsed)
 
     # Gemini API disabled to avoid quota issues
     # if resume_text and settings.gemini_api_key:

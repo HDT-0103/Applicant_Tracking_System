@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { D, Dot, Badge, SectionLabel, Divider } from "../../../lib/shared";
 import { AppHeader } from "../../../components/AppHeader";
+import { LeftSidebar } from "../../../components/LeftSidebar";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { api } from "../../../services/httpClient";
 
@@ -930,7 +931,11 @@ export default function EnrichedCandidateProfilePage() {
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <AppHeader candidateName={data?.full_name || null} />
       <div style={{ flex: 1, display: "flex", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
-        {/* Left — enrichment dashboard */}
+        {/* Left — navigation sidebar */}
+        <LeftSidebar />
+        {/* Divider */}
+        <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
+        {/* Middle — enrichment dashboard */}
         <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
           <EnrichmentPanel data={data} />
         </div>

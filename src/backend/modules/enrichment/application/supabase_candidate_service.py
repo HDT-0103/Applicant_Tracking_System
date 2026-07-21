@@ -22,7 +22,17 @@ class SupabaseCandidateService:
         self._settings = settings
         self._client = supabase_client
     
-    async def ensure_candidate_exists(self, candidate_uuid: str, cv_file_path: Optional[str] = None) -> bool:
+    async def ensure_candidate_exists(
+        self,
+        candidate_uuid: str,
+        cv_file_path: Optional[str] = None,
+        full_name: Optional[str] = None,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        linkedin_url: Optional[str] = None,
+        github_username: Optional[str] = None,
+        job_id: Optional[str] = None,
+    ) -> bool:
         """
         Ensure candidate exists in public.candidates table
         If not exists, create a new record with minimal data matching exact schema
@@ -30,6 +40,8 @@ class SupabaseCandidateService:
         Schema DDL for public.candidates:
         - uuid (varchar(36), PK)
         - full_name (varchar(255), nullable)
+        - email (varchar(255), nullable)
+        - phone (varchar(50), nullable)
         - github_username (varchar(255), nullable)
         - linkedin_url (text, nullable)
         - resume_text (text, nullable)
@@ -37,10 +49,17 @@ class SupabaseCandidateService:
         - created_at (timestamptz, NOT NULL, default now())
         - updated_at (timestamptz, NOT NULL, default now())
         - cv_file_path (text, nullable)
+        - job_id (varchar(50), nullable)
         
         Args:
             candidate_uuid: The UUID of the candidate
             cv_file_path: Azure Blob Storage URL for CV (optional)
+            full_name: Candidate's full name (optional)
+            email: Candidate's email (optional)
+            phone: Candidate's phone (optional)
+            linkedin_url: LinkedIn profile URL (optional)
+            github_username: GitHub username (optional)
+            job_id: Job ID applied for (optional)
         
         Returns:
             True if candidate exists or was created successfully
@@ -71,6 +90,20 @@ class SupabaseCandidateService:
                 "status": "CREATED",
                 "cv_file_path": cv_file_path
             }
+            
+            # Add optional fields if provided
+            if full_name:
+                new_candidate["full_name"] = full_name
+            if email:
+                new_candidate["email"] = email
+            if phone:
+                new_candidate["phone"] = phone
+            if linkedin_url:
+                new_candidate["linkedin_url"] = linkedin_url
+            if github_username:
+                new_candidate["github_username"] = github_username
+            if job_id:
+                new_candidate["job_id"] = job_id
             
             insert_result = self._client.table('candidates').insert(new_candidate).execute()
             

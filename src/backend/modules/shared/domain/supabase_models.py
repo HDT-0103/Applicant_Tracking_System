@@ -98,8 +98,8 @@ class LinkedinExperience(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     duration: Optional[str] = None
-    start_date: Optional[Dict[str, int]] = None  # { "year": 2024, "month": "Jan" }
-    end_date: Optional[Dict[str, int]] = None
+    start_date: Optional[Dict[str, Any]] = None  # { "year": 2024, "month": "Jan" }
+    end_date: Optional[Dict[str, Any]] = None
     is_current: bool = False
     company_linkedin_url: Optional[str] = None
     company_logo_url: Optional[str] = None
@@ -121,8 +121,8 @@ class LinkedinEducation(BaseModel):
     description: Optional[str] = None
     activities: Optional[str] = None
     school_logo_url: Optional[str] = None
-    start_date: Optional[Dict[str, int]] = None  # { "year": 2021, "month": "Jul" }
-    end_date: Optional[Dict[str, int]] = None
+    start_date: Optional[Dict[str, Any]] = None  # { "year": 2021, "month": "Jul" }
+    end_date: Optional[Dict[str, Any]] = None
     school_id: Optional[str] = None
 
 

@@ -24,7 +24,16 @@ class AzureIngestionService:
         self._service_bus_service = service_bus_service
         self._settings = settings
 
-    async def ingest_pdf(self, file_content: bytes) -> IngestionResponse:
+    async def ingest_pdf(
+        self,
+        file_content: bytes,
+        full_name: str = None,
+        email: str = None,
+        phone: str = None,
+        linkedin_url: str = None,
+        github_url: str = None,
+        job_id: str = None,
+    ) -> IngestionResponse:
         candidate_uuid = str(uuid.uuid4())
 
         logger.info(
@@ -48,7 +57,18 @@ class AzureIngestionService:
         
         try:
             # Parse CV to extract social links
-            candidate = await process_cv_resume(candidate_uuid, temp_path, self._settings, cv_file_path=storage_url)
+            candidate = await process_cv_resume(
+                candidate_uuid,
+                temp_path,
+                self._settings,
+                cv_file_path=storage_url,
+                full_name=full_name,
+                email=email,
+                phone=phone,
+                linkedin_url=linkedin_url,
+                github_username=github_url,
+                job_id=job_id,
+            )
             logger.info(
                 "azure.ingestion.parsed",
                 candidate_uuid=candidate_uuid,
