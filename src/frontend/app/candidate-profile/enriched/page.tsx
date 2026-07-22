@@ -1,25 +1,49 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams, useRouter } from "next/navigation";
 import {
-  RadarChart, Radar, PolarGrid, PolarAngleAxis,
-  PolarRadiusAxis, ResponsiveContainer, Tooltip,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+  Tooltip,
 } from "recharts";
 import {
-  Github, Linkedin, CheckCircle2, ChevronDown, TrendingUp,
-  BookOpen, Briefcase, GraduationCap, ExternalLink, Zap,
-  AlertCircle, Clock, Layers, Shield, GitBranch, Cpu, Globe,
-  Loader2, Calendar,
+  Github,
+  Linkedin,
+  CheckCircle2,
+  ChevronDown,
+  TrendingUp,
+  BookOpen,
+  Briefcase,
+  GraduationCap,
+  ExternalLink,
+  Zap,
+  AlertCircle,
+  Clock,
+  Layers,
+  Shield,
+  GitBranch,
+  Cpu,
+  Globe,
+  Loader2,
+  Calendar,
 } from "lucide-react";
 import { D, Dot, Badge, SectionLabel, Divider } from "../../../lib/shared";
 import { AppHeader } from "../../../components/AppHeader";
 import { useAuth } from "../../../contexts/AuthContext";
+import { LeftSidebar } from "../../../components/LeftSidebar";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { api } from "../../../services/httpClient";
 import {
-  submitReview, getReviewStatus, resolveConflict,
-  type ReviewStatus, type ReviewDecision,
+  submitReview,
+  getReviewStatus,
+  resolveConflict,
+  type ReviewStatus,
+  type ReviewDecision,
 } from "../../../services/reviewService";
 
 /* --- Types --- */
@@ -111,24 +135,32 @@ interface WSMessage {
 
 interface EnrichmentStatusResponse {
   candidate_uuid: string;
-  enrichment_status: "QUEUED" | "IN_PROGRESS" | "ENRICHED" | "ENRICHMENT_FAILED" | "NO_PROFILES_FOUND";
+  enrichment_status:
+    | "QUEUED"
+    | "IN_PROGRESS"
+    | "ENRICHED"
+    | "ENRICHMENT_FAILED"
+    | "NO_PROFILES_FOUND";
   enriched_profile?: EnrichedProfile | null;
 }
 
 // Helper function to convert LinkedIn experiences to timeline items
-function experiencesToTimelineItems(experiences: LinkedinExperience[], educations: LinkedinEducation[]): TimelineItem[] {
+function experiencesToTimelineItems(
+  experiences: LinkedinExperience[],
+  educations: LinkedinEducation[],
+): TimelineItem[] {
   const items: TimelineItem[] = [];
-  
+
   // Add work experiences
   experiences.forEach((exp, index) => {
     const startDate = exp.start_date || "";
     const endDate = exp.end_date || "Present";
     const period = `${startDate} — ${endDate}`;
-    
+
     // Extract year from start date
     const yearMatch = startDate.match(/\d{4}/);
     const year = yearMatch ? yearMatch[0] : "Unknown";
-    
+
     items.push({
       year,
       title: exp.title,
@@ -137,20 +169,20 @@ function experiencesToTimelineItems(experiences: LinkedinExperience[], education
       type: "work",
       current: exp.is_current || !exp.end_date,
       note: exp.description || "",
-      verified: true
+      verified: true,
     });
   });
-  
+
   // Add education
   educations.forEach((edu) => {
     const startDate = edu.start_date || "";
     const endDate = edu.end_date || "";
     const period = `${startDate} — ${endDate}`;
-    
+
     // Extract year from start date
     const yearMatch = startDate.match(/\d{4}/);
     const year = yearMatch ? yearMatch[0] : "Unknown";
-    
+
     items.push({
       year,
       title: edu.degree || edu.school,
@@ -159,10 +191,10 @@ function experiencesToTimelineItems(experiences: LinkedinExperience[], education
       type: "edu",
       current: false,
       note: edu.field_of_study || "",
-      verified: true
+      verified: true,
     });
   });
-  
+
   // Sort by year descending (most recent first)
   return items.sort((a, b) => {
     const yearA = parseInt(a.year) || 0;
@@ -172,7 +204,17 @@ function experiencesToTimelineItems(experiences: LinkedinExperience[], education
 }
 
 // ─── GitHub Accordion Card ────────────────────────────────────────────────────
-function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: boolean; onToggle: () => void; data: GithubProfile | null; githubUsername: string | null }) {
+function GitHubCard({
+  expanded,
+  onToggle,
+  data,
+  githubUsername,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  data: GithubProfile | null;
+  githubUsername: string | null;
+}) {
   const getLangColor = (lang: string) => {
     const colors: Record<string, string> = {
       Python: "#3572A5",
@@ -186,11 +228,13 @@ function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: bo
     return colors[lang] || "#6B7280";
   };
 
-  const langs = data ? Object.entries(data.top_languages).map(([name, pct]) => ({
-    name,
-    pct: Math.round(pct),
-    color: getLangColor(name),
-  })) : [];
+  const langs = data
+    ? Object.entries(data.top_languages).map(([name, pct]) => ({
+        name,
+        pct: Math.round(pct),
+        color: getLangColor(name),
+      }))
+    : [];
 
   const publicReposCount = data?.public_repos_count ?? 0;
   const semanticTags = data?.readme_content
@@ -200,79 +244,298 @@ function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: bo
     : [];
 
   return (
-    <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "visible", background: D.canvas }}>
+    <div
+      style={{
+        border: `1px solid ${D.line}`,
+        borderRadius: 8,
+        overflow: "visible",
+        background: D.canvas,
+      }}
+    >
       <div
         onClick={onToggle}
         style={{
-          display: "flex", alignItems: "center", padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          padding: "14px 16px",
           borderBottom: expanded ? `1px solid ${D.line}` : "none",
-          gap: 10, cursor: "pointer",
+          gap: 10,
+          cursor: "pointer",
         }}
       >
-        <div style={{ width: 30, height: 30, borderRadius: 7, background: D.ink, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 7,
+            background: D.ink,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
           <Github size={15} strokeWidth={1.5} color="#fff" />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: D.ink }}>GitHub</span>
-            <Badge color={D.mint} bg={D.mintSoft}><Dot color={D.mint} />Connected</Badge>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              marginBottom: 1,
+            }}
+          >
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: D.ink }}>
+              GitHub
+            </span>
+            <Badge color={D.mint} bg={D.mintSoft}>
+              <Dot color={D.mint} />
+              Connected
+            </Badge>
           </div>
-          <span style={{ fontSize: 10.5, color: D.blue, fontFamily: D.mono, display: "flex", alignItems: "center", gap: 4 }}>
-            {githubUsername ? `github.com/${githubUsername}` : "repository data unavailable"} <ExternalLink size={9} strokeWidth={2} color={D.blue} />
+          <span
+            style={{
+              fontSize: 10.5,
+              color: D.blue,
+              fontFamily: D.mono,
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            {githubUsername
+              ? `github.com/${githubUsername}`
+              : "repository data unavailable"}{" "}
+            <ExternalLink size={9} strokeWidth={2} color={D.blue} />
           </span>
         </div>
-        <ChevronDown size={13} strokeWidth={2} color={D.muted}
-          style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease", flexShrink: 0 }} />
+        <ChevronDown
+          size={13}
+          strokeWidth={2}
+          color={D.muted}
+          style={{
+            transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
+            transition: "transform 0.2s ease",
+            flexShrink: 0,
+          }}
+        />
       </div>
       {expanded && (
-        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 14, animation: "fadeSlideIn 0.2s ease both" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div style={{ padding: "10px 12px", borderRadius: 6, background: D.surface, border: `1px solid ${D.lineSoft}` }}>
-              <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: D.muted, marginBottom: 4 }}>Public Repos Analyzed</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: D.ink, letterSpacing: "-0.04em", lineHeight: 1, fontFamily: D.mono }}>{publicReposCount}</div>
+        <div
+          style={{
+            padding: "14px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            animation: "fadeSlideIn 0.2s ease both",
+          }}
+        >
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
+          >
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: 6,
+                background: D.surface,
+                border: `1px solid ${D.lineSoft}`,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  letterSpacing: "0.07em",
+                  textTransform: "uppercase",
+                  color: D.muted,
+                  marginBottom: 4,
+                }}
+              >
+                Public Repos Analyzed
+              </div>
+              <div
+                style={{
+                  fontSize: 24,
+                  fontWeight: 800,
+                  color: D.ink,
+                  letterSpacing: "-0.04em",
+                  lineHeight: 1,
+                  fontFamily: D.mono,
+                }}
+              >
+                {publicReposCount}
+              </div>
             </div>
-            <div style={{ padding: "10px 12px", borderRadius: 6, background: D.surface, border: `1px solid ${D.lineSoft}` }}>
-              <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: "0.07em", textTransform: "uppercase", color: D.muted, marginBottom: 6 }}>Top Languages</div>
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: 6,
+                background: D.surface,
+                border: `1px solid ${D.lineSoft}`,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 600,
+                  letterSpacing: "0.07em",
+                  textTransform: "uppercase",
+                  color: D.muted,
+                  marginBottom: 6,
+                }}
+              >
+                Top Languages
+              </div>
               {langs.length > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 3 }}
+                >
                   {langs.map((lang) => (
-                    <div key={lang.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: lang.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: 10, fontWeight: 500, color: D.sub, flex: 1 }}>{lang.name}</span>
-                      <span style={{ fontSize: 9.5, color: D.muted, fontFamily: D.mono }}>{lang.pct}%</span>
+                    <div
+                      key={lang.name}
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <div
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: lang.color,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 500,
+                          color: D.sub,
+                          flex: 1,
+                        }}
+                      >
+                        {lang.name}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 9.5,
+                          color: D.muted,
+                          fontFamily: D.mono,
+                        }}
+                      >
+                        {lang.pct}%
+                      </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: 10, color: D.muted, lineHeight: 1.5 }}>No repository language data available yet.</div>
+                <div style={{ fontSize: 10, color: D.muted, lineHeight: 1.5 }}>
+                  No repository language data available yet.
+                </div>
               )}
             </div>
           </div>
           {langs.length > 0 && (
-            <div style={{ display: "flex", height: 5, borderRadius: 99, overflow: "hidden", gap: 1.5 }}>
+            <div
+              style={{
+                display: "flex",
+                height: 5,
+                borderRadius: 99,
+                overflow: "hidden",
+                gap: 1.5,
+              }}
+            >
               {langs.map((lang) => (
-                <div key={lang.name} style={{ flex: lang.pct, background: lang.color, borderRadius: 99 }} title={`${lang.name}: ${lang.pct}%`} />
+                <div
+                  key={lang.name}
+                  style={{
+                    flex: lang.pct,
+                    background: lang.color,
+                    borderRadius: 99,
+                  }}
+                  title={`${lang.name}: ${lang.pct}%`}
+                />
               ))}
             </div>
           )}
-          <div style={{
-            padding: "11px 13px", borderRadius: 6,
-            background: D.blueSoft, border: `1px solid ${D.blueMid}`,
-            position: "relative", overflow: "hidden",
-          }}>
-            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: D.blue }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5, paddingLeft: 2 }}>
+          <div
+            style={{
+              padding: "11px 13px",
+              borderRadius: 6,
+              background: D.blueSoft,
+              border: `1px solid ${D.blueMid}`,
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 3,
+                background: D.blue,
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                marginBottom: 5,
+                paddingLeft: 2,
+              }}
+            >
               <BookOpen size={10} strokeWidth={2} color={D.blue} />
-              <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: D.blue }}>Latest README.md Semantic Extraction</span>
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: "0.07em",
+                  textTransform: "uppercase",
+                  color: D.blue,
+                }}
+              >
+                Latest README.md Semantic Extraction
+              </span>
             </div>
-            <p style={{ margin: 0, fontSize: 11, color: D.sub, lineHeight: 1.55, paddingLeft: 2 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                color: D.sub,
+                lineHeight: 1.55,
+                paddingLeft: 2,
+              }}
+            >
               {semanticTags.length > 0
                 ? `Corroborated skills extracted from README: ${semanticTags.map((tag) => `#${tag}`).join(", ")}.`
                 : "No README content available yet for semantic extraction."}
             </p>
-            <div style={{ display: "flex", gap: 5, marginTop: 7, flexWrap: "wrap", paddingLeft: 2 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 5,
+                marginTop: 7,
+                flexWrap: "wrap",
+                paddingLeft: 2,
+              }}
+            >
               {semanticTags.map((tag) => (
-                <span key={tag} style={{ fontSize: 9.5, fontFamily: D.mono, padding: "1px 6px", borderRadius: 3, background: `${D.blue}12`, border: `1px solid ${D.blue}22`, color: D.blue }}>#{tag}</span>
+                <span
+                  key={tag}
+                  style={{
+                    fontSize: 9.5,
+                    fontFamily: D.mono,
+                    padding: "1px 6px",
+                    borderRadius: 3,
+                    background: `${D.blue}12`,
+                    border: `1px solid ${D.blue}22`,
+                    color: D.blue,
+                  }}
+                >
+                  #{tag}
+                </span>
               ))}
             </div>
           </div>
@@ -283,45 +546,132 @@ function GitHubCard({ expanded, onToggle, data, githubUsername }: { expanded: bo
 }
 
 // ─── LinkedIn Accordion Card ──────────────────────────────────────────────────
-function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boolean; onToggle: () => void; data: LinkedinProfile | null; linkedinUrl: string | null }) {
+function LinkedInCard({
+  expanded,
+  onToggle,
+  data,
+  linkedinUrl,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  data: LinkedinProfile | null;
+  linkedinUrl: string | null;
+}) {
   const experiences = data?.experiences || [];
   const fullName = data?.full_name || "Candidate";
   const profileUrl = data?.profile_url || linkedinUrl;
-  
+
   return (
-    <div style={{ border: `1px solid ${D.line}`, borderRadius: 8, overflow: "visible", background: D.canvas }}>
+    <div
+      style={{
+        border: `1px solid ${D.line}`,
+        borderRadius: 8,
+        overflow: "visible",
+        background: D.canvas,
+      }}
+    >
       <div
         onClick={onToggle}
         style={{
-          display: "flex", alignItems: "center", padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          padding: "14px 16px",
           borderBottom: expanded ? `1px solid ${D.line}` : "none",
-          gap: 10, cursor: "pointer",
+          gap: 10,
+          cursor: "pointer",
         }}
       >
-        <div style={{ width: 30, height: 30, borderRadius: 7, background: "#0A66C2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 7,
+            background: "#0A66C2",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
           <Linkedin size={14} strokeWidth={1.5} color="#fff" fill="#fff" />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 1 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: D.ink }}>LinkedIn</span>
-            <Badge color={D.mint} bg={D.mintSoft}><Dot color={D.mint} />Connected</Badge>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              marginBottom: 1,
+            }}
+          >
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: D.ink }}>
+              LinkedIn
+            </span>
+            <Badge color={D.mint} bg={D.mintSoft}>
+              <Dot color={D.mint} />
+              Connected
+            </Badge>
           </div>
-          <span style={{ fontSize: 10.5, color: "#0A66C2", fontFamily: D.mono, display: "flex", alignItems: "center", gap: 4 }}>
-            {profileUrl ? profileUrl.replace("https://", "").replace("http://", "") : "LinkedIn data unavailable"} <ExternalLink size={9} strokeWidth={2} color="#0A66C2" />
+          <span
+            style={{
+              fontSize: 10.5,
+              color: "#0A66C2",
+              fontFamily: D.mono,
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            {profileUrl
+              ? profileUrl.replace("https://", "").replace("http://", "")
+              : "LinkedIn data unavailable"}{" "}
+            <ExternalLink size={9} strokeWidth={2} color="#0A66C2" />
           </span>
         </div>
-        <ChevronDown size={13} strokeWidth={2} color={D.muted}
-          style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease", flexShrink: 0 }} />
+        <ChevronDown
+          size={13}
+          strokeWidth={2}
+          color={D.muted}
+          style={{
+            transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
+            transition: "transform 0.2s ease",
+            flexShrink: 0,
+          }}
+        />
       </div>
       {expanded && (
-        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12, animation: "fadeSlideIn 0.2s ease both" }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 13px", borderRadius: 6, background: D.mintSoft, border: `1px solid ${D.mint}28`,
-          }}>
+        <div
+          style={{
+            padding: "14px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            animation: "fadeSlideIn 0.2s ease both",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 13px",
+              borderRadius: 6,
+              background: D.mintSoft,
+              border: `1px solid ${D.mint}28`,
+            }}
+          >
             <CheckCircle2 size={16} strokeWidth={1.8} color={D.mint} />
             <div>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, lineHeight: 1.2 }}>Verified Employment History</div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: D.ink,
+                  lineHeight: 1.2,
+                }}
+              >
+                Verified Employment History
+              </div>
               <div style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.4 }}>
                 {experiences.length > 0
                   ? `${experiences.length} roles mapped from LinkedIn profile`
@@ -330,33 +680,78 @@ function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boo
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.muted }}>Profile Information</div>
+            <div
+              style={{
+                fontSize: 9.5,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: D.muted,
+              }}
+            >
+              Profile Information
+            </div>
             {data?.full_name && (
               <div style={{ fontSize: 11, color: D.sub }}>
-                <span style={{ fontWeight: 600, color: D.ink }}>Name:</span> {data.full_name}
+                <span style={{ fontWeight: 600, color: D.ink }}>Name:</span>{" "}
+                {data.full_name}
               </div>
             )}
             {data?.headline && (
               <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.4 }}>
-                <span style={{ fontWeight: 600, color: D.sub }}>Headline:</span> {data.headline}
+                <span style={{ fontWeight: 600, color: D.sub }}>Headline:</span>{" "}
+                {data.headline}
               </div>
             )}
           </div>
           {experiences.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.muted }}>Work Experience</div>
+              <div
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: D.muted,
+                }}
+              >
+                Work Experience
+              </div>
               {experiences.map((role, i) => (
-                <div key={i} style={{
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "7px 10px", borderRadius: 5, background: D.surface, border: `1px solid ${D.lineSoft}`,
-                }}>
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "7px 10px",
+                    borderRadius: 5,
+                    background: D.surface,
+                    border: `1px solid ${D.lineSoft}`,
+                  }}
+                >
                   <Briefcase size={11} strokeWidth={1.8} color={D.muted} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: D.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{role.title}</div>
-                    <div style={{ fontSize: 9.5, color: D.muted }}>{role.company}</div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: D.ink,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {role.title}
+                    </div>
+                    <div style={{ fontSize: 9.5, color: D.muted }}>
+                      {role.company}
+                    </div>
                   </div>
                   {role.is_current && (
-                    <Badge color={D.blue} bg={D.blueSoft}>Current</Badge>
+                    <Badge color={D.blue} bg={D.blueSoft}>
+                      Current
+                    </Badge>
                   )}
                 </div>
               ))}
@@ -370,82 +765,234 @@ function LinkedInCard({ expanded, onToggle, data, linkedinUrl }: { expanded: boo
 
 // ─── Left Panel — Enrichment Dashboard ────────────────────────────────────────
 function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
-  const [openCard, setOpenCard] = useState<"github" | "linkedin" | null>("github");
+  const [openCard, setOpenCard] = useState<"github" | "linkedin" | null>(
+    "github",
+  );
   const toggle = (card: "github" | "linkedin") =>
     setOpenCard((prev) => (prev === card ? null : card));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: D.bg, borderRight: `1px solid ${D.line}` }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        overflow: "hidden",
+        background: D.bg,
+        borderRight: `1px solid ${D.line}`,
+      }}
+    >
       {/* Panel header */}
-      <div style={{
-        height: 38, background: D.canvas, borderBottom: `1px solid ${D.line}`,
-        display: "flex", alignItems: "center", padding: "0 20px", flexShrink: 0, gap: 8,
-      }}>
+      <div
+        style={{
+          height: 38,
+          background: D.canvas,
+          borderBottom: `1px solid ${D.line}`,
+          display: "flex",
+          alignItems: "center",
+          padding: "0 20px",
+          flexShrink: 0,
+          gap: 8,
+        }}
+      >
         <Layers size={13} strokeWidth={1.8} color={D.muted} />
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, letterSpacing: "-0.01em" }}>
+        <span
+          style={{
+            fontSize: 11.5,
+            fontWeight: 600,
+            color: D.ink,
+            letterSpacing: "-0.01em",
+          }}
+        >
           Cross-Channel Enrichment Status
         </span>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }}>
-          <Badge color={D.blue} bg={D.blueSoft}><Zap size={8} strokeWidth={2} color={D.blue} />AI-Enriched</Badge>
-          <span style={{ fontSize: 9, color: D.muted, fontFamily: D.mono, padding: "1px 5px", border: `1px solid ${D.line}`, borderRadius: 3, background: D.surface }}>2 sources</span>
+        <div
+          style={{
+            marginLeft: "auto",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+          }}
+        >
+          <Badge color={D.blue} bg={D.blueSoft}>
+            <Zap size={8} strokeWidth={2} color={D.blue} />
+            AI-Enriched
+          </Badge>
+          <span
+            style={{
+              fontSize: 9,
+              color: D.muted,
+              fontFamily: D.mono,
+              padding: "1px 5px",
+              border: `1px solid ${D.line}`,
+              borderRadius: 3,
+              background: D.surface,
+            }}
+          >
+            2 sources
+          </span>
         </div>
       </div>
 
       {/* Scrollable — clip + auto */}
-      <div style={{
-        flex: 1, overflowY: "auto", overflowX: "visible",
-        padding: "18px 16px", display: "flex", flexDirection: "column",
-        gap: 14, minHeight: 0,
-      }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "visible",
+          padding: "18px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          minHeight: 0,
+        }}
+      >
         {/* Identity stripe */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 10,
-          padding: "10px 14px", borderRadius: 8, background: D.canvas, border: `1px solid ${D.line}`,
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: "50%",
-            background: `linear-gradient(135deg, ${D.blue} 0%, #4F46E5 100%)`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0,
-          }}>AM</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: D.ink, letterSpacing: "-0.025em", lineHeight: 1.2 }}>Enriched candidate profile</div>
-            <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.4, marginTop: 1 }}>Real GitHub and LinkedIn payload rendered from enrichment response</div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: D.canvas,
+            border: `1px solid ${D.line}`,
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: `linear-gradient(135deg, ${D.blue} 0%, #4F46E5 100%)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#fff",
+              flexShrink: 0,
+            }}
+          >
+            AM
           </div>
-          <Badge color={D.blue} bg={D.blueSoft}>Screening</Badge>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 13.5,
+                fontWeight: 700,
+                color: D.ink,
+                letterSpacing: "-0.025em",
+                lineHeight: 1.2,
+              }}
+            >
+              Enriched candidate profile
+            </div>
+            <div
+              style={{
+                fontSize: 10.5,
+                color: D.muted,
+                lineHeight: 1.4,
+                marginTop: 1,
+              }}
+            >
+              Real GitHub and LinkedIn payload rendered from enrichment response
+            </div>
+          </div>
+          <Badge color={D.blue} bg={D.blueSoft}>
+            Screening
+          </Badge>
         </div>
 
         <SectionLabel>External Platform Integrations</SectionLabel>
 
-        <GitHubCard expanded={openCard === "github"} onToggle={() => toggle("github")} data={data?.github || null} githubUsername={data?.github_username || null} />
-        <LinkedInCard expanded={openCard === "linkedin"} onToggle={() => toggle("linkedin")} data={data?.linkedin || null} linkedinUrl={data?.linkedin_url || null} />
+        <GitHubCard
+          expanded={openCard === "github"}
+          onToggle={() => toggle("github")}
+          data={data?.github || null}
+          githubUsername={data?.github_username || null}
+        />
+        <LinkedInCard
+          expanded={openCard === "linkedin"}
+          onToggle={() => toggle("linkedin")}
+          data={data?.linkedin || null}
+          linkedinUrl={data?.linkedin_url || null}
+        />
 
         <Divider />
 
         {/* Sync status */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 10,
-          padding: "8px 12px", borderRadius: 6, background: D.surface, border: `1px solid ${D.line}`,
-        }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: D.mint, flexShrink: 0 }} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "8px 12px",
+            borderRadius: 6,
+            background: D.surface,
+            border: `1px solid ${D.line}`,
+          }}
+        >
+          <div
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: D.mint,
+              flexShrink: 0,
+            }}
+          />
           <span style={{ fontSize: 11, color: D.sub, flex: 1 }}>
-            <strong style={{ fontWeight: 600, color: D.ink }}>Automated Synchronization:</strong>{" "}
-            <span style={{ fontFamily: D.mono, fontSize: 10.5, fontWeight: 600, color: D.mint }}>IDLE / UP-TO-DATE</span>
+            <strong style={{ fontWeight: 600, color: D.ink }}>
+              Automated Synchronization:
+            </strong>{" "}
+            <span
+              style={{
+                fontFamily: D.mono,
+                fontSize: 10.5,
+                fontWeight: 600,
+                color: D.mint,
+              }}
+            >
+              IDLE / UP-TO-DATE
+            </span>
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              flexShrink: 0,
+            }}
+          >
             <Clock size={10} strokeWidth={2} color={D.dim} />
-            <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>Last sync: Just now</span>
+            <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>
+              Last sync: Just now
+            </span>
           </div>
         </div>
 
         {/* Disclaimer */}
-        <div style={{
-          display: "flex", alignItems: "flex-start", gap: 6, padding: "8px 10px",
-          borderRadius: 5, background: `${D.amber}0B`, border: `1px solid ${D.amber}22`,
-        }}>
-          <AlertCircle size={11} strokeWidth={2} color={D.amber} style={{ marginTop: 0.5, flexShrink: 0 }} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 6,
+            padding: "8px 10px",
+            borderRadius: 5,
+            background: `${D.amber}0B`,
+            border: `1px solid ${D.amber}22`,
+          }}
+        >
+          <AlertCircle
+            size={11}
+            strokeWidth={2}
+            color={D.amber}
+            style={{ marginTop: 0.5, flexShrink: 0 }}
+          />
           <span style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.5 }}>
-            Data enrichment is based on publicly available sources. Manual verification recommended for final hiring decisions.
+            Data enrichment is based on publicly available sources. Manual
+            verification recommended for final hiring decisions.
           </span>
         </div>
       </div>
@@ -456,10 +1003,14 @@ function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
 // ─── Enriched Radar Chart ──────────────────────────────────────────────────────
 function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }) {
   const [showBoth, setShowBoth] = useState(true);
-  
+
   const skillNames = ["Backend", "Frontend", "Cloud Dev", "InfoSec", "ML / AI"];
-  const preData = analytics?.technical_skill_matrix.pre_enrichment || [55, 52, 48, 45, 50];
-  const postData = analytics?.technical_skill_matrix.post_enrichment || [72, 70, 66, 58, 64];
+  const preData = analytics?.technical_skill_matrix.pre_enrichment || [
+    55, 52, 48, 45, 50,
+  ];
+  const postData = analytics?.technical_skill_matrix.post_enrichment || [
+    72, 70, 66, 58, 64,
+  ];
 
   const data = skillNames.map((skill, i) => ({
     skill,
@@ -470,78 +1021,258 @@ function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          marginBottom: 14,
+        }}
+      >
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: D.ink, letterSpacing: "-0.02em", marginBottom: 2 }}>Technical Skill Matrix</div>
-          <div style={{ fontSize: 10.5, color: D.muted }}>Multi-axis competency · enriched with external repository data</div>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: D.ink,
+              letterSpacing: "-0.02em",
+              marginBottom: 2,
+            }}
+          >
+            Technical Skill Matrix
+          </div>
+          <div style={{ fontSize: 10.5, color: D.muted }}>
+            Multi-axis competency · enriched with external repository data
+          </div>
         </div>
         <button
           onClick={() => setShowBoth(!showBoth)}
           style={{
-            display: "flex", alignItems: "center", gap: 5, padding: "4px 10px",
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "4px 10px",
             border: `1px solid ${showBoth ? `${D.blue}30` : D.line}`,
-            borderRadius: 5, background: showBoth ? D.blueSoft : D.canvas,
-            cursor: "pointer", fontSize: 10.5,
-            color: showBoth ? D.blue : D.sub, fontFamily: D.font,
-            fontWeight: showBoth ? 600 : 400, transition: "all 0.15s ease",
+            borderRadius: 5,
+            background: showBoth ? D.blueSoft : D.canvas,
+            cursor: "pointer",
+            fontSize: 10.5,
+            color: showBoth ? D.blue : D.sub,
+            fontFamily: D.font,
+            fontWeight: showBoth ? 600 : 400,
+            transition: "all 0.15s ease",
           }}
         >
-          <TrendingUp size={10} strokeWidth={2} color={showBoth ? D.blue : D.muted} />
+          <TrendingUp
+            size={10}
+            strokeWidth={2}
+            color={showBoth ? D.blue : D.muted}
+          />
           Show delta
         </button>
       </div>
       <div style={{ height: 220 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <RadarChart data={data} margin={{ top: 8, right: 36, bottom: 8, left: 36 }}>
+          <RadarChart
+            data={data}
+            margin={{ top: 8, right: 36, bottom: 8, left: 36 }}
+          >
             <PolarGrid stroke={D.line} strokeWidth={0.75} />
-            <PolarAngleAxis dataKey="skill" tick={{ fontSize: 10, fill: D.sub, fontFamily: D.font, fontWeight: 500 }} />
-            <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
-            <Radar key="pre" name="Pre-Enrichment" dataKey="Pre-Enrichment"
+            <PolarAngleAxis
+              dataKey="skill"
+              tick={{
+                fontSize: 10,
+                fill: D.sub,
+                fontFamily: D.font,
+                fontWeight: 500,
+              }}
+            />
+            <PolarRadiusAxis
+              angle={90}
+              domain={[0, 100]}
+              tick={false}
+              axisLine={false}
+            />
+            <Radar
+              key="pre"
+              name="Pre-Enrichment"
+              dataKey="Pre-Enrichment"
               stroke={showBoth ? D.line : "transparent"}
-              strokeWidth={1.5} fill={showBoth ? D.muted : "transparent"}
-              fillOpacity={showBoth ? 0.07 : 0} strokeDasharray="4 2"
+              strokeWidth={1.5}
+              fill={showBoth ? D.muted : "transparent"}
+              fillOpacity={showBoth ? 0.07 : 0}
+              strokeDasharray="4 2"
             />
-            <Radar key="post" name="Post-Enrichment" dataKey="Post-Enrichment"
-              stroke={D.blue} strokeWidth={1.75} fill={D.blue} fillOpacity={0.15}
+            <Radar
+              key="post"
+              name="Post-Enrichment"
+              dataKey="Post-Enrichment"
+              stroke={D.blue}
+              strokeWidth={1.75}
+              fill={D.blue}
+              fillOpacity={0.15}
             />
-            <Tooltip content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const d = payload[0].payload as { skill: string; "Pre-Enrichment": number; "Post-Enrichment": number };
-              return (
-                <div style={{ background: D.ink, color: "#fff", padding: "8px 12px", borderRadius: 6, fontSize: 11, fontFamily: D.font, minWidth: 130 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 5 }}>{d.skill}</div>
-                  {showBoth && <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 3, color: D.dim }}><span>Baseline</span><span style={{ fontFamily: D.mono }}>{d["Pre-Enrichment"]}</span></div>}
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#93C5FD" }}><span>Enriched</span><span style={{ fontFamily: D.mono, fontWeight: 600 }}>{d["Post-Enrichment"]}</span></div>
-                  {showBoth && <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "space-between", gap: 12, color: "#6EE7B7", fontWeight: 600 }}><span>Delta</span><span style={{ fontFamily: D.mono }}>+{d["Post-Enrichment"] - d["Pre-Enrichment"]}</span></div>}
-                </div>
-              );
-            }} />
+            <Tooltip
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const d = payload[0].payload as {
+                  skill: string;
+                  "Pre-Enrichment": number;
+                  "Post-Enrichment": number;
+                };
+                return (
+                  <div
+                    style={{
+                      background: D.ink,
+                      color: "#fff",
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontFamily: D.font,
+                      minWidth: 130,
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, marginBottom: 5 }}>
+                      {d.skill}
+                    </div>
+                    {showBoth && (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          marginBottom: 3,
+                          color: D.dim,
+                        }}
+                      >
+                        <span>Baseline</span>
+                        <span style={{ fontFamily: D.mono }}>
+                          {d["Pre-Enrichment"]}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        color: "#93C5FD",
+                      }}
+                    >
+                      <span>Enriched</span>
+                      <span style={{ fontFamily: D.mono, fontWeight: 600 }}>
+                        {d["Post-Enrichment"]}
+                      </span>
+                    </div>
+                    {showBoth && (
+                      <div
+                        style={{
+                          marginTop: 5,
+                          paddingTop: 5,
+                          borderTop: "1px solid rgba(255,255,255,0.1)",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          color: "#6EE7B7",
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>Delta</span>
+                        <span style={{ fontFamily: D.mono }}>
+                          +{d["Post-Enrichment"] - d["Pre-Enrichment"]}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              }}
+            />
           </RadarChart>
         </ResponsiveContainer>
       </div>
       {showBoth && (
-        <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 10 }}>
+        <div
+          style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 10 }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <div style={{ width: 16, height: 1.5, borderTop: "1.5px dashed #9CA3AF" }} />
+            <div
+              style={{
+                width: 16,
+                height: 1.5,
+                borderTop: "1.5px dashed #9CA3AF",
+              }}
+            />
             <span style={{ color: D.muted }}>Pre-enrichment</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <div style={{ width: 16, height: 2, background: D.blue, borderRadius: 1 }} />
+            <div
+              style={{
+                width: 16,
+                height: 2,
+                background: D.blue,
+                borderRadius: 1,
+              }}
+            />
             <span style={{ color: D.sub }}>Post-enrichment</span>
           </div>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0 10px" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(5, 1fr)",
+          gap: "0 10px",
+        }}
+      >
         {data.map((s) => (
           <div key={s.skill}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, fontFamily: D.mono, color: D.ink, marginBottom: 3 }}>
+            <div
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                fontFamily: D.mono,
+                color: D.ink,
+                marginBottom: 3,
+              }}
+            >
               {s["Post-Enrichment"]}
-              {s["Post-Enrichment"] > s["Pre-Enrichment"] && <span style={{ fontSize: 8.5, fontWeight: 600, color: D.mint, marginLeft: 3 }}>+{s["Post-Enrichment"] - s["Pre-Enrichment"]}</span>}
+              {s["Post-Enrichment"] > s["Pre-Enrichment"] && (
+                <span
+                  style={{
+                    fontSize: 8.5,
+                    fontWeight: 600,
+                    color: D.mint,
+                    marginLeft: 3,
+                  }}
+                >
+                  +{s["Post-Enrichment"] - s["Pre-Enrichment"]}
+                </span>
+              )}
             </div>
-            <div style={{ height: 2.5, background: D.line, borderRadius: 99, overflow: "hidden", position: "relative" }}>
-              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${s["Post-Enrichment"]}%`, background: D.blue, borderRadius: 99 }} />
+            <div
+              style={{
+                height: 2.5,
+                background: D.line,
+                borderRadius: 99,
+                overflow: "hidden",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: `${s["Post-Enrichment"]}%`,
+                  background: D.blue,
+                  borderRadius: 99,
+                }}
+              />
             </div>
-            <div style={{ fontSize: 9, color: D.muted, marginTop: 3 }}>{s.skill}</div>
+            <div style={{ fontSize: 9, color: D.muted, marginTop: 3 }}>
+              {s.skill}
+            </div>
           </div>
         ))}
       </div>
@@ -556,47 +1287,160 @@ function MatchConfidence({ analytics }: { analytics: MockAnalytics | null }) {
   const r = 44;
   const circ = 2 * Math.PI * r;
   const fill = (score / 100) * circ;
-  
+
   return (
-    <div style={{
-      padding: "16px 18px", borderRadius: 8,
-      background: `linear-gradient(145deg, ${D.blue}0A 0%, ${D.canvas} 60%)`,
-      border: `1px solid ${D.blue}28`,
-      display: "flex", alignItems: "center", gap: 20,
-    }}>
+    <div
+      style={{
+        padding: "16px 18px",
+        borderRadius: 8,
+        background: `linear-gradient(145deg, ${D.blue}0A 0%, ${D.canvas} 60%)`,
+        border: `1px solid ${D.blue}28`,
+        display: "flex",
+        alignItems: "center",
+        gap: 20,
+      }}
+    >
       <div style={{ flexShrink: 0 }}>
         <svg width="100" height="100" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r={r} fill="none" stroke={D.line} strokeWidth="6" />
-          <circle cx="50" cy="50" r={r} fill="none" stroke={D.blue} strokeWidth="6"
+          <circle
+            cx="50"
+            cy="50"
+            r={r}
+            fill="none"
+            stroke={D.line}
+            strokeWidth="6"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r={r}
+            fill="none"
+            stroke={D.blue}
+            strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={`${fill} ${circ}`}
             strokeDashoffset={circ / 4}
           />
-          <text x="50" y="44" textAnchor="middle" fontSize="16" fontWeight="800" fill={D.ink} fontFamily="'Inter', sans-serif" letterSpacing="-0.05em">{score}</text>
-          <text x="50" y="57" textAnchor="middle" fontSize="9" fill={D.muted} fontFamily="'Inter', sans-serif">/ 100</text>
+          <text
+            x="50"
+            y="44"
+            textAnchor="middle"
+            fontSize="16"
+            fontWeight="800"
+            fill={D.ink}
+            fontFamily="'Inter', sans-serif"
+            letterSpacing="-0.05em"
+          >
+            {score}
+          </text>
+          <text
+            x="50"
+            y="57"
+            textAnchor="middle"
+            fontSize="9"
+            fill={D.muted}
+            fontFamily="'Inter', sans-serif"
+          >
+            / 100
+          </text>
         </svg>
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: D.muted, marginBottom: 4 }}>Match Confidence</div>
-        <div style={{ fontSize: 28, fontWeight: 800, color: D.ink, letterSpacing: "-0.04em", lineHeight: 1, marginBottom: 5 }}>
-          {score} <span style={{ fontSize: 14, color: D.muted, fontWeight: 400 }}>/ 100</span>
+        <div
+          style={{
+            fontSize: 9.5,
+            fontWeight: 700,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: D.muted,
+            marginBottom: 4,
+          }}
+        >
+          Match Confidence
         </div>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 5,
-          padding: "4px 8px", borderRadius: 5,
-          background: D.mintSoft, border: `1px solid ${D.mint}28`, marginBottom: 10,
-        }}>
+        <div
+          style={{
+            fontSize: 28,
+            fontWeight: 800,
+            color: D.ink,
+            letterSpacing: "-0.04em",
+            lineHeight: 1,
+            marginBottom: 5,
+          }}
+        >
+          {score}{" "}
+          <span style={{ fontSize: 14, color: D.muted, fontWeight: 400 }}>
+            / 100
+          </span>
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "4px 8px",
+            borderRadius: 5,
+            background: D.mintSoft,
+            border: `1px solid ${D.mint}28`,
+            marginBottom: 10,
+          }}
+        >
           <TrendingUp size={10} strokeWidth={2} color={D.mint} />
-          <span style={{ fontSize: 10.5, fontWeight: 600, color: D.mint }}>+{scoreIncrease} increase from external data enrichment</span>
+          <span style={{ fontSize: 10.5, fontWeight: 600, color: D.mint }}>
+            +{scoreIncrease} increase from external data enrichment
+          </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {[{ label: "Experience Fit", pct: 93 }, { label: "Skills Alignment", pct: 87 }, { label: "Culture Signal", pct: 81 }].map((item) => (
-            <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 10, color: D.muted, width: 96, flexShrink: 0 }}>{item.label}</span>
-              <div style={{ flex: 1, height: 3, background: D.line, borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ width: `${item.pct}%`, height: "100%", background: `linear-gradient(90deg, ${D.blue}, #4F46E5)`, borderRadius: 99 }} />
+          {[
+            { label: "Experience Fit", pct: 93 },
+            { label: "Skills Alignment", pct: 87 },
+            { label: "Culture Signal", pct: 81 },
+          ].map((item) => (
+            <div
+              key={item.label}
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  color: D.muted,
+                  width: 96,
+                  flexShrink: 0,
+                }}
+              >
+                {item.label}
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 3,
+                  background: D.line,
+                  borderRadius: 99,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${item.pct}%`,
+                    height: "100%",
+                    background: `linear-gradient(90deg, ${D.blue}, #4F46E5)`,
+                    borderRadius: 99,
+                  }}
+                />
               </div>
-              <span style={{ fontSize: 9.5, fontFamily: D.mono, fontWeight: 600, color: D.sub, width: 28, textAlign: "right", flexShrink: 0 }}>{item.pct}%</span>
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontFamily: D.mono,
+                  fontWeight: 600,
+                  color: D.sub,
+                  width: 28,
+                  textAlign: "right",
+                  flexShrink: 0,
+                }}
+              >
+                {item.pct}%
+              </span>
             </div>
           ))}
         </div>
@@ -609,62 +1453,229 @@ function MatchConfidence({ analytics }: { analytics: MockAnalytics | null }) {
 function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
   const [expanded, setExpanded] = useState(true);
   const [hovered, setHovered] = useState<number | null>(null);
-  
+
   // Convert real LinkedIn data to timeline items
-  const timelineItems = data?.linkedin 
-    ? experiencesToTimelineItems(data.linkedin.experiences, data.linkedin.educations)
+  const timelineItems = data?.linkedin
+    ? experiencesToTimelineItems(
+        data.linkedin.experiences,
+        data.linkedin.educations,
+      )
     : [];
-  
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, cursor: "pointer" }} onClick={() => setExpanded(!expanded)}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 14,
+          cursor: "pointer",
+        }}
+        onClick={() => setExpanded(!expanded)}
+      >
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: D.ink, letterSpacing: "-0.02em" }}>Career Trajectory</div>
-          <div style={{ fontSize: 10.5, color: D.muted, marginTop: 1 }}>Verified chronological milestones · LinkedIn cross-referenced</div>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: D.ink,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Career Trajectory
+          </div>
+          <div style={{ fontSize: 10.5, color: D.muted, marginTop: 1 }}>
+            Verified chronological milestones · LinkedIn cross-referenced
+          </div>
         </div>
-        <ChevronDown size={14} strokeWidth={2} color={D.muted}
-          style={{ transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s ease" }} />
+        <ChevronDown
+          size={14}
+          strokeWidth={2}
+          color={D.muted}
+          style={{
+            transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
+            transition: "transform 0.2s ease",
+          }}
+        />
       </div>
       {expanded && (
         <div style={{ position: "relative" }}>
           {timelineItems.length > 0 ? (
             <>
-              <div style={{ position: "absolute", left: 44, top: 6, bottom: 6, width: 1, background: D.line }} />
+              <div
+                style={{
+                  position: "absolute",
+                  left: 44,
+                  top: 6,
+                  bottom: 6,
+                  width: 1,
+                  background: D.line,
+                }}
+              />
               {timelineItems.map((item, i) => (
-                <div key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
-                  style={{ display: "flex", alignItems: "flex-start", marginBottom: i < timelineItems.length - 1 ? 8 : 0, cursor: "default" }}>
-                  <div style={{ width: 36, flexShrink: 0, textAlign: "right", paddingTop: 4, fontSize: 9.5, fontWeight: item.current ? 700 : 500, color: item.current ? D.blue : D.dim, fontFamily: D.mono }}>{item.year}</div>
-                  <div style={{ width: 18, flexShrink: 0, display: "flex", justifyContent: "center", paddingTop: 6, position: "relative", zIndex: 1, marginLeft: -1 }}>
-                    <div style={{
-                      width: item.current ? 9 : 7, height: item.current ? 9 : 7, borderRadius: "50%",
-                      background: item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.dim,
-                      border: `2px solid ${item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.line}`,
-                      transition: "transform 0.12s", transform: hovered === i ? "scale(1.5)" : "scale(1)",
-                      boxShadow: item.current ? `0 0 0 3px ${D.blue}18` : undefined,
-                    }} />
+                <div
+                  key={i}
+                  onMouseEnter={() => setHovered(i)}
+                  onMouseLeave={() => setHovered(null)}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    marginBottom: i < timelineItems.length - 1 ? 8 : 0,
+                    cursor: "default",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 36,
+                      flexShrink: 0,
+                      textAlign: "right",
+                      paddingTop: 4,
+                      fontSize: 9.5,
+                      fontWeight: item.current ? 700 : 500,
+                      color: item.current ? D.blue : D.dim,
+                      fontFamily: D.mono,
+                    }}
+                  >
+                    {item.year}
                   </div>
-                  <div style={{
-                    flex: 1, padding: "4px 10px 8px", marginLeft: 4, borderRadius: 6,
-                    background: hovered === i ? D.surface : "transparent",
-                    border: `1px solid ${hovered === i ? D.line : "transparent"}`,
-                    transition: "all 0.15s ease", minWidth: 0,
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 1 }}>
-                      {item.type === "work" ? <Briefcase size={9.5} strokeWidth={2} color={item.current ? D.blue : D.muted} /> : <GraduationCap size={9.5} strokeWidth={2} color={D.purple} />}
-                      <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink }}>{item.title}</span>
-                      {item.current && <Badge color={D.blue} bg={D.blueSoft}>NOW</Badge>}
-                      {item.type === "edu" && <Badge color={D.purple} bg={`${D.purple}10`}>EDU</Badge>}
-                      {item.verified && <Badge color={D.mint} bg={D.mintSoft}><CheckCircle2 size={8} strokeWidth={2} color={D.mint} />Verified</Badge>}
+                  <div
+                    style={{
+                      width: 18,
+                      flexShrink: 0,
+                      display: "flex",
+                      justifyContent: "center",
+                      paddingTop: 6,
+                      position: "relative",
+                      zIndex: 1,
+                      marginLeft: -1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: item.current ? 9 : 7,
+                        height: item.current ? 9 : 7,
+                        borderRadius: "50%",
+                        background: item.current
+                          ? D.blue
+                          : item.type === "edu"
+                            ? D.purple
+                            : item.verified
+                              ? D.mint
+                              : D.dim,
+                        border: `2px solid ${item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.line}`,
+                        transition: "transform 0.12s",
+                        transform: hovered === i ? "scale(1.5)" : "scale(1)",
+                        boxShadow: item.current
+                          ? `0 0 0 3px ${D.blue}18`
+                          : undefined,
+                      }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      flex: 1,
+                      padding: "4px 10px 8px",
+                      marginLeft: 4,
+                      borderRadius: 6,
+                      background: hovered === i ? D.surface : "transparent",
+                      border: `1px solid ${hovered === i ? D.line : "transparent"}`,
+                      transition: "all 0.15s ease",
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        flexWrap: "wrap",
+                        marginBottom: 1,
+                      }}
+                    >
+                      {item.type === "work" ? (
+                        <Briefcase
+                          size={9.5}
+                          strokeWidth={2}
+                          color={item.current ? D.blue : D.muted}
+                        />
+                      ) : (
+                        <GraduationCap
+                          size={9.5}
+                          strokeWidth={2}
+                          color={D.purple}
+                        />
+                      )}
+                      <span
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          color: D.ink,
+                        }}
+                      >
+                        {item.title}
+                      </span>
+                      {item.current && (
+                        <Badge color={D.blue} bg={D.blueSoft}>
+                          NOW
+                        </Badge>
+                      )}
+                      {item.type === "edu" && (
+                        <Badge color={D.purple} bg={`${D.purple}10`}>
+                          EDU
+                        </Badge>
+                      )}
+                      {item.verified && (
+                        <Badge color={D.mint} bg={D.mintSoft}>
+                          <CheckCircle2
+                            size={8}
+                            strokeWidth={2}
+                            color={D.mint}
+                          />
+                          Verified
+                        </Badge>
+                      )}
                     </div>
-                    <div style={{ fontSize: 10.5, color: D.sub, marginBottom: 1 }}>{item.org}</div>
-                    <div style={{ fontSize: 9.5, color: D.dim, fontFamily: D.mono, marginBottom: 3 }}>{item.period}</div>
-                    <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.45 }}>{item.note}</div>
+                    <div
+                      style={{ fontSize: 10.5, color: D.sub, marginBottom: 1 }}
+                    >
+                      {item.org}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 9.5,
+                        color: D.dim,
+                        fontFamily: D.mono,
+                        marginBottom: 3,
+                      }}
+                    >
+                      {item.period}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        color: D.muted,
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {item.note}
+                    </div>
                   </div>
                 </div>
               ))}
             </>
           ) : (
-            <div style={{ padding: "12px 16px", borderRadius: 6, background: D.surface, border: `1px dashed ${D.line}`, fontSize: 10.5, color: D.muted, textAlign: "center" }}>
+            <div
+              style={{
+                padding: "12px 16px",
+                borderRadius: 6,
+                background: D.surface,
+                border: `1px dashed ${D.line}`,
+                fontSize: 10.5,
+                color: D.muted,
+                textAlign: "center",
+              }}
+            >
               No career trajectory data available from LinkedIn enrichment
             </div>
           )}
@@ -675,97 +1686,264 @@ function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
 }
 
 // ─── Right Panel — Enriched Analytics ───────────────────────────────────────────
-function EnrichedAnalytics({ data, userRole, candidateUuid, reviewStatus, onRefreshReview }: {
-  data: EnrichedProfile | null; userRole: string; candidateUuid: string; reviewStatus: ReviewStatus | null; onRefreshReview: () => void;
+function EnrichedAnalytics({
+  data,
+  userRole,
+  candidateUuid,
+  reviewStatus,
+  onRefreshReview,
+}: {
+  data: EnrichedProfile | null;
+  userRole: string;
+  candidateUuid: string;
+  reviewStatus: ReviewStatus | null;
+  onRefreshReview: () => void;
 }) {
   const router = useRouter();
   const repoCount = data?.github?.public_repos_count ?? 0;
   const skillsCount = data?.analytics?.semantic_tags?.length ?? 0;
   const roleCount = data?.linkedin?.experiences?.length ?? 0;
-  const canSchedule = userRole === "hr" && reviewStatus?.overall_status === "ready_to_schedule";
+  const canSchedule =
+    userRole === "hr" && reviewStatus?.overall_status === "ready_to_schedule";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: D.canvas }}>
-      <div style={{
-        height: 38, background: D.canvas, borderBottom: `1px solid ${D.line}`,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "0 20px", flexShrink: 0,
-      }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        overflow: "hidden",
+        background: D.canvas,
+      }}
+    >
+      <div
+        style={{
+          height: 38,
+          background: D.canvas,
+          borderBottom: `1px solid ${D.line}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 20px",
+          flexShrink: 0,
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Shield size={13} strokeWidth={1.8} color={D.muted} />
-          <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, letterSpacing: "-0.01em" }}>Unified Candidate Analytics</span>
-          <span style={{ fontSize: 9.5, fontFamily: D.mono, color: D.muted, padding: "1px 5px", border: `1px solid ${D.line}`, borderRadius: 3, background: D.surface }}>post-enrichment</span>
+          <span
+            style={{
+              fontSize: 11.5,
+              fontWeight: 600,
+              color: D.ink,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Unified Candidate Analytics
+          </span>
+          <span
+            style={{
+              fontSize: 9.5,
+              fontFamily: D.mono,
+              color: D.muted,
+              padding: "1px 5px",
+              border: `1px solid ${D.line}`,
+              borderRadius: 3,
+              background: D.surface,
+            }}
+          >
+            post-enrichment
+          </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <Dot color={D.mint} pulse />
-          <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>LIVE</span>
+          <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>
+            LIVE
+          </span>
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "clip", padding: "20px 22px", minHeight: 0 }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          overflowX: "clip",
+          padding: "20px 22px",
+          minHeight: 0,
+        }}
+      >
         <div style={{ marginBottom: 20 }}>
           <SectionLabel>Match Confidence Score</SectionLabel>
           <MatchConfidence analytics={data?.analytics || null} />
         </div>
         <Divider />
-        <div style={{ marginBottom: 20 }}><EnrichedRadar analytics={data?.analytics || null} /></div>
+        <div style={{ marginBottom: 20 }}>
+          <EnrichedRadar analytics={data?.analytics || null} />
+        </div>
         <Divider />
-        <div style={{ marginBottom: 20 }}><CareerTimeline data={data} /></div>
+        <div style={{ marginBottom: 20 }}>
+          <CareerTimeline data={data} />
+        </div>
         <Divider />
 
         {/* Enrichment Impact Summary */}
         <div style={{ marginBottom: 12 }}>
           <SectionLabel>Enrichment Impact Summary</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
             {[
-              { icon: <GitBranch size={13} strokeWidth={1.8} color={D.blue} />, label: "Repos Corroborating", value: repoCount.toString(), sub: "public repositories", color: D.blue },
-              { icon: <CheckCircle2 size={13} strokeWidth={1.8} color={D.mint} />, label: "Roles Verified", value: roleCount.toString(), sub: "LinkedIn employment entries", color: D.mint },
-              { icon: <Cpu size={13} strokeWidth={1.8} color={D.purple} />, label: "Skills Confirmed", value: skillsCount.toString(), sub: "from README analysis", color: D.purple },
+              {
+                icon: <GitBranch size={13} strokeWidth={1.8} color={D.blue} />,
+                label: "Repos Corroborating",
+                value: repoCount.toString(),
+                sub: "public repositories",
+                color: D.blue,
+              },
+              {
+                icon: (
+                  <CheckCircle2 size={13} strokeWidth={1.8} color={D.mint} />
+                ),
+                label: "Roles Verified",
+                value: roleCount.toString(),
+                sub: "LinkedIn employment entries",
+                color: D.mint,
+              },
+              {
+                icon: <Cpu size={13} strokeWidth={1.8} color={D.purple} />,
+                label: "Skills Confirmed",
+                value: skillsCount.toString(),
+                sub: "from README analysis",
+                color: D.purple,
+              },
             ].map((item, i) => (
-              <div key={i} style={{ padding: "11px 13px", borderRadius: 7, background: `${item.color}08`, border: `1px solid ${item.color}20`, display: "flex", flexDirection: "column", gap: 5 }}>
+              <div
+                key={i}
+                style={{
+                  padding: "11px 13px",
+                  borderRadius: 7,
+                  background: `${item.color}08`,
+                  border: `1px solid ${item.color}20`,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 5,
+                }}
+              >
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   {item.icon}
-                  <span style={{ fontSize: 9.5, fontWeight: 600, color: item.color, letterSpacing: "0.04em" }}>{item.label.toUpperCase()}</span>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 600,
+                      color: item.color,
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {item.label.toUpperCase()}
+                  </span>
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: D.ink, letterSpacing: "-0.04em", lineHeight: 1, fontFamily: D.mono }}>{item.value}</div>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color: D.ink,
+                    letterSpacing: "-0.04em",
+                    lineHeight: 1,
+                    fontFamily: D.mono,
+                  }}
+                >
+                  {item.value}
+                </div>
                 <div style={{ fontSize: 10, color: D.muted }}>{item.sub}</div>
               </div>
             ))}
           </div>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
-            borderRadius: 5, background: D.surface, border: `1px solid ${D.line}`,
-          }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 10px",
+              borderRadius: 5,
+              background: D.surface,
+              border: `1px solid ${D.line}`,
+            }}
+          >
             <Globe size={10} strokeWidth={2} color={D.muted} />
             <span style={{ fontSize: 10, color: D.muted, flex: 1 }}>
-              Sources: <span style={{ color: D.sub, fontWeight: 500 }}>GitHub ({repoCount} repos analyzed)</span>{" · "}
-              <span style={{ color: D.sub, fontWeight: 500 }}>LinkedIn ({roleCount} verified positions)</span>
+              Sources:{" "}
+              <span style={{ color: D.sub, fontWeight: 500 }}>
+                GitHub ({repoCount} repos analyzed)
+              </span>
+              {" · "}
+              <span style={{ color: D.sub, fontWeight: 500 }}>
+                LinkedIn ({roleCount} verified positions)
+              </span>
             </span>
-            <span style={{ fontSize: 9, fontFamily: D.mono, color: D.dim }}>Just now</span>
+            <span style={{ fontSize: 9, fontFamily: D.mono, color: D.dim }}>
+              Just now
+            </span>
           </div>
         </div>
         <Divider />
-        <ReviewPanel candidateUuid={candidateUuid} userRole={userRole} reviewStatus={reviewStatus} onRefresh={onRefreshReview} />
+        <ReviewPanel
+          candidateUuid={candidateUuid}
+          userRole={userRole}
+          reviewStatus={reviewStatus}
+          onRefresh={onRefreshReview}
+        />
         {canSchedule ? (
           <button
-            onClick={() => router.push(`/schedule?name=${encodeURIComponent(data?.full_name || "Candidate")}`)}
+            onClick={() =>
+              router.push(
+                `/schedule?name=${encodeURIComponent(data?.full_name || "Candidate")}`,
+              )
+            }
             style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              padding: "10px 14px", border: "none", borderRadius: 6,
-              background: D.blue, color: "#fff", fontSize: 12, fontWeight: 700,
-              cursor: "pointer", width: "100%", transition: "all 0.15s ease",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "10px 14px",
+              border: "none",
+              borderRadius: 6,
+              background: D.blue,
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              width: "100%",
+              transition: "all 0.15s ease",
             }}
           >
             <Calendar size={13} strokeWidth={2} />
             Schedule Interview
           </button>
-        ) : userRole === "hr" && (
-          <div style={{ fontSize: 10, color: D.muted, textAlign: "center", padding: "8px", border: `1px dashed ${D.line}`, borderRadius: 5 }}>
-            {reviewStatus?.overall_status === "waiting" ? "⏳ Waiting for both reviewers to approve before scheduling" :
-             reviewStatus?.overall_status === "rejected" ? "❌ Candidate rejected — scheduling unavailable" :
-             reviewStatus?.overall_status === "conflict" ? "⚠️ Resolve the split decision before scheduling" :
-             "Submit your review above"}
-          </div>
+        ) : (
+          userRole === "hr" && (
+            <div
+              style={{
+                fontSize: 10,
+                color: D.muted,
+                textAlign: "center",
+                padding: "8px",
+                border: `1px dashed ${D.line}`,
+                borderRadius: 5,
+              }}
+            >
+              {reviewStatus?.overall_status === "waiting"
+                ? "⏳ Waiting for both reviewers to approve before scheduling"
+                : reviewStatus?.overall_status === "rejected"
+                  ? "❌ Candidate rejected — scheduling unavailable"
+                  : reviewStatus?.overall_status === "conflict"
+                    ? "⚠️ Resolve the split decision before scheduling"
+                    : "Submit your review above"}
+            </div>
+          )
         )}
       </div>
     </div>
@@ -774,19 +1952,30 @@ function EnrichedAnalytics({ data, userRole, candidateUuid, reviewStatus, onRefr
 
 // ─── Review Panel ──────────────────────────────────────────────────────────────
 function ReviewPanel({
-  candidateUuid, userRole, reviewStatus, onRefresh,
+  candidateUuid,
+  userRole,
+  reviewStatus,
+  onRefresh,
 }: {
-  candidateUuid: string; userRole: string; reviewStatus: ReviewStatus | null; onRefresh: () => void;
+  candidateUuid: string;
+  userRole: string;
+  reviewStatus: ReviewStatus | null;
+  onRefresh: () => void;
 }) {
   const [decision, setDecision] = useState<ReviewDecision | null>(null);
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [resolveDec, setResolveDec] = useState<ReviewDecision | null>(null);
 
-  const myDecision = userRole === "hr" ? reviewStatus?.hr_decision : reviewStatus?.tl_decision;
+  const myDecision =
+    userRole === "hr" ? reviewStatus?.hr_decision : reviewStatus?.tl_decision;
   const otherLabel = userRole === "hr" ? "Tech Lead" : "HR";
-  const otherDecision = userRole === "hr" ? reviewStatus?.tl_decision : reviewStatus?.hr_decision;
-  const otherText = userRole === "hr" ? reviewStatus?.tl_review_text : reviewStatus?.hr_review_text;
+  const otherDecision =
+    userRole === "hr" ? reviewStatus?.tl_decision : reviewStatus?.hr_decision;
+  const otherText =
+    userRole === "hr"
+      ? reviewStatus?.tl_review_text
+      : reviewStatus?.hr_review_text;
 
   const handleSubmit = async () => {
     if (!decision) return;
@@ -794,7 +1983,9 @@ function ReviewPanel({
     try {
       await submitReview(candidateUuid, decision, text);
       onRefresh();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     setSubmitting(false);
   };
 
@@ -804,92 +1995,327 @@ function ReviewPanel({
     try {
       await resolveConflict(candidateUuid, resolveDec);
       onRefresh();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     setSubmitting(false);
   };
 
   const status = reviewStatus?.overall_status || "waiting";
 
   return (
-    <div style={{ marginBottom: 20, padding: "12px 14px", borderRadius: 7, border: `1px solid ${D.line}`, background: D.surface }}>
+    <div
+      style={{
+        marginBottom: 20,
+        padding: "12px 14px",
+        borderRadius: 7,
+        border: `1px solid ${D.line}`,
+        background: D.surface,
+      }}
+    >
       <SectionLabel>CV Review</SectionLabel>
 
       {!reviewStatus ? (
-        <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 5, border: `1px solid ${D.line}`, background: D.surface }}>
-          <div style={{ fontSize: 10, color: D.muted, textAlign: "center" }}>⏳ Loading review status…</div>
+        <div
+          style={{
+            marginTop: 8,
+            padding: "8px 10px",
+            borderRadius: 5,
+            border: `1px solid ${D.line}`,
+            background: D.surface,
+          }}
+        >
+          <div style={{ fontSize: 10, color: D.muted, textAlign: "center" }}>
+            ⏳ Loading review status…
+          </div>
         </div>
-      ) : myDecision === "pending" && userRole === "hr" && reviewStatus.tl_decision === "pending" ? (
-        <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 5, border: `1px solid ${D.amber}30`, background: `${D.amber}08` }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: D.amber, textAlign: "center" }}>
+      ) : myDecision === "pending" &&
+        userRole === "hr" &&
+        reviewStatus.tl_decision === "pending" ? (
+        <div
+          style={{
+            marginTop: 8,
+            padding: "8px 10px",
+            borderRadius: 5,
+            border: `1px solid ${D.amber}30`,
+            background: `${D.amber}08`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: D.amber,
+              textAlign: "center",
+            }}
+          >
             ⏳ Tech Lead must submit their review first
           </div>
         </div>
-      ) : myDecision === "pending" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => setDecision("approved")}
-              style={{ flex: 1, padding: "6px 0", border: `1px solid ${decision === "approved" ? D.mint : D.line}`, borderRadius: 5, background: decision === "approved" ? D.mintSoft : D.canvas, fontSize: 11, fontWeight: 600, color: decision === "approved" ? D.mint : D.sub, cursor: "pointer" }}>
-              ✓ Approve
-            </button>
-            <button onClick={() => setDecision("rejected")}
-              style={{ flex: 1, padding: "6px 0", border: `1px solid ${decision === "rejected" ? D.red : D.line}`, borderRadius: 5, background: decision === "rejected" ? "#FEE2E2" : D.canvas, fontSize: 11, fontWeight: 600, color: decision === "rejected" ? D.red : D.sub, cursor: "pointer" }}>
-              ✗ Reject
+      ) : (
+        myDecision === "pending" && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginTop: 8,
+            }}
+          >
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() => setDecision("approved")}
+                style={{
+                  flex: 1,
+                  padding: "6px 0",
+                  border: `1px solid ${decision === "approved" ? D.mint : D.line}`,
+                  borderRadius: 5,
+                  background: decision === "approved" ? D.mintSoft : D.canvas,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: decision === "approved" ? D.mint : D.sub,
+                  cursor: "pointer",
+                }}
+              >
+                ✓ Approve
+              </button>
+              <button
+                onClick={() => setDecision("rejected")}
+                style={{
+                  flex: 1,
+                  padding: "6px 0",
+                  border: `1px solid ${decision === "rejected" ? D.red : D.line}`,
+                  borderRadius: 5,
+                  background: decision === "rejected" ? "#FEE2E2" : D.canvas,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: decision === "rejected" ? D.red : D.sub,
+                  cursor: "pointer",
+                }}
+              >
+                ✗ Reject
+              </button>
+            </div>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Add notes (required if rejecting)…"
+              style={{
+                width: "100%",
+                minHeight: 50,
+                padding: "6px 8px",
+                border: `1px solid ${D.line}`,
+                borderRadius: 4,
+                fontSize: 10.5,
+                fontFamily: D.font,
+                resize: "vertical",
+              }}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={!decision || submitting}
+              style={{
+                padding: "6px 0",
+                border: "none",
+                borderRadius: 5,
+                background: D.blue,
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: decision && !submitting ? "pointer" : "default",
+                opacity: decision && !submitting ? 1 : 0.5,
+              }}
+            >
+              {submitting ? "Submitting…" : "Submit Review"}
             </button>
           </div>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Add notes (required if rejecting)…"
-            style={{ width: "100%", minHeight: 50, padding: "6px 8px", border: `1px solid ${D.line}`, borderRadius: 4, fontSize: 10.5, fontFamily: D.font, resize: "vertical" }} />
-          <button onClick={handleSubmit} disabled={!decision || submitting}
-            style={{ padding: "6px 0", border: "none", borderRadius: 5, background: D.blue, color: "#fff", fontSize: 11, fontWeight: 600, cursor: decision && !submitting ? "pointer" : "default", opacity: decision && !submitting ? 1 : 0.5 }}>
-            {submitting ? "Submitting…" : "Submit Review"}
-          </button>
-        </div>
+        )
       )}
 
       {/* Status display */}
-      <div style={{ marginTop: 10, fontSize: 10.5, display: "flex", flexDirection: "column", gap: 4 }}>
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 10.5,
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: D.muted }}>Your decision:</span>
-          <span style={{ fontWeight: 600, color: myDecision === "approved" ? D.mint : myDecision === "rejected" ? D.red : D.dim }}>
-            {myDecision === "pending" ? "Not submitted" : myDecision === "approved" ? "Approved" : "Rejected"}
+          <span
+            style={{
+              fontWeight: 600,
+              color:
+                myDecision === "approved"
+                  ? D.mint
+                  : myDecision === "rejected"
+                    ? D.red
+                    : D.dim,
+            }}
+          >
+            {myDecision === "pending"
+              ? "Not submitted"
+              : myDecision === "approved"
+                ? "Approved"
+                : "Rejected"}
           </span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: D.muted }}>{otherLabel}:</span>
-          <span style={{ fontWeight: 600, color: otherDecision === "approved" ? D.mint : otherDecision === "rejected" ? D.red : D.dim }}>
-            {otherDecision === "pending" ? "Waiting…" : otherDecision === "approved" ? "Approved" : "Rejected"}
+          <span
+            style={{
+              fontWeight: 600,
+              color:
+                otherDecision === "approved"
+                  ? D.mint
+                  : otherDecision === "rejected"
+                    ? D.red
+                    : D.dim,
+            }}
+          >
+            {otherDecision === "pending"
+              ? "Waiting…"
+              : otherDecision === "approved"
+                ? "Approved"
+                : "Rejected"}
           </span>
         </div>
       </div>
 
       {otherText && otherDecision !== "pending" && (
-        <div style={{ marginTop: 6, fontSize: 10, color: D.muted, padding: "5px 8px", background: D.canvas, borderRadius: 4, border: `1px solid ${D.line}` }}>
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: 10,
+            color: D.muted,
+            padding: "5px 8px",
+            background: D.canvas,
+            borderRadius: 4,
+            border: `1px solid ${D.line}`,
+          }}
+        >
           <strong>{otherLabel}&apos;s notes:</strong> {otherText}
         </div>
       )}
 
       {/* Status alerts */}
-      {status === "waiting" && <div style={{ marginTop: 8, fontSize: 10, color: D.amber, fontWeight: 600, textAlign: "center" }}>⏳ Waiting for both reviewers to submit…</div>}
-      {status === "ready_to_schedule" && <div style={{ marginTop: 8, fontSize: 10, color: D.mint, fontWeight: 600, textAlign: "center" }}>✅ Both approved — ready to schedule</div>}
-      {status === "rejected" && <div style={{ marginTop: 8, fontSize: 10, color: D.red, fontWeight: 600, textAlign: "center" }}>❌ Both rejected — notification sent</div>}
+      {status === "waiting" && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 10,
+            color: D.amber,
+            fontWeight: 600,
+            textAlign: "center",
+          }}
+        >
+          ⏳ Waiting for both reviewers to submit…
+        </div>
+      )}
+      {status === "ready_to_schedule" && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 10,
+            color: D.mint,
+            fontWeight: 600,
+            textAlign: "center",
+          }}
+        >
+          ✅ Both approved — ready to schedule
+        </div>
+      )}
+      {status === "rejected" && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 10,
+            color: D.red,
+            fontWeight: 600,
+            textAlign: "center",
+          }}
+        >
+          ❌ Both rejected — notification sent
+        </div>
+      )}
 
       {status === "conflict" && (
-        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 5, border: `1px solid ${D.amber}30`, background: `${D.amber}08` }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: D.amber, marginBottom: 6 }}>⚠️ Split decision — {userRole === "hr" ? "you make the final call" : "waiting for HR"}</div>
+        <div
+          style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            borderRadius: 5,
+            border: `1px solid ${D.amber}30`,
+            background: `${D.amber}08`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              color: D.amber,
+              marginBottom: 6,
+            }}
+          >
+            ⚠️ Split decision —{" "}
+            {userRole === "hr" ? "you make the final call" : "waiting for HR"}
+          </div>
           {userRole === "hr" && (
             <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={() => setResolveDec("approved")}
-                style={{ flex: 1, padding: "5px 0", border: `1px solid ${resolveDec === "approved" ? D.mint : D.line}`, borderRadius: 4, background: resolveDec === "approved" ? D.mintSoft : D.canvas, fontSize: 10.5, fontWeight: 600, color: resolveDec === "approved" ? D.mint : D.sub, cursor: "pointer" }}>
+              <button
+                onClick={() => setResolveDec("approved")}
+                style={{
+                  flex: 1,
+                  padding: "5px 0",
+                  border: `1px solid ${resolveDec === "approved" ? D.mint : D.line}`,
+                  borderRadius: 4,
+                  background: resolveDec === "approved" ? D.mintSoft : D.canvas,
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  color: resolveDec === "approved" ? D.mint : D.sub,
+                  cursor: "pointer",
+                }}
+              >
                 Override Accept
               </button>
-              <button onClick={() => setResolveDec("rejected")}
-                style={{ flex: 1, padding: "5px 0", border: `1px solid ${resolveDec === "rejected" ? D.red : D.line}`, borderRadius: 4, background: resolveDec === "rejected" ? "#FEE2E2" : D.canvas, fontSize: 10.5, fontWeight: 600, color: resolveDec === "rejected" ? D.red : D.sub, cursor: "pointer" }}>
+              <button
+                onClick={() => setResolveDec("rejected")}
+                style={{
+                  flex: 1,
+                  padding: "5px 0",
+                  border: `1px solid ${resolveDec === "rejected" ? D.red : D.line}`,
+                  borderRadius: 4,
+                  background: resolveDec === "rejected" ? "#FEE2E2" : D.canvas,
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  color: resolveDec === "rejected" ? D.red : D.sub,
+                  cursor: "pointer",
+                }}
+              >
                 Reject
               </button>
             </div>
           )}
           {userRole === "hr" && resolveDec && (
-            <button onClick={handleResolve} disabled={submitting}
-              style={{ marginTop: 6, width: "100%", padding: "5px 0", border: "none", borderRadius: 4, background: D.blue, color: "#fff", fontSize: 10.5, fontWeight: 600, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.5 : 1 }}>
+            <button
+              onClick={handleResolve}
+              disabled={submitting}
+              style={{
+                marginTop: 6,
+                width: "100%",
+                padding: "5px 0",
+                border: "none",
+                borderRadius: 4,
+                background: D.blue,
+                color: "#fff",
+                fontSize: 10.5,
+                fontWeight: 600,
+                cursor: submitting ? "default" : "pointer",
+                opacity: submitting ? 0.5 : 1,
+              }}
+            >
               {submitting ? "Submitting…" : "Confirm Final Decision"}
             </button>
           )}
@@ -902,10 +2328,10 @@ function ReviewPanel({
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function EnrichedCandidateProfilePage() {
   const searchParams = useSearchParams();
-  const candidateUuid = searchParams.get('uuid');
+  const candidateUuid = searchParams.get("uuid");
   const { syncCandidateProfile, setCandidateUuid } = useWorkspace();
   const { user, hasRole } = useAuth();
-  
+
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<EnrichedProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -923,7 +2349,9 @@ export default function EnrichedCandidateProfilePage() {
   }, [candidateUuid, setCandidateUuid]);
 
   const wsRef = React.useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimeoutRef = React.useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const manualCloseSocketsRef = React.useRef<WeakSet<WebSocket>>(new WeakSet());
 
   const markResolved = React.useCallback(() => {
@@ -934,105 +2362,142 @@ export default function EnrichedCandidateProfilePage() {
     }
   }, []);
 
-  const resolveFromStatus = React.useCallback(async (uuid: string): Promise<boolean> => {
-    try {
-      const status = await api.get<EnrichmentStatusResponse>(`/api/enrichment/${uuid}`);
-      if (status.enrichment_status === "ENRICHED" && status.enriched_profile) {
-        markResolved();
-        setData(status.enriched_profile);
-        setLoading(false);
-        return true;
-      }
-      if (status.enrichment_status === "ENRICHMENT_FAILED") {
-        markResolved();
-        setError("Enrichment failed");
-        setLoading(false);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error("Failed to resolve enrichment status:", err);
-      return false;
-    }
-  }, [markResolved]);
-
-  const connectWebSocket = React.useCallback((uuid: string) => {
-    if (resolvedRef.current) return;
-
-    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-    const wsUrl = apiBase.replace(/^http/, 'ws') + `/api/enrichment/ws/v1/analysis/${uuid}`;
-
-    if (wsRef.current) {
-      manualCloseSocketsRef.current.add(wsRef.current);
-      wsRef.current.close(1000, "replace");
-    }
-
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log("WebSocket connected:", wsUrl);
-    };
-
-    ws.onmessage = (event) => {
+  const resolveFromStatus = React.useCallback(
+    async (uuid: string): Promise<boolean> => {
       try {
-        const message: WSMessage = JSON.parse(event.data);
-        if (message.status === "ENRICHED" && message.data) {
+        const status = await api.get<EnrichmentStatusResponse>(
+          `/api/enrichment/${uuid}`,
+        );
+        if (
+          status.enrichment_status === "ENRICHED" &&
+          status.enriched_profile
+        ) {
           markResolved();
-          setData(message.data);
+          setData(status.enriched_profile);
           setLoading(false);
-          manualCloseSocketsRef.current.add(ws);
-          ws.close(1000, "resolved");
-        } else if (message.status === "ENRICHMENT_FAILED") {
-          markResolved();
-          setError(message.error || "Enrichment failed");
-          setLoading(false);
-          manualCloseSocketsRef.current.add(ws);
-          ws.close(1000, "resolved");
+          return true;
         }
+        if (status.enrichment_status === "ENRICHMENT_FAILED") {
+          markResolved();
+          setError("Enrichment failed");
+          setLoading(false);
+          return true;
+        }
+        return false;
       } catch (err) {
-        console.error("Failed to parse WebSocket message:", err);
+        console.error("Failed to resolve enrichment status:", err);
+        return false;
       }
-    };
+    },
+    [markResolved],
+  );
 
-    ws.onerror = () => {
-      // Ignore transient socket errors from stale/closing connections during reconnect.
-      if (resolvedRef.current) return;
-      if (ws !== wsRef.current) return;
-      if (manualCloseSocketsRef.current.has(ws)) return;
-      console.warn("WebSocket transient error for:", wsUrl);
-    };
-
-    ws.onclose = (event) => {
-      console.log("WebSocket disconnected, code:", event.code);
-      if (manualCloseSocketsRef.current.has(ws)) return;
+  const connectWebSocket = React.useCallback(
+    (uuid: string) => {
       if (resolvedRef.current) return;
 
-      void (async () => {
-        const resolvedByStatus = await resolveFromStatus(uuid);
-        if (!resolvedByStatus) {
-          if (resolvedRef.current) return;
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (resolvedRef.current) return;
-            console.log("WebSocket reconnecting...");
-            connectWebSocket(uuid);
-          }, 2500);
+      const apiBase =
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const wsUrl =
+        apiBase.replace(/^http/, "ws") +
+        `/api/enrichment/ws/v1/analysis/${uuid}`;
+
+      if (wsRef.current) {
+        manualCloseSocketsRef.current.add(wsRef.current);
+        wsRef.current.close(1000, "replace");
+      }
+
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("WebSocket connected:", wsUrl);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message: WSMessage = JSON.parse(event.data);
+          if (message.status === "ENRICHED" && message.data) {
+            markResolved();
+            setData(message.data);
+            setLoading(false);
+            manualCloseSocketsRef.current.add(ws);
+            ws.close(1000, "resolved");
+          } else if (message.status === "ENRICHMENT_FAILED") {
+            markResolved();
+            setError(message.error || "Enrichment failed");
+            setLoading(false);
+            manualCloseSocketsRef.current.add(ws);
+            ws.close(1000, "resolved");
+          }
+        } catch (err) {
+          console.error("Failed to parse WebSocket message:", err);
         }
-      })();
-    };
-  }, [markResolved, resolveFromStatus]);
+      };
 
-  // Trigger sync on load if needed
+      ws.onerror = () => {
+        // Ignore transient socket errors from stale/closing connections during reconnect.
+        if (resolvedRef.current) return;
+        if (ws !== wsRef.current) return;
+        if (manualCloseSocketsRef.current.has(ws)) return;
+        console.warn("WebSocket transient error for:", wsUrl);
+      };
+
+      ws.onclose = (event) => {
+        console.log("WebSocket disconnected, code:", event.code);
+        if (manualCloseSocketsRef.current.has(ws)) return;
+        if (resolvedRef.current) return;
+
+        void (async () => {
+          const resolvedByStatus = await resolveFromStatus(uuid);
+          if (!resolvedByStatus) {
+            if (resolvedRef.current) return;
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (resolvedRef.current) return;
+              console.log("WebSocket reconnecting...");
+              connectWebSocket(uuid);
+            }, 2500);
+          }
+        })();
+      };
+    },
+    [markResolved, resolveFromStatus],
+  );
+
+  // Trigger sync on load only if not already enriched
   useEffect(() => {
     if (!candidateUuid) return;
     if (hasTriggeredSyncRef.current || isSyncingRef.current) return;
-    
-    const triggerSync = async () => {
+
+    const initLoad = async () => {
       hasTriggeredSyncRef.current = true;
       isSyncingRef.current = true;
       try {
         setSyncing(true);
-        await syncCandidateProfile(candidateUuid);
+        const statusResp = await api.get<EnrichmentStatusResponse>(
+          `/api/enrichment/${candidateUuid}`,
+        );
+        if (
+          statusResp.enrichment_status === "ENRICHED" &&
+          statusResp.enriched_profile
+        ) {
+          markResolved();
+          setData(statusResp.enriched_profile);
+          setLoading(false);
+          setSyncing(false);
+          return;
+        }
+        if (statusResp.enrichment_status === "ENRICHMENT_FAILED") {
+          markResolved();
+          setError("Enrichment failed");
+          setLoading(false);
+          setSyncing(false);
+          return;
+        }
+        const syncResp = await syncCandidateProfile(candidateUuid);
+        if (syncResp.status === "already_enriched") {
+          await resolveFromStatus(candidateUuid);
+        }
         setSyncing(false);
       } catch (err) {
         console.error("Failed to trigger sync:", err);
@@ -1041,12 +2506,12 @@ export default function EnrichedCandidateProfilePage() {
         isSyncingRef.current = false;
       }
     };
-    
-    triggerSync();
-  }, [candidateUuid, syncCandidateProfile]);
+
+    initLoad();
+  }, [candidateUuid, syncCandidateProfile, resolveFromStatus, markResolved]);
 
   useEffect(() => {
-    if (!candidateUuid) return;
+    if (!candidateUuid || resolvedRef.current) return;
 
     connectWebSocket(candidateUuid);
 
@@ -1068,7 +2533,9 @@ export default function EnrichedCandidateProfilePage() {
     try {
       const s = await getReviewStatus(candidateUuid);
       setReviewStatus(s);
-    } catch { /* ignore, review module may not be available */ }
+    } catch {
+      /* ignore, review module may not be available */
+    }
   }, [candidateUuid]);
 
   useEffect(() => {
@@ -1077,11 +2544,33 @@ export default function EnrichedCandidateProfilePage() {
 
   if (loading) {
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
         <AppHeader candidateName={null} />
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-          <Loader2 size={24} strokeWidth={2} color={D.blue} style={{ animation: "spin 1s linear infinite" }} />
-          <span style={{ fontSize: 14, color: D.sub }}>Enriching candidate profile...</span>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+          }}
+        >
+          <Loader2
+            size={24}
+            strokeWidth={2}
+            color={D.blue}
+            style={{ animation: "spin 1s linear infinite" }}
+          />
+          <span style={{ fontSize: 14, color: D.sub }}>
+            Enriching candidate profile...
+          </span>
         </div>
       </div>
     );
@@ -1089,9 +2578,24 @@ export default function EnrichedCandidateProfilePage() {
 
   if (error) {
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
         <AppHeader candidateName={null} />
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+          }}
+        >
           <AlertCircle size={24} strokeWidth={2} color={D.red} />
           <span style={{ fontSize: 14, color: D.sub }}>{error}</span>
         </div>
@@ -1100,26 +2604,57 @@ export default function EnrichedCandidateProfilePage() {
   }
 
   if (hasRole("tech_lead")) {
-    const candidateLabel = data?.full_name && data.full_name !== "***" ? data.full_name : `Candidate ${candidateUuid?.slice(0, 8) || ""}`;
+    const candidateLabel =
+      data?.full_name && data.full_name !== "***"
+        ? data.full_name
+        : `Candidate ${candidateUuid?.slice(0, 8) || ""}`;
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
         <AppHeader candidateName={candidateLabel} />
-        <div style={{
-          height: 30, background: `${D.amber}08`, borderBottom: `1px solid ${D.amber}20`,
-          display: "flex", alignItems: "center", padding: "0 20px", gap: 6, flexShrink: 0,
-        }}>
+        <div
+          style={{
+            height: 30,
+            background: `${D.amber}08`,
+            borderBottom: `1px solid ${D.amber}20`,
+            display: "flex",
+            alignItems: "center",
+            padding: "0 20px",
+            gap: 6,
+            flexShrink: 0,
+          }}
+        >
           <Shield size={11} color={D.amber} />
           <span style={{ fontSize: 10, color: D.amber, fontWeight: 600 }}>
             Technical Review — PII restricted per ABAC policy
           </span>
         </div>
-        <div style={{ flex: 1, display: "flex", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            overflow: "hidden",
+            animation: "fadeSlideIn 0.4s ease both",
+          }}
+        >
           <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
             <EnrichmentPanel data={data} />
           </div>
           <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-            <EnrichedAnalytics data={data} userRole={user?.role || "tech_lead"} candidateUuid={candidateUuid || ""} reviewStatus={reviewStatus} onRefreshReview={fetchReviewStatus} />
+            <EnrichedAnalytics
+              data={data}
+              userRole={user?.role || "tech_lead"}
+              candidateUuid={candidateUuid || ""}
+              reviewStatus={reviewStatus}
+              onRefreshReview={fetchReviewStatus}
+            />
           </div>
         </div>
       </div>
@@ -1127,10 +2662,28 @@ export default function EnrichedCandidateProfilePage() {
   }
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div
+      style={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       <AppHeader candidateName={data?.full_name || null} />
-      <div style={{ flex: 1, display: "flex", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
-        {/* Left — enrichment dashboard */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          overflow: "hidden",
+          animation: "fadeSlideIn 0.4s ease both",
+        }}
+      >
+        {/* Left — navigation sidebar */}
+        <LeftSidebar />
+        {/* Divider */}
+        <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
+        {/* Middle — enrichment dashboard */}
         <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
           <EnrichmentPanel data={data} />
         </div>
@@ -1138,7 +2691,13 @@ export default function EnrichedCandidateProfilePage() {
         <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
         {/* Right — enriched analytics */}
         <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-          <EnrichedAnalytics data={data} userRole={user?.role || "hr"} candidateUuid={candidateUuid || ""} reviewStatus={reviewStatus} onRefreshReview={fetchReviewStatus} />
+          <EnrichedAnalytics
+            data={data}
+            userRole={user?.role || "hr"}
+            candidateUuid={candidateUuid || ""}
+            reviewStatus={reviewStatus}
+            onRefreshReview={fetchReviewStatus}
+          />
         </div>
       </div>
     </div>

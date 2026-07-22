@@ -17,7 +17,7 @@ linkedin_data_store: Dict[str, Dict] = {}
 
 
 def save_candidate(candidate: CandidateRecord) -> CandidateRecord:
-    logger.debug("candidate_repository.save", uuid=candidate.uuid, github_username=candidate.github_username, linkedin_url=candidate.linkedin_url)
+    logger.debug("candidate_repository.save", uuid=candidate.uuid, full_name=candidate.full_name, email=candidate.email, phone=candidate.phone, github_username=candidate.github_username, linkedin_url=candidate.linkedin_url, job_id=candidate.job_id)
     candidate_store[candidate.uuid] = candidate
     return candidate
 

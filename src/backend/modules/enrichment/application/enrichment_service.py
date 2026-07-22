@@ -1,6 +1,4 @@
 import asyncio
-import json
-import os
 import structlog
 from typing import Annotated, Dict, List, Optional
 
@@ -22,7 +20,11 @@ from modules.enrichment.domain.models import (
     TechnicalSkillMatrix,
 )
 from modules.shared.infrastructure.config import Settings, get_settings
-from modules.ingestion.domain.candidate_repository import get_candidate, save_github_data, save_linkedin_data
+from modules.shared.infrastructure.supabase_client import get_supabase_client
+from modules.enrichment.application.supabase_candidate_service import SupabaseCandidateService
+from modules.enrichment.application.github_ingestion_service import GitHubIngestionService
+from modules.enrichment.application.linkedin_ingestion_service import LinkedInIngestionService
+from modules.ingestion.domain.candidate_repository import get_candidate
 
 logger = structlog.get_logger(__name__)
 
@@ -31,207 +33,8 @@ candidate_enrichments: Dict[str, CandidateEnrichment] = {}
 active_websockets: Dict[str, List] = {}
 
 
-def read_github_json_from_file(candidate_uuid: str) -> Optional[GitHubProfile]:
-    """Read GitHub data from stored JSON file instead of API."""
-    try:
-        # Find GitHub JSON file for this candidate
-        stored_data_dir = "./stored_data"
-        if not os.path.exists(stored_data_dir):
-            logger.warning("github.file.directory_not_found", directory=stored_data_dir)
-            return None
-        
-        # Look for github_*.json files
-        github_files = [f for f in os.listdir(stored_data_dir) if f.startswith("github_") and f.endswith(".json")]
-        if not github_files:
-            logger.warning("github.file.not_found", directory=stored_data_dir)
-            return None
-        
-        # Use the first available GitHub file
-        github_file_path = os.path.join(stored_data_dir, github_files[0])
-        logger.info("github.file.reading", file=github_file_path)
-        
-        with open(github_file_path, "r", encoding="utf-8") as f:
-            json_data = json.load(f)
-        
-        # Extract data from the JSON structure
-        data = json_data.get("data", {})
-        
-        # Map repos
-        repos_data = data.get("repos", [])
-        repos = [
-            GitHubRepo(
-                name=repo.get("name", ""),
-                language=repo.get("language"),
-                size=repo.get("size", 0)
-            )
-            for repo in repos_data
-        ]
-        
-        # Create GitHubProfile
-        github_profile = GitHubProfile(
-            public_repos_count=data.get("public_repos_count", 0),
-            top_languages=data.get("top_languages", {}),
-            readme_content=data.get("readme_content"),
-            repos=repos
-        )
-        
-        logger.info("github.file.loaded_successfully", file=github_file_path, repos_count=len(repos))
-        return github_profile
-        
-    except Exception as e:
-        logger.error("github.file.read_failed", error=str(e))
-        return None
 
 
-def read_linkedin_json_from_file(candidate_uuid: str) -> Optional[LinkedInProfile]:
-    """Read LinkedIn data from stored JSON file instead of API."""
-    try:
-        # Find LinkedIn JSON file for this candidate
-        stored_data_dir = "./stored_data"
-        if not os.path.exists(stored_data_dir):
-            logger.warning("linkedin.file.directory_not_found", directory=stored_data_dir)
-            return None
-        
-        # Look for linkedin_*.json files, prioritize non-cache files
-        linkedin_files = [f for f in os.listdir(stored_data_dir) if f.startswith("linkedin_") and f.endswith(".json") and not f.startswith("cache_")]
-        if not linkedin_files:
-            logger.warning("linkedin.file.not_found", directory=stored_data_dir)
-            return None
-        
-        # Find the best file - prefer files with actual data (non-empty experiences)
-        best_file = None
-        best_file_experiences_count = -1
-        
-        for filename in linkedin_files:
-            file_path = os.path.join(stored_data_dir, filename)
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    temp_data = json.load(f)
-                
-                # Count experiences in both formats
-                exp_count = 0
-                if "data" in temp_data:
-                    exp_count = len(temp_data.get("data", {}).get("experience", []))
-                else:
-                    exp_count = len(temp_data.get("experiences", []))
-                
-                if exp_count > best_file_experiences_count:
-                    best_file = file_path
-                    best_file_experiences_count = exp_count
-            except:
-                continue
-        
-        if not best_file:
-            best_file = os.path.join(stored_data_dir, linkedin_files[0])
-        
-        linkedin_file_path = best_file
-        logger.info("linkedin.file.reading", file=linkedin_file_path)
-        
-        with open(linkedin_file_path, "r", encoding="utf-8") as f:
-            json_data = json.load(f)
-        
-        # Extract data from the JSON structure - handle both formats
-        # Format 1: { "data": { "basic_info": {...}, "experience": [...] } }
-        # Format 2: { "experiences": [...], "educations": [...], "full_name": "..." }
-        
-        if "data" in json_data:
-            data = json_data.get("data", {})
-            basic_info = data.get("basic_info", {})
-            
-            # Map experiences
-            experiences_data = data.get("experience", [])
-            experiences = []
-            for exp in experiences_data:
-                start_date_obj = exp.get("start_date", {})
-                end_date_obj = exp.get("end_date", {})
-                start_date = f"{start_date_obj.get('month', '')} {start_date_obj.get('year', '')}".strip() if start_date_obj else ""
-                end_date = f"{end_date_obj.get('month', '')} {end_date_obj.get('year', '')}".strip() if end_date_obj else ""
-                
-                experiences.append(
-                    LinkedInExperience(
-                        title=exp.get("title", ""),
-                        company=exp.get("company", ""),
-                        start_date=start_date,
-                        end_date=end_date,
-                        description=exp.get("description", ""),
-                        is_current=exp.get("is_current", False)
-                    )
-                )
-            
-            # Map education
-            educations_data = data.get("education", [])
-            educations = []
-            for edu in educations_data:
-                start_date_obj = edu.get("start_date", {})
-                end_date_obj = edu.get("end_date", {})
-                start_date = f"{start_date_obj.get('month', '')} {start_date_obj.get('year', '')}".strip() if start_date_obj else ""
-                end_date = f"{end_date_obj.get('month', '')} {end_date_obj.get('year', '')}".strip() if end_date_obj else ""
-                
-                educations.append(
-                    LinkedInEducation(
-                        school=edu.get("school", ""),
-                        degree=edu.get("degree", ""),
-                        field_of_study=edu.get("field_of_study", ""),
-                        start_date=start_date,
-                        end_date=end_date
-                    )
-                )
-            
-            # Create LinkedInProfile
-            linkedin_profile = LinkedInProfile(
-                full_name=basic_info.get("fullname", ""),
-                headline=basic_info.get("headline", ""),
-                profile_url=basic_info.get("profile_url", ""),
-                avatar_url=basic_info.get("profile_picture_url", ""),
-                experiences=experiences,
-                educations=educations,
-                certifications=[]
-            )
-        else:
-            # Format 2: Direct structure
-            experiences_data = json_data.get("experiences", [])
-            experiences = []
-            for exp in experiences_data:
-                experiences.append(
-                    LinkedInExperience(
-                        title=exp.get("title", ""),
-                        company=exp.get("company", ""),
-                        start_date=exp.get("start_date", ""),
-                        end_date=exp.get("end_date", ""),
-                        description=exp.get("description", ""),
-                        is_current=exp.get("is_current", False)
-                    )
-                )
-            
-            educations_data = json_data.get("educations", [])
-            educations = []
-            for edu in educations_data:
-                educations.append(
-                    LinkedInEducation(
-                        school=edu.get("school", ""),
-                        degree=edu.get("degree", ""),
-                        field_of_study=edu.get("field_of_study", ""),
-                        start_date=edu.get("start_date", ""),
-                        end_date=edu.get("end_date", "")
-                    )
-                )
-            
-            linkedin_profile = LinkedInProfile(
-                full_name=json_data.get("full_name", ""),
-                headline=json_data.get("headline", ""),
-                profile_url=json_data.get("profile_url", ""),
-                avatar_url=json_data.get("avatar_url", ""),
-                experiences=experiences,
-                educations=educations,
-                certifications=json_data.get("certifications", [])
-            )
-        
-        logger.info("linkedin.file.loaded_successfully", file=linkedin_file_path, experiences_count=len(linkedin_profile.experiences))
-        return linkedin_profile
-        
-    except Exception as e:
-        logger.error("linkedin.file.read_failed", error=str(e))
-        return None
 
 
 def get_candidate_social_links(candidate_uuid: str) -> CandidateSocialLinks:
@@ -256,25 +59,155 @@ def get_candidate_social_links(candidate_uuid: str) -> CandidateSocialLinks:
     return CandidateSocialLinks(github_username=None, linkedin_url=None)
 
 
+async def check_existing_enrichment(
+    candidate_uuid: str,
+    settings: Settings
+) -> CandidateEnrichment | None:
+    """Check if enrichment data already exists in Supabase and restore it to in-memory store."""
+    supabase_client = get_supabase_client(settings, use_admin=True)
+    if not supabase_client:
+        return None
+
+    try:
+        github_service = GitHubIngestionService(settings, supabase_client)
+        linkedin_service = LinkedInIngestionService(settings, supabase_client)
+
+        github_resp = github_service.get_github_profile_by_candidate(candidate_uuid)
+        linkedin_resp = linkedin_service.get_linkedin_profile_by_candidate(candidate_uuid)
+
+        has_github = github_resp.data is not None
+        has_linkedin = linkedin_resp.data is not None
+
+        if not has_github and not has_linkedin:
+            return None
+
+        # Try to get social links from Supabase candidates table
+        candidate_service = SupabaseCandidateService(settings, supabase_client)
+        candidate_data = await candidate_service.get_candidate(candidate_uuid)
+        github_username = candidate_data.get("github_username") if candidate_data else None
+        linkedin_url = candidate_data.get("linkedin_url") if candidate_data else None
+
+        github_profile = None
+        linkedin_profile = None
+
+        if has_github:
+            g = github_resp.data
+            repos = []
+            for repo in g.get("repos", []):
+                try:
+                    repos.append(GitHubRepo(**repo))
+                except Exception as repo_err:
+                    logger.warning("enrichment.check_existing.repo_parse_failed", repo_name=repo.get("name"), error=str(repo_err))
+            github_profile = GitHubProfile(
+                public_repos_count=g.get("public_repos_count", 0),
+                top_languages=g.get("top_languages", {}),
+                readme_content=g.get("readme_content"),
+                repos=repos
+            )
+
+        if has_linkedin:
+            l = linkedin_resp.data
+
+            experiences = []
+            for exp in l.get("experiences", []):
+                try:
+                    if isinstance(exp, dict):
+                        start = exp.get("start_date", "")
+                        end = exp.get("end_date", "")
+                        if isinstance(start, dict):
+                            parts = []
+                            if start.get("month"): parts.append(str(start["month"]))
+                            if start.get("year"): parts.append(str(start["year"]))
+                            start = " ".join(parts)
+                        if isinstance(end, dict):
+                            parts = []
+                            if end.get("month"): parts.append(str(end["month"]))
+                            if end.get("year"): parts.append(str(end["year"]))
+                            end = " ".join(parts)
+                        experiences.append(LinkedInExperience(
+                            title=exp.get("title", ""),
+                            company=exp.get("company", ""),
+                            start_date=str(start) if start else None,
+                            end_date=str(end) if end else None,
+                            description=exp.get("description")
+                        ))
+                    else:
+                        experiences.append(exp)
+                except Exception as exp_err:
+                    logger.warning("enrichment.check_existing.exp_parse_failed", error=str(exp_err))
+
+            educations = []
+            for edu in l.get("educations", []):
+                try:
+                    if isinstance(edu, dict):
+                        start = edu.get("start_date", "")
+                        end = edu.get("end_date", "")
+                        if isinstance(start, dict):
+                            parts = []
+                            if start.get("month"): parts.append(str(start["month"]))
+                            if start.get("year"): parts.append(str(start["year"]))
+                            start = " ".join(parts)
+                        if isinstance(end, dict):
+                            parts = []
+                            if end.get("month"): parts.append(str(end["month"]))
+                            if end.get("year"): parts.append(str(end["year"]))
+                            end = " ".join(parts)
+                        educations.append(LinkedInEducation(
+                            school=edu.get("school", ""),
+                            degree=edu.get("degree"),
+                            field_of_study=edu.get("field_of_study"),
+                            start_date=str(start) if start else None,
+                            end_date=str(end) if end else None,
+                        ))
+                    else:
+                        educations.append(edu)
+                except Exception as edu_err:
+                    logger.warning("enrichment.check_existing.edu_parse_failed", error=str(edu_err))
+
+            linkedin_profile = LinkedInProfile(
+                full_name=l.get("full_name"),
+                headline=l.get("headline"),
+                profile_url=l.get("profile_url"),
+                avatar_url=l.get("avatar_url"),
+                experiences=experiences,
+                educations=educations,
+                certifications=[LinkedInCertification(**c) for c in l.get("certifications", [])] if isinstance(l.get("certifications"), list) else []
+            )
+
+        local_analysis = None
+        if github_profile and github_profile.repos:
+            local_analysis = analyze_github_local_fallback(github_profile)
+
+        analytics = generate_analytics(
+            readme_content=github_profile.readme_content if github_profile else None,
+            linkedin_profile=linkedin_profile,
+            local_github_analysis=local_analysis
+        )
+
+        enriched = EnrichedProfile(
+            github=github_profile,
+            linkedin=linkedin_profile,
+            analytics=analytics,
+            github_username=github_username,
+            linkedin_url=linkedin_url,
+            full_name=linkedin_profile.full_name if linkedin_profile else None
+        )
+
+        return CandidateEnrichment(
+            candidate_uuid=candidate_uuid,
+            enrichment_status=EnrichmentStatus.ENRICHED,
+            enriched_profile=enriched
+        )
+    except Exception as e:
+        logger.error("enrichment.check_existing.failed", candidate_uuid=candidate_uuid, error=str(e))
+        return None
+
+
 async def fetch_github_profile(
     github_username: str,
     settings: Annotated[Settings, Depends(get_settings)]
 ) -> GitHubProfile:
-    import json
-    import os
-    
-    cache_file = f"./stored_data/cache_github_{github_username}.json"
-    
-    # Check cache first
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-            logger.info("github.cache.hit", username=github_username, cache_file=cache_file)
-            return GitHubProfile(**cache_data)
-        except Exception as e:
-            logger.warning("github.cache.read_failed", error=str(e), username=github_username)
-    
+    """Fetch GitHub profile from GitHub API - no local caching"""
     try:
         headers = {}
         if settings.github_api_token:
@@ -317,7 +250,7 @@ async def fetch_github_profile(
             if repos:
                 import base64
 
-                # Pull README from several most recently updated repos for richer local fallback context.
+                # Pull README from several most recently updated repos
                 for repo in repos[:5]:
                     try:
                         readme_response = await client.get(
@@ -342,16 +275,9 @@ async def fetch_github_profile(
                 repos=repos
             )
             
-            # Save to cache
-            try:
-                os.makedirs("./stored_data", exist_ok=True)
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump(profile.model_dump(), f, indent=2, ensure_ascii=False)
-                logger.info("github.cache.saved", username=github_username, cache_file=cache_file)
-            except Exception as e:
-                logger.warning("github.cache.save_failed", error=str(e), username=github_username)
-            
+            logger.info("github.fetch.success", username=github_username, repos_count=len(repos))
             return profile
+            
     except Exception as e:
         logger.error("github.fetch.failed", error=str(e), github_username=github_username)
         raise RuntimeError(f"Failed to fetch GitHub profile for {github_username}: {str(e)}")
@@ -362,24 +288,7 @@ async def fetch_linkedin_profile(
     candidate_uuid: str,
     settings: Annotated[Settings, Depends(get_settings)]
 ) -> LinkedInProfile:
-    """Fetch LinkedIn profile using ApifyClientAsync with Actor ID GOvL4O4RwFqsdIqXF."""
-    import json
-    import os
-    
-    # Extract username from URL for cache filename
-    linkedin_username = linkedin_url.strip("/").split("/")[-1]
-    cache_file = f"./stored_data/cache_linkedin_{linkedin_username}.json"
-    
-    # Check cache first
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-            logger.info("linkedin.cache.hit", username=linkedin_username, cache_file=cache_file)
-            return LinkedInProfile(**cache_data)
-        except Exception as e:
-            logger.warning("linkedin.cache.read_failed", error=str(e), username=linkedin_username)
-    
+    """Fetch LinkedIn profile using ApifyClientAsync - no local caching"""
     logger.info("linkedin.fetch_apify.start", url=linkedin_url, candidate_uuid=candidate_uuid)
     
     try:
@@ -433,9 +342,16 @@ async def fetch_linkedin_profile(
         # Lấy item đầu tiên
         raw_data = items[0]
         
-        # Dữ liệu Apify nằm trong key "data"
-        data = raw_data.get("data", {})
+        # Log raw data structure for debugging
+        logger.info("linkedin.fetch_apify.raw_data", raw_data_keys=list(raw_data.keys()))
+        
+        # Apify trả về dữ liệu trực tiếp trong raw_data, không có key "data"
+        # Cấu trúc: { "basic_info": {...}, "experience": [...], "education": [...], ... }
+        data = raw_data
+        logger.info("linkedin.fetch_apify.data_keys", data_keys=list(data.keys()))
+        
         basic_info = data.get("basic_info", {})
+        logger.info("linkedin.fetch_apify.basic_info", basic_info_keys=list(basic_info.keys()) if basic_info else None)
         
         # Mapping dữ liệu từ Apify JSON sang LinkedInProfile
         full_name = basic_info.get("fullname", "LinkedIn Candidate")
@@ -484,9 +400,6 @@ async def fetch_linkedin_profile(
 
         logger.info("linkedin.fetch_apify.success", candidate_uuid=candidate_uuid, experiences_count=len(experiences))
         
-        # Lưu dữ liệu thô từ Apify xuống ổ cứng
-        save_linkedin_data(candidate_uuid, raw_data)
-        
         profile = LinkedInProfile(
             full_name=full_name,
             headline=headline,
@@ -497,41 +410,11 @@ async def fetch_linkedin_profile(
             certifications=[]
         )
         
-        # Save to cache
-        try:
-            os.makedirs("./stored_data", exist_ok=True)
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(profile.model_dump(), f, indent=2, ensure_ascii=False)
-            logger.info("linkedin.cache.saved", username=linkedin_username, cache_file=cache_file)
-        except Exception as e:
-            logger.warning("linkedin.cache.save_failed", error=str(e), username=linkedin_username)
-        
         return profile
 
     except Exception as e:
         logger.error("linkedin.fetch_apify.failed", error=str(e), url=linkedin_url, candidate_uuid=candidate_uuid)
-        logger.warning("linkedin.fetch.activating_structural_fallback")
-        
-        fallback_profile = LinkedInProfile(
-            full_name="Hayden Housen",
-            headline="Senior Backend Engineer | Distributed Systems Specialist",
-            profile_url=linkedin_url,
-            avatar_url="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
-            experiences=[
-                LinkedInExperience(title="Senior Backend Engineer", company="Nexus Systems Ltd.", start_date="01-2024", end_date="", description="Python, FastAPI, Microservices architecture, PostgreSQL, Docker, AWS cloud infrastructure development"),
-                LinkedInExperience(title="Backend Engineer", company="DataBridge Inc.", start_date="01-2022", end_date="12-2023", description="Apache Spark, Big data analytics, Python scripts, Data engineering pipelines, Redis caching"),
-                LinkedInExperience(title="Junior Software Developer", company="TechStack Labs", start_date="01-2020", end_date="12-2022", description="FastAPI, Node.js, Javascript, Typescript, RESTful API design, HTML, Tailwind CSS integrations")
-            ],
-            educations=[
-                LinkedInEducation(school="University of Science", degree="B.Sc. Computer Science", field_of_study="Information Technology", start_date="", end_date="")
-            ],
-            certifications=[]
-        )
-        
-        # Lưu fallback data xuống ổ cứng
-        save_linkedin_data(candidate_uuid, fallback_profile.model_dump())
-        
-        return fallback_profile
+        raise RuntimeError(f"Failed to fetch LinkedIn profile for {linkedin_url}: {str(e)}")
 
 
 # Keyword groups for local fallback analysis (matches frontend's 5 radar chart skills)
@@ -801,7 +684,39 @@ async def enrichment_worker(
     candidate_uuid: str,
     settings: Settings
 ):
+    """
+    Enrichment Worker - No local files, direct scraper + Supabase integration
+    
+    Workflow:
+    1. Ensure candidate exists in Supabase (synchronous)
+    2. Get social links from candidate repository
+    3. Update social links in Supabase
+    4. Trigger scraper directly (no file checks)
+    5. Save scraped data to Supabase via UPSERT
+    6. Generate analytics
+    7. Send WebSocket notification
+    """
     logger.info("enrichment.worker.started", candidate_uuid=candidate_uuid)
+    
+    # Initialize Supabase services if configured
+    supabase_client = get_supabase_client(settings, use_admin=True)
+    candidate_service = None
+    github_ingestion_service = None
+    linkedin_ingestion_service = None
+    use_supabase = supabase_client is not None
+    
+    if use_supabase:
+        candidate_service = SupabaseCandidateService(settings, supabase_client)
+        github_ingestion_service = GitHubIngestionService(settings, supabase_client)
+        linkedin_ingestion_service = LinkedInIngestionService(settings, supabase_client)
+        logger.info("enrichment.worker.supabase_enabled")
+    else:
+        logger.error("enrichment.worker.supabase_disabled.cannot_proceed")
+        candidate_enrichments[candidate_uuid] = CandidateEnrichment(
+            candidate_uuid=candidate_uuid,
+            enrichment_status=EnrichmentStatus.ENRICHMENT_FAILED
+        )
+        return
     
     try:
         candidate_enrichments[candidate_uuid] = CandidateEnrichment(
@@ -809,53 +724,204 @@ async def enrichment_worker(
             enrichment_status=EnrichmentStatus.IN_PROGRESS
         )
         
-        # Get social links from candidate repository
+        # STEP 1: Ensure candidate exists in Supabase (synchronous)
+        # Get candidate data from candidate repository (Azure Blob Storage URL + form fields)
+        candidate = get_candidate(candidate_uuid)
+        cv_file_path = candidate.cv_file_path if candidate else None
+        full_name = candidate.full_name if candidate else None
+        email = candidate.email if candidate else None
+        phone = candidate.phone if candidate else None
+        linkedin_url = candidate.linkedin_url if candidate else None
+        github_username = candidate.github_username if candidate else None
+        job_id = candidate.job_id if candidate else None
+        
+        logger.info("enrichment.step1.ensure_candidate", candidate_uuid=candidate_uuid, cv_file_path=cv_file_path)
+        candidate_created = await candidate_service.ensure_candidate_exists(
+            candidate_uuid,
+            cv_file_path,
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            linkedin_url=linkedin_url,
+            github_username=github_username,
+        )
+        
+        if not candidate_created:
+            logger.error("enrichment.step1.candidate_creation_failed", candidate_uuid=candidate_uuid)
+            raise RuntimeError(f"Failed to create candidate {candidate_uuid} in Supabase")
+        
+        logger.info("enrichment.step1.candidate_ensured", candidate_uuid=candidate_uuid)
+        
+        # STEP 2: Get social links from candidate repository
+        logger.info("enrichment.step2.get_social_links", candidate_uuid=candidate_uuid)
         social_links = get_candidate_social_links(candidate_uuid)
         
-        # 1. Try to read from existing JSON files first (fast path)
-        github_profile = read_github_json_from_file(candidate_uuid)
-        linkedin_profile = read_linkedin_json_from_file(candidate_uuid)
+        # STEP 3: Update candidate social links in Supabase if available
+        if social_links.github_username or social_links.linkedin_url:
+            logger.info(
+                "enrichment.step3.update_social_links",
+                candidate_uuid=candidate_uuid,
+                github_username=social_links.github_username,
+                linkedin_url=social_links.linkedin_url
+            )
+            await candidate_service.update_candidate_social_links(
+                candidate_uuid,
+                github_username=social_links.github_username,
+                linkedin_url=social_links.linkedin_url
+            )
+            logger.info("enrichment.step3.social_links_updated", candidate_uuid=candidate_uuid)
+        else:
+            logger.warning("enrichment.step3.no_social_links", candidate_uuid=candidate_uuid)
         
-        # Track if data was fetched from API (to avoid saving cached data again)
-        github_fetched_from_api = False
-        linkedin_fetched_from_api = False
+        # STEP 4: Trigger scraper directly (no local file checks)
+        github_profile = None
+        linkedin_profile = None
         
-        # 2. Auto-fetch if JSON files not found (new candidate)
-        if not github_profile and social_links.github_username:
-            logger.info("github.file.not_found.triggering_live_fetch", username=social_links.github_username)
+        # GitHub Scraping
+        if social_links.github_username:
+            logger.info(
+                "enrichment.step4.github_scraper.start",
+                candidate_uuid=candidate_uuid,
+                username=social_links.github_username
+            )
             try:
                 github_profile = await fetch_github_profile(social_links.github_username, settings)
-                github_fetched_from_api = True
+                logger.info(
+                    "enrichment.step4.github_scraper.success",
+                    candidate_uuid=candidate_uuid,
+                    username=social_links.github_username,
+                    repos_count=len(github_profile.repos) if github_profile else 0
+                )
             except Exception as e:
-                logger.error("github.live_fetch.failed", error=str(e))
+                logger.error(
+                    "enrichment.step4.github_scraper.failed",
+                    candidate_uuid=candidate_uuid,
+                    username=social_links.github_username,
+                    error=str(e)
+                )
                 github_profile = None
-            
-        if not linkedin_profile and social_links.linkedin_url:
-            logger.info("linkedin.file.not_found.triggering_live_fetch", url=social_links.linkedin_url)
+        
+        # LinkedIn Scraping
+        if social_links.linkedin_url:
+            logger.info(
+                "enrichment.step4.linkedin_scraper.start",
+                candidate_uuid=candidate_uuid,
+                url=social_links.linkedin_url
+            )
             try:
-                linkedin_profile = await fetch_linkedin_profile(social_links.linkedin_url, candidate_uuid, settings)
-                linkedin_fetched_from_api = True
+                linkedin_profile = await fetch_linkedin_profile(
+                    social_links.linkedin_url,
+                    candidate_uuid,
+                    settings
+                )
+                logger.info(
+                    "enrichment.step4.linkedin_scraper.success",
+                    candidate_uuid=candidate_uuid,
+                    url=social_links.linkedin_url,
+                    experiences_count=len(linkedin_profile.experiences) if linkedin_profile else 0
+                )
             except Exception as e:
-                logger.error("linkedin.live_fetch.failed", error=str(e))
+                logger.error(
+                    "enrichment.step4.linkedin_scraper.failed",
+                    candidate_uuid=candidate_uuid,
+                    url=social_links.linkedin_url,
+                    error=str(e)
+                )
                 linkedin_profile = None
         
-        # 3. Save data to database only if fetched from API (avoid duplicating cached files)
-        if github_profile and github_fetched_from_api:
-            save_github_data(candidate_uuid, github_profile.model_dump())
-        if linkedin_profile and linkedin_fetched_from_api:
-            save_linkedin_data(candidate_uuid, linkedin_profile.model_dump())
+        # STEP 5: Save scraped data to Supabase via UPSERT
+        if github_profile and github_ingestion_service:
+            logger.info(
+                "enrichment.step5.github_supabase_save.start",
+                candidate_uuid=candidate_uuid
+            )
+            try:
+                # Map to match sample_github.json structure and github_profiles DDL
+                scraped_github_data = {
+                    "public_repos_count": github_profile.public_repos_count,
+                    "top_languages": github_profile.top_languages,
+                    "readme_content": github_profile.readme_content,
+                    "repos": [repo.model_dump() for repo in github_profile.repos]
+                }
+                github_ingestion_service.save_scraped_github_data(candidate_uuid, scraped_github_data)
+                logger.info(
+                    "enrichment.step5.github_supabase_save.success",
+                    candidate_uuid=candidate_uuid
+                )
+            except Exception as e:
+                logger.error(
+                    "enrichment.step5.github_supabase_save.failed",
+                    candidate_uuid=candidate_uuid,
+                    error=str(e)
+                )
         
-        # 4. Analyze and generate analytics
+        if linkedin_profile and linkedin_ingestion_service:
+            logger.info(
+                "enrichment.step5.linkedin_supabase_save.start",
+                candidate_uuid=candidate_uuid
+            )
+            try:
+                def _parse_date_str(val):
+                    if not val or not isinstance(val, str) or not val.strip():
+                        return None
+                    parts = val.strip().split()
+                    d = {}
+                    if len(parts) >= 1:
+                        try:
+                            d["year"] = int(parts[-1])
+                        except ValueError:
+                            pass
+                    if len(parts) >= 2:
+                        d["month"] = parts[0]
+                    return d if d else None
+
+                def _exp_to_supabase(exp):
+                    d = exp.model_dump()
+                    for field in ("start_date", "end_date"):
+                        d[field] = _parse_date_str(d.get(field))
+                    return d
+
+                def _edu_to_supabase(edu):
+                    d = edu.model_dump()
+                    for field in ("start_date", "end_date"):
+                        d[field] = _parse_date_str(d.get(field))
+                    return d
+
+                scraped_linkedin_data = {
+                    "full_name": linkedin_profile.full_name,
+                    "headline": linkedin_profile.headline,
+                    "profile_url": linkedin_profile.profile_url,
+                    "avatar_url": linkedin_profile.avatar_url,
+                    "experience": [_exp_to_supabase(exp) for exp in linkedin_profile.experiences],
+                    "education": [_edu_to_supabase(edu) for edu in linkedin_profile.educations],
+                    "certifications": [cert.model_dump() for cert in linkedin_profile.certifications] if linkedin_profile.certifications else []
+                }
+                linkedin_ingestion_service.save_scraped_linkedin_data(candidate_uuid, scraped_linkedin_data)
+                logger.info(
+                    "enrichment.step5.linkedin_supabase_save.success",
+                    candidate_uuid=candidate_uuid
+                )
+            except Exception as e:
+                logger.error(
+                    "enrichment.step5.linkedin_supabase_save.failed",
+                    candidate_uuid=candidate_uuid,
+                    error=str(e)
+                )
+        
+        # STEP 6: Analyze and generate analytics
+        logger.info("enrichment.step6.analytics.start", candidate_uuid=candidate_uuid)
         local_analysis = None
-        if github_profile and github_profile.repos: # Đảm bảo có data repo để phân tích
+        if github_profile and github_profile.repos:
             local_analysis = analyze_github_local_fallback(github_profile)
         
         analytics = generate_analytics(
             readme_content=github_profile.readme_content if github_profile else None,
             linkedin_profile=linkedin_profile,
-            local_github_analysis=local_analysis # Truyền đúng biến phân tích cục bộ
+            local_github_analysis=local_analysis
         )
+        logger.info("enrichment.step6.analytics.completed", candidate_uuid=candidate_uuid)
         
+        # STEP 7: Build enriched profile
         candidate_full_name = linkedin_profile.full_name if linkedin_profile else None
         
         new_profile = EnrichedProfile(
@@ -876,8 +942,14 @@ async def enrichment_worker(
             enriched_profile=merged_profile
         )
         
-        logger.info("enrichment.worker.completed", candidate_uuid=candidate_uuid)
+        logger.info(
+            "enrichment.worker.completed",
+            candidate_uuid=candidate_uuid,
+            has_github=bool(github_profile),
+            has_linkedin=bool(linkedin_profile)
+        )
         
+        # STEP 8: Send WebSocket notification
         if candidate_uuid in active_websockets:
             dead_sockets = []
             for websocket in list(active_websockets[candidate_uuid]):
@@ -912,7 +984,11 @@ async def enrichment_worker(
                 del active_websockets[candidate_uuid]
         
     except Exception as e:
-        logger.error("enrichment.worker.failed", error=str(e), candidate_uuid=candidate_uuid)
+        logger.error(
+            "enrichment.worker.failed",
+            error=str(e),
+            candidate_uuid=candidate_uuid
+        )
         candidate_enrichments[candidate_uuid] = CandidateEnrichment(
             candidate_uuid=candidate_uuid,
             enrichment_status=EnrichmentStatus.ENRICHMENT_FAILED

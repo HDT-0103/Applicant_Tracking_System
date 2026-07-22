@@ -1,0 +1,134 @@
+{
+  "jobs": [
+    {
+      "id": "job-1",
+      "title": "Senior ML Engineer",
+      "location": "San Francisco, CA · Remote",
+      "department": "Engineering",
+      "type": "Full-time",
+      "status": "open",
+      "applicant_count": 412,
+      "description": "We are looking for a Senior Machine Learning Engineer to join our team and help build cutting-edge AI systems.",
+      "requirements": {
+        "must_have": [
+          "5+ years of experience in Machine Learning",
+          "Strong Python programming skills",
+          "Experience with PyTorch or TensorFlow",
+          "PhD or MS in Computer Science, ML, or related field"
+        ],
+        "nice_to_have": [
+          "Experience with large-scale distributed systems",
+          "Publication record at top ML conferences",
+          "Experience with MLOps and model deployment",
+          "Familiarity with cloud platforms (AWS/GCP/Azure)"
+        ]
+      },
+      "salary": "$180,000 - $250,000",
+      "posted_date": "2024-01-15"
+    },
+    {
+      "id": "job-2",
+      "title": "Mobile Security Engineer Intern",
+      "location": "New York, NY · Hybrid",
+      "department": "Security",
+      "type": "Internship",
+      "status": "open",
+      "applicant_count": 42,
+      "description": "Join our security team to work on mobile application security and vulnerability research.",
+      "requirements": {
+        "must_have": [
+          "Currently pursuing CS degree",
+          "Knowledge of mobile security concepts",
+          "Experience with reverse engineering tools",
+          "Strong problem-solving skills"
+        ],
+        "nice_to_have": [
+          "CTF competition experience",
+          "Knowledge of iOS/Android internals",
+          "Previous security internship experience",
+          "Familiarity with penetration testing tools"
+        ]
+      },
+      "salary": "$45/hour",
+      "posted_date": "2024-02-01"
+    },
+    {
+      "id": "job-3",
+      "title": "Full Stack Developer",
+      "location": "Remote",
+      "department": "Engineering",
+      "type": "Full-time",
+      "status": "draft",
+      "applicant_count": 0,
+      "description": "Build and maintain our web applications using modern technologies.",
+      "requirements": {
+        "must_have": [
+          "3+ years of full-stack development experience",
+          "Proficiency in React/Next.js",
+          "Experience with Node.js and Python",
+          "Strong database skills (SQL/NoSQL)"
+        ],
+        "nice_to_have": [
+          "Experience with TypeScript",
+          "Knowledge of cloud services",
+          "API design and development",
+          "Testing and CI/CD experience"
+        ]
+      },
+      "salary": "$120,000 - $160,000",
+      "posted_date": "2024-02-15"
+    },
+    {
+      "id": "job-4",
+      "title": "DevOps Engineer",
+      "location": "Austin, TX · On-site",
+      "department": "Infrastructure",
+      "type": "Full-time",
+      "status": "open",
+      "applicant_count": 87,
+      "description": "Design and implement our cloud infrastructure and deployment pipelines.",
+      "requirements": {
+        "must_have": [
+          "4+ years of DevOps experience",
+          "Strong knowledge of Kubernetes and Docker",
+          "Experience with CI/CD pipelines",
+          "Infrastructure as Code (Terraform/Pulumi)"
+        ],
+        "nice_to_have": [
+          "AWS/GCP certification",
+          "Experience with monitoring and observability",
+          "Security best practices knowledge",
+          "Cost optimization experience"
+        ]
+      },
+      "salary": "$140,000 - $180,000",
+      "posted_date": "2024-01-20"
+    },
+    {
+      "id": "job-5",
+      "title": "Data Scientist",
+      "location": "Seattle, WA · Remote",
+      "department": "Data Science",
+      "type": "Full-time",
+      "status": "draft",
+      "applicant_count": 0,
+      "description": "Apply machine learning and statistical analysis to solve business problems.",
+      "requirements": {
+        "must_have": [
+          "MS or PhD in Statistics, ML, or related field",
+          "Strong Python and R skills",
+          "Experience with statistical modeling",
+          "Data visualization expertise"
+        ],
+        "nice_to_have": [
+          "Experience with A/B testing",
+          "Knowledge of deep learning",
+          "Big data technologies (Spark, Hadoop)",
+          "Business acumen and communication skills"
+        ]
+      },
+      "salary": "$130,000 - $170,000",
+      "posted_date": "2024-02-10"
+    }
+  ]
+}

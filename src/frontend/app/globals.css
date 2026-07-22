@@ -1,7 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ============================================================
    SmartATS Global Stylesheet
    Design tokens + layout system + component styles
    ============================================================ */
+
+:root {
+  --background: #f8f9fb;
+  --foreground: #0f1117;
+  --card: #ffffff;
+  --card-foreground: #0f1117;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --muted: #f1f2f6;
+  --muted-foreground: #6b7280;
+  --accent: #ede9fe;
+  --accent-foreground: #4f46e5;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: rgba(15, 17, 23, 0.09);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f1117;
+  --sidebar-primary: #4f46e5;
+  --sidebar-accent: #eef0f6;
+  --sidebar-border: rgba(15, 17, 23, 0.09);
+  --sidebar-ring: #4f46e5;
+}
 
 /* ---------- Reset & Base ---------- */
 *,

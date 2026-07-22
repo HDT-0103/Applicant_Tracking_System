@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, 
 from modules.auth.domain.models import AuthUser
 from modules.enrichment.application.enrichment_service import (
     candidate_enrichments,
+    check_existing_enrichment,
     enrichment_worker,
     active_websockets,
     get_candidate_social_links
@@ -28,6 +29,19 @@ async def sync_candidate_profile(
     social_links = get_candidate_social_links(candidate_uuid)
 
     existing = candidate_enrichments.get(candidate_uuid)
+    if existing and existing.enrichment_status == EnrichmentStatus.ENRICHED:
+        logger.info(
+            "enrichment.sync.already_enriched",
+            candidate_uuid=candidate_uuid,
+            user_id=current_user.id,
+            user_email=current_user.email,
+        )
+        return {
+            "status": "already_enriched",
+            "redirect": "/candidate-profile/enriched",
+            "candidate_uuid": candidate_uuid,
+        }
+
     if existing and existing.enrichment_status in {
         EnrichmentStatus.QUEUED,
         EnrichmentStatus.IN_PROGRESS,
@@ -44,8 +58,24 @@ async def sync_candidate_profile(
             "redirect": "/candidate-profile/enriched",
             "candidate_uuid": candidate_uuid,
         }
-    
-    # Always queue the enrichment worker regardless of social links - it will generate mock analytics if needed
+
+    # Check Supabase for existing enrichment data before re-queueing
+    restored = await check_existing_enrichment(candidate_uuid, settings)
+    if restored:
+        candidate_enrichments[candidate_uuid] = restored
+        logger.info(
+            "enrichment.sync.restored_from_supabase",
+            candidate_uuid=candidate_uuid,
+            user_id=current_user.id,
+            user_email=current_user.email,
+        )
+        return {
+            "status": "already_enriched",
+            "redirect": "/candidate-profile/enriched",
+            "candidate_uuid": candidate_uuid,
+        }
+
+    # Queue the enrichment worker
     candidate_enrichments[candidate_uuid] = CandidateEnrichment(
         candidate_uuid=candidate_uuid,
         enrichment_status=EnrichmentStatus.QUEUED

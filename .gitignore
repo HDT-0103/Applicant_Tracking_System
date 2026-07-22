@@ -35,7 +35,6 @@ pnpm-debug.log*
 .turbo/
 
 # Local uploads and generated assets
-Prototype Figma/
 workflows/
 uploads/
 storage/
