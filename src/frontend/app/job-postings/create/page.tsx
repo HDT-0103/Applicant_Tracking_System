@@ -906,7 +906,7 @@ export default function CreateJobPostingPage() {
                 <div className="rounded-lg border border-border bg-white p-3.5 flex flex-col gap-2">
                   <p className="text-xs font-medium text-foreground">What candidates see</p>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    This card appears on the candidate portal. Clicking "Apply Now" opens the full application form with GitHub and LinkedIn enrichment.
+                    This card appears on the candidate portal. Clicking &quot;Apply Now&quot; opens the full application form with GitHub and LinkedIn enrichment.
                   </p>
 
                 </div>

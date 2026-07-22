@@ -40,6 +40,12 @@ export interface CandidateAnalytics {
 
 export type IngestionStatus = "IDLE" | "LOADING" | "SUCCESS" | "ERROR";
 
+export interface SyncCandidateProfileResponse {
+  status: string;
+  redirect: string;
+  candidate_uuid: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Context Shape                                                       */
 /* ------------------------------------------------------------------ */
@@ -52,7 +58,7 @@ interface WorkspaceContextProps {
   errorMessage: string | null;
   uploadResume: (file: File) => Promise<void>;
   resetWorkspace: () => void;
-  syncCandidateProfile: (uuid?: string) => Promise<{ redirect: string }>;
+  syncCandidateProfile: (uuid?: string) => Promise<SyncCandidateProfileResponse>;
   setCandidateUuid: (uuid: string | null) => void;
 }
 
@@ -101,13 +107,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   /* ------ Sync Enrichment ------ */
-  const syncCandidateProfile = async (uuid?: string): Promise<{ redirect: string }> => {
+  const syncCandidateProfile = async (
+    uuid?: string,
+  ): Promise<SyncCandidateProfileResponse> => {
     const targetUuid = uuid || candidateUuid;
     if (!targetUuid) {
       throw new Error("No candidate UUID available for sync.");
     }
 
-    const response = await api.post<{ status: string; redirect: string; candidate_uuid: string }>(
+    const response = await api.post<SyncCandidateProfileResponse>(
       `/api/enrichment/${targetUuid}/sync`,
     );
 

@@ -2515,9 +2515,11 @@ export default function EnrichedCandidateProfilePage() {
 
     connectWebSocket(candidateUuid);
 
+    const manualCloseSockets = manualCloseSocketsRef.current;
+
     return () => {
       if (wsRef.current) {
-        manualCloseSocketsRef.current.add(wsRef.current);
+        manualCloseSockets.add(wsRef.current);
         wsRef.current.close(1000);
         wsRef.current = null;
       }

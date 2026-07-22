@@ -522,8 +522,8 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
                 className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.educationLevel ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
                 <option value="">Select…</option>
                 <option value="high-school">High School / Secondary</option>
-                <option value="bachelors-completed">Bachelor's Degree (Completed)</option>
-                <option value="masters-doctorate">Master's / Doctorate Degree (Completed)</option>
+                <option value="bachelors-completed">Bachelor&apos;s Degree (Completed)</option>
+                <option value="masters-doctorate">Master&apos;s / Doctorate Degree (Completed)</option>
                 <option value="currently-enrolled">Currently Enrolled (Expected graduation: 2026 or later)</option>
                 <option value="other">Other</option>
               </select>
@@ -539,8 +539,8 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
                 className={cn(baseCls, "w-full px-3 appearance-none cursor-pointer bg-white", errors.availability ? "border-destructive" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]")}>
                 <option value="">Select…</option>
                 <option value="immediate">Available immediately</option>
-                <option value="2-4-weeks">Requires 2–4 weeks' notice period</option>
-                <option value="1-2-months">Requires 1–2 months' notice period</option>
+                <option value="2-4-weeks">Requires 2–4 weeks&apos; notice period</option>
+                <option value="1-2-months">Requires 1–2 months&apos; notice period</option>
                 <option value="other">Other</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -575,7 +575,7 @@ function ApplicationForm({ onSubmit }: { onSubmit: (d: FormData) => void }) {
                 <option value="">Select…</option>
                 <option value="yes">Yes</option>
                 <option value="no">No</option>
-                <option value="not-sure">I'm not sure</option>
+                <option value="not-sure">I&apos;m not sure</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>
