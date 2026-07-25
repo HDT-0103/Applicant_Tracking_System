@@ -3,12 +3,15 @@ import enum
 from typing_extensions import Literal, Any
 from pydantic import Field
 from pydantic import BaseModel
+from ..schemas.requirement_analysis import RequirementAnalysis
+import uuid
 '''
 Query -> Planner (Mission) -> Executor (ActionRecord) -> Result (Observation) -> Reflection (Decision) -> Next Action 
 '''
 
 
 
+    
 class MissionStatus(str, enum.Enum):
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
@@ -112,7 +115,8 @@ class Reflection(BaseModel):
     """
     Reflection output after evaluating search quality.
     """
-
+    
+    
     retry: bool
 
     reason: str
@@ -155,6 +159,84 @@ class ReflectionInput(BaseModel):
 
     observation: Observation | None
 
+# Use for Recruiter Decision Making
+class ExperienceContext(BaseModel):
+
+    company: str
+
+    position: str
+
+    duration: str
+
+    highlights: list[str]
+
+
+class Observation(BaseModel):
+
+    node: str
+
+    summary: str
+
+    metadata: dict = Field(default_factory=dict)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class CandidateContext(BaseModel):
+
+    candidate_id: str
+
+    semantic_score: float
+
+    summary: str
+
+    skills: list[str]
+
+    strengths: list[str]
+
+    weaknesses: list[str]
+
+    experiences: list[ExperienceContext]
+
+    github_summary: str | None = None
+
+    linkedin_summary: str | None = None
+    
+class RecruiterDecisionInput(BaseModel):
+
+    mission: Mission
+
+    candidates: list[CandidateContext]
+
+    history: list[ActionRecord]
+    
+class CandidateRecommendation(BaseModel):
+
+    candidate_id: str
+
+    recommendation: Literal[
+        "Strong Hire",
+        "Hire",
+        "Consider",
+        "Reject"
+    ]
+
+    confidence: float
+
+    reasoning: str
+
+    key_strengths: list[str]
+
+    missing_requirements: list[str]
+
+    risks: list[str]
+    
+    
+class RecruiterDecisionOutput(BaseModel):
+
+    recommendations: list[CandidateRecommendation]
+
+    final_summary: str
+    
 #========================
 # Reflection Output
 #========================
@@ -172,17 +254,22 @@ class CandidateSearchState(BaseModel):
 
     query_assessment: QueryAssessment
 
-    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    # Planner sinh ra
+    requirement: RequirementAnalysis | None = None
 
-    tool_calls: list[ToolCall] = Field(default_factory=list)
+    # Sau khi save DB
+    requirement_id: uuid.UUID | None = None
+
+    # RetrievalNode cập nhật
+    candidates: list[CandidateContext] = Field(default_factory=list)
 
     observations: list[Observation] = Field(default_factory=list)
 
     reflection: Reflection | None = None
 
-    action_history: list[ActionRecord] = Field(default_factory=list)
+    final_decision: RecruiterDecisionOutput | None = None
 
-    final_decision: str | None = None
+    action_history: list[ActionRecord] = Field(default_factory=list)
 
     
 class SchedulerState(BaseModel):
@@ -201,5 +288,3 @@ class ATSState(BaseModel):
     iteration: int = 0
 
     messages: list[str] = Field(default_factory=list)
-
-    

@@ -7,7 +7,7 @@ from src.backend.app.repositories.resume_repository import ResumeRepository
 from src.backend.app.repositories.requirement_embedding_repository import RequirementEmbeddingRepository
 from sqlalchemy.ext.asyncio import AsyncSession
  
-
+# nên trả về list[CandidateContext]
 class SemanticPipeline:
     def __init__(self, ranking_service: RankingService, resume_repo: ResumeRepository, req_emb_repo: RequirementEmbeddingRepository):
         self.ranking_service = ranking_service

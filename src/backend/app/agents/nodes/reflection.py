@@ -8,7 +8,8 @@ class ReflectionNode(BaseNode):
         self.llm_provider = llm_provider
         
     async def execute(self, state: ATSState):
-
+        with open("reflection_prompt.md", "r", encoding="utf-8") as file:
+            reflection_prompt = file.read()
         # 1. Read state
         mission = state.candidate_search.mission
         history = state.candidate_search.action_history
