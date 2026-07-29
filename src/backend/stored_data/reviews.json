@@ -1,0 +1,22 @@
+{
+  "2e5a1700-0978-4194-95af-1671f27b491b::tech_lead": {
+    "id": "0044da73-c136-4743-978a-5c2b0e3c5889",
+    "candidate_uuid": "2e5a1700-0978-4194-95af-1671f27b491b",
+    "reviewer_id": "demo-12345",
+    "reviewer_role": "tech_lead",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-07-07T16:05:10.461971+00:00",
+    "updated_at": "2026-07-07T16:05:10.461981+00:00"
+  },
+  "2e5a1700-0978-4194-95af-1671f27b491b::hr": {
+    "id": "2710d1f8-948f-4020-ab35-f16ec6cf1bbb",
+    "candidate_uuid": "2e5a1700-0978-4194-95af-1671f27b491b",
+    "reviewer_id": "demo-12345",
+    "reviewer_role": "hr",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-07-07T16:05:18.525809+00:00",
+    "updated_at": "2026-07-07T16:05:18.525819+00:00"
+  }
+}

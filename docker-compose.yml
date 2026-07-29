@@ -1,0 +1,32 @@
+services:
+  # 1. CONTAINER DATABASE
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ats_postgres_container
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Đã sửa từ ./infra thành ./infrastructure đúng theo ảnh của bạn
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - .postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  # 2. CONTAINER ỨNG DỤNG (PYTHON / FASTAPI)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile # Đảm bảo bạn đã rename file thành chữ f viết thường
+    container_name: ats_backend_container
+    env_file:
+      - .env # Đọc file .env sau khi bạn đã copy ra thư mục gốc
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app # Gắn thư mục backend chứa code vào trong container
+    depends_on:
+      - db
+    restart: always

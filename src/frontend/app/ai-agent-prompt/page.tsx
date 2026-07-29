@@ -10,7 +10,7 @@ import {
   BookOpen, Briefcase, GraduationCap, ExternalLink, Zap,
   AlertCircle, Clock, Layers, Shield, GitBranch, Cpu, Globe,
 } from "lucide-react";
-import { D, Dot, Badge, SectionLabel, Divider, radarBase, timelineItems } from "../../lib/shared";
+import { D, Dot, Badge, SectionLabel, Divider } from "../../lib/shared";
 
 // ─── GitHub Accordion Card ────────────────────────────────────────────────────
 function GitHubCard({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
@@ -253,7 +253,14 @@ function EnrichmentPanel() {
 // ─── Enriched Radar Chart ─────────────────────────────────────────────────────
 function EnrichedRadar() {
   const [showBoth, setShowBoth] = useState(true);
-  const data = radarBase.map((d) => ({
+  const radarData = [
+    { skill: "Backend", base: 55, enriched: 72 },
+    { skill: "Frontend", base: 52, enriched: 70 },
+    { skill: "Cloud Dev", base: 48, enriched: 66 },
+    { skill: "InfoSec", base: 45, enriched: 58 },
+    { skill: "ML / AI", base: 50, enriched: 64 },
+  ];
+  const data = radarData.map((d) => ({
     skill: d.skill,
     "Pre-Enrichment": d.base,
     "Post-Enrichment": d.enriched,
@@ -323,7 +330,13 @@ function EnrichedRadar() {
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0 10px" }}>
-        {radarBase.map((s) => (
+        {[
+          { skill: "Backend", base: 55, enriched: 72 },
+          { skill: "Frontend", base: 52, enriched: 70 },
+          { skill: "Cloud Dev", base: 48, enriched: 66 },
+          { skill: "InfoSec", base: 45, enriched: 58 },
+          { skill: "ML / AI", base: 50, enriched: 64 },
+        ].map((s) => (
           <div key={s.skill}>
             <div style={{ fontSize: 10.5, fontWeight: 700, fontFamily: D.mono, color: D.ink, marginBottom: 3 }}>
               {s.enriched}
@@ -396,6 +409,11 @@ function MatchConfidence() {
 function CareerTimeline() {
   const [expanded, setExpanded] = useState(true);
   const [hovered, setHovered] = useState<number | null>(null);
+  const timelineItems = [
+    { year: "2025", title: "Senior Engineer", org: "Tech Corp", period: "2023 — Present", type: "work", current: true, note: "Led platform team", verified: true },
+    { year: "2023", title: "Software Engineer", org: "Startup Inc", period: "2021 — 2023", type: "work", current: false, note: "Full-stack development", verified: true },
+    { year: "2021", title: "B.S. Computer Science", org: "University", period: "2017 — 2021", type: "edu", current: false, note: "GPA 3.8", verified: true },
+  ];
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, cursor: "pointer" }} onClick={() => setExpanded(!expanded)}>

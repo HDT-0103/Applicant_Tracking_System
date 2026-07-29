@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from jwt.exceptions import InvalidTokenError
@@ -11,8 +11,8 @@ class JwtService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
-    def create_access_token(self, user: AuthUser) -> str:
-        expires = datetime.now(UTC) + timedelta(
+    def create_access_token(self, user: AuthUser, jti: str | None = None) -> str:
+        expires = datetime.now(timezone.utc) + timedelta(
             minutes=self._settings.access_token_expire_minutes,
         )
         payload = {
@@ -23,14 +23,16 @@ class JwtService:
             "type": "access",
             "exp": expires,
         }
+        if jti:
+            payload["jti"] = jti
         return jwt.encode(
             payload,
             self._settings.jwt_secret,
             algorithm=self._settings.jwt_algorithm,
         )
 
-    def create_refresh_token(self, user: AuthUser) -> str:
-        expires = datetime.now(UTC) + timedelta(
+    def create_refresh_token(self, user: AuthUser, jti: str | None = None) -> str:
+        expires = datetime.now(timezone.utc) + timedelta(
             days=self._settings.refresh_token_expire_days,
         )
         payload = {
@@ -41,6 +43,8 @@ class JwtService:
             "type": "refresh",
             "exp": expires,
         }
+        if jti:
+            payload["jti"] = jti
         return jwt.encode(
             payload,
             self._settings.jwt_secret,
@@ -67,4 +71,5 @@ class JwtService:
             name=str(payload.get("name") or payload["email"]),
             role=payload.get("role", "interviewer"),
             picture=None,
+            jti=payload.get("jti"),
         )

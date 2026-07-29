@@ -13,6 +13,7 @@ import {
   api,
   clearStoredTokens,
   getStoredAccessToken,
+  setStoredDemoRole,
   setStoredTokens,
 } from "../services/httpClient";
 
@@ -41,9 +42,12 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   loginWithGoogle: (credential: string) => Promise<void>;
+  loginWithEmailPassword: (email: string, password: string) => Promise<void>;
+  registerWithEmailPassword: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   canUpload: boolean;
+  devSetRole: (role: UserRole) => void;
 }
 
 const USER_STORAGE_KEY = "smartats_user";
@@ -78,7 +82,7 @@ const DEMO_USER: AuthUser = {
   id: "demo-12345",
   email: "demo@smartats.com",
   name: "Demo Recruiter",
-  role: "recruiter",
+  role: "hr",
   picture: "https://ui-avatars.com/api/?name=Demo+Recruiter&background=0d6efd&color=fff&size=128"
 };
 
@@ -113,7 +117,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setStoredTokens(data.accessToken, data.refreshToken);
       persistUser(data.user);
       setUser(data.user);
-      router.replace("/");
+      router.replace(landingPathForRole(data.user.role));
+    },
+    [router],
+  );
+
+  const loginWithEmailPassword = useCallback(
+    async (email: string, password: string) => {
+      const data = await api.post<GoogleAuthResponse>(
+        "/api/auth/login",
+        { email, password },
+        { skipAuth: true },
+      );
+
+      setStoredTokens(data.accessToken, data.refreshToken);
+      persistUser(data.user);
+      setUser(data.user);
+      router.replace(landingPathForRole(data.user.role));
+    },
+    [router],
+  );
+
+  const registerWithEmailPassword = useCallback(
+    async (name: string, email: string, password: string) => {
+      // Role is assigned server-side (recruiter); never sent from the client.
+      const data = await api.post<GoogleAuthResponse>(
+        "/api/auth/register",
+        { name, email, password },
+        { skipAuth: true },
+      );
+
+      setStoredTokens(data.accessToken, data.refreshToken);
+      persistUser(data.user);
+      setUser(data.user);
+      router.replace(landingPathForRole(data.user.role));
     },
     [router],
   );
@@ -138,17 +175,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     [hasRole],
   );
 
+  const devSetRole = useCallback((role: UserRole) => {
+    setUser((prev) => (prev && prev.id === "demo-12345" ? { ...prev, role } : prev));
+    setStoredDemoRole(role);
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       isAuthenticated: Boolean(user),
       isLoading,
       loginWithGoogle,
+      loginWithEmailPassword,
+      registerWithEmailPassword,
       logout,
       hasRole,
       canUpload,
+      devSetRole,
     }),
-    [user, isLoading, loginWithGoogle, logout, hasRole, canUpload],
+    [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, logout, hasRole, canUpload],
   );
 
   return (

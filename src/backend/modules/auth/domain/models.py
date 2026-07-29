@@ -11,6 +11,8 @@ class AuthUser(BaseModel):
     name: str
     role: UserRole
     picture: str | None = None
+    jti: str | None = None
+
 
 
 class GoogleLoginRequest(BaseModel):
@@ -38,3 +40,17 @@ class TokenClaims(BaseModel):
     name: str
     role: UserRole
     token_type: str = Field(alias="type")
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6)
+
+
+class RegisterRequest(BaseModel):
+    # Public registration only. Role is NOT client-selectable: every self-service
+    # signup becomes a recruiter (HR). Admin accounts are created via seed/Admin
+    # Dashboard (Epic 6), never through this endpoint.
+    name: str = Field(min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=6)

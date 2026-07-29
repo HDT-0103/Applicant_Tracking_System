@@ -25,7 +25,46 @@ export const D = {
 
 // --- Shared Data --------------------------------------------------------------
 
-// Mock data removed - now using real data from API
+export const radarBase = [
+  { skill: "Backend", base: 76, enriched: 88 },
+  { skill: "Frontend", base: 72, enriched: 84 },
+  { skill: "Cloud", base: 68, enriched: 82 },
+  { skill: "Data", base: 70, enriched: 85 },
+  { skill: "DevOps", base: 66, enriched: 80 },
+];
+
+export const timelineItems = [
+  {
+    year: "2026",
+    type: "work",
+    title: "Senior Software Engineer",
+    org: "SmartATS",
+    period: "2026 - Present",
+    note: "Leading ingestion pipeline and ML enrichment improvements.",
+    verified: true,
+    current: true,
+  },
+  {
+    year: "2024",
+    type: "work",
+    title: "Software Engineer",
+    org: "TechNova",
+    period: "2024 - 2026",
+    note: "Built scalable APIs and analytics dashboards for hiring teams.",
+    verified: true,
+    current: false,
+  },
+  {
+    year: "2022",
+    type: "edu",
+    title: "B.Sc. Computer Science",
+    org: "University of Science",
+    period: "2018 - 2022",
+    note: "Focused on distributed systems and data engineering.",
+    verified: true,
+    current: false,
+  },
+];
 
 // --- Components ---------------------------------------------------------------
 

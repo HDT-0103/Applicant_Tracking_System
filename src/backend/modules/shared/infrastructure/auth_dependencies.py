@@ -7,6 +7,11 @@ from modules.auth.domain.models import AuthUser, UserRole
 from modules.auth.infra.jwt_service import JwtService
 from modules.shared.infrastructure.config import Settings, get_settings
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from backend.app.database.connection import get_db_session
+from backend.app.models.user_session import UserSession
+
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -16,12 +21,13 @@ def get_jwt_service(
     return JwtService(settings)
 
 
-def get_current_user(
+async def get_current_user(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Depends(_bearer_scheme),
     ],
     jwt_service: Annotated[JwtService, Depends(get_jwt_service)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> AuthUser:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
@@ -30,7 +36,7 @@ def get_current_user(
         )
 
     try:
-        return jwt_service.decode_token(
+        user = jwt_service.decode_token(
             credentials.credentials,
             expected_type="access",
         )
@@ -39,6 +45,17 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
+
+    if user.jti:
+        stmt = select(UserSession).where(UserSession.token_jti == user.jti)
+        session_rec = await db.scalar(stmt)
+        if session_rec and session_rec.is_revoked:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session has been revoked by admin",
+            )
+
+    return user
 
 
 def require_roles(*allowed_roles: UserRole):

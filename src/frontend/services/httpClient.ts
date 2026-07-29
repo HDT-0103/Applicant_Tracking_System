@@ -58,6 +58,17 @@ async function refreshAccessToken(): Promise<string | null> {
   return data.accessToken;
 }
 
+const DEMO_ROLE_KEY = "smartats_demo_role";
+
+export function getStoredDemoRole(): string {
+  if (typeof window === "undefined") return "hr";
+  return localStorage.getItem(DEMO_ROLE_KEY) ?? "hr";
+}
+
+export function setStoredDemoRole(role: string): void {
+  localStorage.setItem(DEMO_ROLE_KEY, role);
+}
+
 async function getValidAccessToken(): Promise<string | null> {
   const accessToken = getStoredAccessToken();
   if (accessToken) return accessToken;
@@ -146,6 +157,12 @@ export const api = {
     body?: RequestOptions["body"],
     options?: RequestOptions,
   ) => httpClient<T>(path, { ...options, method: "PUT", body }),
+
+  patch: <T>(
+    path: string,
+    body?: RequestOptions["body"],
+    options?: RequestOptions,
+  ) => httpClient<T>(path, { ...options, method: "PATCH", body }),
 
   delete: <T>(path: string, options?: RequestOptions) =>
     httpClient<T>(path, { ...options, method: "DELETE" }),

@@ -1,4 +1,4 @@
-import { CandidateAnalytics } from "../../context/WorkspaceContext";
+import { CandidateAnalytics } from "../contexts/WorkspaceContext";
 
 const Mock_Candidate: CandidateAnalytics = {
 uuid: "candidate-8sd313",
