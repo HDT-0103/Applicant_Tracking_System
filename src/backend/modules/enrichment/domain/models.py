@@ -18,7 +18,7 @@ class CandidateSocialLinks(BaseModel):
 
 class GitHubRepo(BaseModel):
     name: str
-    language: str | None
+    language: str | None = None
     size: int
 
 

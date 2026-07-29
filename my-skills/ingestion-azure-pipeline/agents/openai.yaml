@@ -1,0 +1,80 @@
+name: ingestion-azure-pipeline-agent
+version: 1.0.0
+description: Agent for CV PDF upload, validation, Azure Blob storage, and Service Bus queuing
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: validate_pdf
+    description: Validate PDF file size (<10MB), MIME type, and magic bytes
+    type: function
+    parameters:
+      type: object
+      properties:
+        file_bytes:
+          type: string
+          description: Base64-encoded file bytes
+      required:
+        - file_bytes
+
+  - name: upload_to_azure_blob
+    description: Upload file to Azure Blob Storage container
+    type: function
+    parameters:
+      type: object
+      properties:
+        container_name:
+          type: string
+          default: resumes
+        file_name:
+          type: string
+        file_bytes:
+          type: string
+      required:
+        - file_name
+        - file_bytes
+
+  - name: queue_ingestion_event
+    description: Send ingestion event to Azure Service Bus
+    type: function
+    parameters:
+      type: object
+      properties:
+        candidate_uuid:
+          type: string
+        event_type:
+          type: string
+          enum: [cv_uploaded, enrichment_requested]
+      required:
+        - candidate_uuid
+        - event_type
+
+  - name: create_candidate_record
+    description: Create candidate record in Supabase
+    type: function
+    parameters:
+      type: object
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        linkedin_url:
+          type: string
+        github_username:
+          type: string
+      required:
+        - full_name
+        - email
+
+env_vars:
+  required:
+    - AZURE_STORAGE_CONNECTION_STRING
+    - AZURE_SERVICE_BUS_CONNECTION_STRING
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_KEY

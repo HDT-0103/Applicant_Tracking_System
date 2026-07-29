@@ -1,14 +1,13 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 
-from modules.auth.domain.models import AuthUser
 from modules.ingestion.application.azure_ingestion_service import AzureIngestionService
 from modules.ingestion.domain.models import IngestionResponse
 from modules.ingestion.infra.azure_blob_service import AzureBlobService
 from modules.ingestion.infra.azure_service_bus_service import AzureServiceBusService
-from modules.shared.infrastructure.auth_dependencies import get_current_user
+from modules.enrichment.application.enrichment_service import enrichment_worker
 from modules.shared.infrastructure.config import Settings, get_settings
 
 router = APIRouter(prefix="/api/v1", tags=["azure-ingestion"])
@@ -24,15 +23,22 @@ def get_azure_ingestion_service(
     blob_service = AzureBlobService(settings)
     service_bus_service = AzureServiceBusService(settings)
     return AzureIngestionService(
-        blob_service=blob_service, service_bus_service=service_bus_service
+        blob_service=blob_service, service_bus_service=service_bus_service, settings=settings
     )
 
 
 @router.post("/ingest", response_model=IngestionResponse, status_code=status.HTTP_202_ACCEPTED)
 async def ingest_cv(
     file: Annotated[UploadFile, File(...)],
-    current_user: Annotated[AuthUser, Depends(get_current_user)],
+    background_tasks: BackgroundTasks,
     azure_service: Annotated[AzureIngestionService, Depends(get_azure_ingestion_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    full_name: Annotated[Optional[str], Form()] = None,
+    email: Annotated[Optional[str], Form()] = None,
+    phone: Annotated[Optional[str], Form()] = None,
+    linkedin_url: Annotated[Optional[str], Form()] = None,
+    github_url: Annotated[Optional[str], Form()] = None,
+    job_id: Annotated[Optional[str], Form()] = None,
 ) -> IngestionResponse:
     if file.content_type != ALLOWED_MIME_TYPE:
         logger.warning(
@@ -70,7 +76,22 @@ async def ingest_cv(
         )
 
     try:
-        result = azure_service.ingest_pdf(file_content)
+        # Strip GitHub URL to extract username only
+        clean_github_username = None
+        if github_url:
+            clean_github_username = github_url.rstrip("/").split("/")[-1] if "/" in github_url else github_url
+
+        result = await azure_service.ingest_pdf(
+            file_content,
+            full_name=full_name,
+            email=email,
+            phone=phone,
+            linkedin_url=linkedin_url,
+            github_url=clean_github_username,
+            job_id=job_id,
+        )
+        # Trigger enrichment in background (GitHub + LinkedIn + skill matrix)
+        background_tasks.add_task(enrichment_worker, result.candidate_uuid, settings)
         return result
     except ValueError as exc:
         logger.error(

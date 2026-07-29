@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { D, Dot, Badge, SectionLabel, Divider } from "../../../lib/shared";
 import { AppHeader } from "../../../components/AppHeader";
-import { useAuth } from "../../../contexts/AuthContext";
+import { LeftSidebar } from "../../../components/LeftSidebar";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { api } from "../../../services/httpClient";
 import {
@@ -1022,17 +1022,35 @@ export default function EnrichedCandidateProfilePage() {
     };
   }, [markResolved, resolveFromStatus]);
 
-  // Trigger sync on load if needed
+  // Trigger sync on load only if not already enriched
   useEffect(() => {
     if (!candidateUuid) return;
     if (hasTriggeredSyncRef.current || isSyncingRef.current) return;
-    
-    const triggerSync = async () => {
+
+    const initLoad = async () => {
       hasTriggeredSyncRef.current = true;
       isSyncingRef.current = true;
       try {
         setSyncing(true);
-        await syncCandidateProfile(candidateUuid);
+        const statusResp = await api.get<EnrichmentStatusResponse>(`/api/enrichment/${candidateUuid}`);
+        if (statusResp.enrichment_status === "ENRICHED" && statusResp.enriched_profile) {
+          markResolved();
+          setData(statusResp.enriched_profile);
+          setLoading(false);
+          setSyncing(false);
+          return;
+        }
+        if (statusResp.enrichment_status === "ENRICHMENT_FAILED") {
+          markResolved();
+          setError("Enrichment failed");
+          setLoading(false);
+          setSyncing(false);
+          return;
+        }
+        const syncResp = await syncCandidateProfile(candidateUuid);
+        if (syncResp.status === "already_enriched") {
+          await resolveFromStatus(candidateUuid);
+        }
         setSyncing(false);
       } catch (err) {
         console.error("Failed to trigger sync:", err);
@@ -1041,12 +1059,12 @@ export default function EnrichedCandidateProfilePage() {
         isSyncingRef.current = false;
       }
     };
-    
-    triggerSync();
-  }, [candidateUuid, syncCandidateProfile]);
+
+    initLoad();
+  }, [candidateUuid, syncCandidateProfile, resolveFromStatus, markResolved]);
 
   useEffect(() => {
-    if (!candidateUuid) return;
+    if (!candidateUuid || resolvedRef.current) return;
 
     connectWebSocket(candidateUuid);
 
@@ -1130,7 +1148,11 @@ export default function EnrichedCandidateProfilePage() {
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <AppHeader candidateName={data?.full_name || null} />
       <div style={{ flex: 1, display: "flex", overflow: "hidden", animation: "fadeSlideIn 0.4s ease both" }}>
-        {/* Left — enrichment dashboard */}
+        {/* Left — navigation sidebar */}
+        <LeftSidebar />
+        {/* Divider */}
+        <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
+        {/* Middle — enrichment dashboard */}
         <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
           <EnrichmentPanel data={data} />
         </div>

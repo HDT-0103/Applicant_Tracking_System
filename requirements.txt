@@ -13,6 +13,7 @@ SQLAlchemy>=2.0,<3.0
 alembic>=1.14,<2.0
 psycopg[binary]>=3.2,<4.0
 pgvector>=0.3,<1.0
+supabase>=2.0,<3.0
 
 # Agent, LLM, and semantic matching
 mcp>=1.2,<2.0

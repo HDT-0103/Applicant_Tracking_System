@@ -2,8 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
 from backend.app.models.audit_log import AuditLog
 from backend.app.models.enums import RoleType
@@ -19,6 +18,8 @@ from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
 from modules.auth.infra.password_service import PasswordService
 from modules.shared.infrastructure.config import Settings
+from modules.shared.infrastructure.supabase_client import get_supabase_client
+from modules.shared.domain.supabase_models import User, RoleType
 
 logger = structlog.get_logger(__name__)
 
@@ -41,9 +42,67 @@ class AuthService:
         self._settings = settings
         self._google_verifier = google_verifier
         self._jwt_service = jwt_service
+        self._supabase_client = get_supabase_client(settings, use_admin=True)
+        self._use_supabase = self._supabase_client is not None
+
+    def resolve_role_from_supabase(self, email: str) -> UserRole:
+        """
+        Resolve user role by querying Supabase public.users table
+        Allows authentication if user exists, is active, and has a permitted role
+        (e.g., admin, hr, hr_manager, tech_lead, recruiter, interviewer)
+        
+        Args:
+            email: User email from Google OAuth
+        
+        Returns:
+            UserRole if user exists and has a permitted role
+        
+        Raises:
+            ValueError: If user not found, inactive, or lacks permitted role
+        """
+        try:
+            # Query Supabase for user by email
+            result = self._supabase_client.table('users').select('*').eq(
+                'email', email
+            ).eq('is_active', True).execute()
+            
+            if not result.data or len(result.data) == 0:
+                raise ValueError(
+                    f"Authentication failed: Email '{email}' not found in system. "
+                    f"Please contact administrator."
+                )
+            
+            user_data = result.data[0]
+            user_role = user_data.get('role')
+            
+            allowed_roles = {'hr', 'tech_lead'}
+            if user_role not in allowed_roles:
+                raise ValueError(
+                    f"Authentication failed: User '{email}' does not have sufficient privileges. "
+                    f"Current role: {user_role}"
+                )
+            
+            return user_role
+            
+        except ValueError:
+            raise  # Re-raise ValueError with our custom message
+        except Exception as e:
+            logger.error("auth.supabase_query_failed", email=email, error=str(e))
+            raise ValueError(f"Database query failed: {str(e)}")
         self.db = db
 
     def resolve_role(self, email: str) -> UserRole:
+        """
+        Fallback role resolution using .env configuration
+        This method is kept for backward compatibility but should not be used
+        in production when Supabase is configured.
+        
+        Args:
+            email: User email
+        
+        Returns:
+            UserRole based on .env configuration
+        """
         normalized_email = email.strip().lower()
         domain = normalized_email.split("@")[-1]
 
@@ -55,61 +114,36 @@ class AuthService:
 
         return "interviewer"
 
-    async def _create_db_session_record(self, user_id: str, jti: str) -> None:
-        if not self.db:
-            return
-        try:
-            expires_at = datetime.now(timezone.utc) + timedelta(days=self._settings.refresh_token_expire_days)
-            session_rec = UserSession(
-                user_id=uuid.UUID(user_id),
-                token_jti=jti,
-                expires_at=expires_at,
-                is_revoked=False
-            )
-            self.db.add(session_rec)
-            await self.db.commit()
-        except Exception as e:
-            logger.error("auth.session_record.failed", error=str(e))
-
-    async def _write_audit_log(self, user_id: str | None, action: str, details: dict) -> None:
-        if not self.db:
-            return
-        try:
-            audit = AuditLog(
-                user_id=uuid.UUID(user_id) if user_id else None,
-                action=action,
-                details=details
-            )
-            self.db.add(audit)
-            await self.db.commit()
-        except Exception as e:
-            logger.error("auth.audit_log.failed", error=str(e))
-
-    async def login_with_google(self, credential: str) -> AuthTokenResponse:
-        profile = self._google_verifier.verify_credential(credential)
-        email = profile["email"]
+    def login_with_google(self, credential: str, use_supabase: Optional[bool] = None) -> AuthTokenResponse:
+        """
+        Login with Google OAuth and verify admin role from Supabase
         
-        # Check if user exists in database
-        db_user = None
-        if self.db:
-            stmt = select(User).where(User.email == email)
-            db_user = await self.db.scalar(stmt)
-            
-            if not db_user:
-                # Auto-create user from Google profile
-                resolved_role = self.resolve_role(email)
-                db_user = User(
-                    name=profile["name"],
-                    email=email,
-                    role=RoleType(resolved_role)
-                )
-                self.db.add(db_user)
-                await self.db.commit()
-                await self.db.refresh(db_user)
-                logger.info("auth.google.auto_register", email=email, role=resolved_role)
-
-        role = db_user.role.value if db_user else self.resolve_role(email)
-        user_id = str(db_user.id) if db_user else profile["id"]
+        Args:
+            credential: Google OAuth credential token
+            use_supabase: Whether to use Supabase for role verification (default: auto-detect)
+        
+        Returns:
+            AuthTokenResponse with access token and user info
+        
+        Raises:
+            ValueError: If authentication fails
+        """
+        profile = self._google_verifier.verify_credential(credential)
+        
+        # Auto-detect if Supabase is configured if use_supabase is not explicitly set
+        if use_supabase is None:
+            use_supabase = self._use_supabase
+        
+        # Use Supabase for role verification if configured and requested
+        if use_supabase and self._supabase_client:
+            try:
+                role = self.resolve_role_from_supabase(profile["email"])
+            except ValueError as e:
+                # Re-raise with clear error message
+                raise ValueError(str(e))
+        else:
+            # Fallback to .env-based role resolution
+            role = self.resolve_role(profile["email"])
 
         user = AuthUser(
             id=user_id,
@@ -131,6 +165,7 @@ class AuthService:
             user_id=user.id,
             email=user.email,
             role=user.role,
+            auth_method="supabase" if (use_supabase and self._supabase_client) else "env_fallback"
         )
 
         return AuthTokenResponse(
