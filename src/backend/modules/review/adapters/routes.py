@@ -33,7 +33,7 @@ async def submit_review(
     candidate_uuid: str,
     body: SubmitReviewRequest,
     service: ServiceDep,
-    current_user: Annotated[AuthUser, Depends(require_roles("hr", "tech_lead", "admin"))],
+    current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "tech_lead", "admin"))],
 ) -> ReviewStatus:
     if body.decision not in ("approved", "rejected"):
         raise HTTPException(
@@ -59,7 +59,7 @@ async def submit_review(
 async def get_review_status(
     candidate_uuid: str,
     service: ServiceDep,
-    _current_user: Annotated[AuthUser, Depends(require_roles("hr", "tech_lead", "admin"))],
+    _current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "tech_lead", "admin"))],
 ) -> ReviewStatus:
     return await service.get_status(candidate_uuid)
 
@@ -69,9 +69,9 @@ async def resolve_conflict(
     candidate_uuid: str,
     body: ResolveConflictRequest,
     service: ServiceDep,
-    current_user: Annotated[AuthUser, Depends(require_roles("hr", "admin"))],
+    current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin"))],
 ) -> ReviewStatus:
-    if current_user.role not in ("hr", "admin"):
+    if current_user.role not in ("hr", "recruiter", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only HR can resolve conflicts",

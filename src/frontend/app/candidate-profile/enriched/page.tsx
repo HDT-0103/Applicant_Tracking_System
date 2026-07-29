@@ -31,6 +31,7 @@ import {
   Globe,
   Loader2,
   Calendar,
+  FileText,
 } from "lucide-react";
 import { D, Dot, Badge, SectionLabel, Divider } from "../../../lib/shared";
 import { AppHeader } from "../../../components/AppHeader";
@@ -1754,11 +1755,39 @@ function EnrichedAnalytics({
             post-enrichment
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <Dot color={D.mint} pulse />
-          <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>
-            LIVE
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {candidateUuid && (
+            <button
+              type="button"
+              onClick={() => {
+                const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+                window.open(`${apiBase}/api/v1/candidates/${candidateUuid}/cv`, '_blank');
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "3px 9px",
+                borderRadius: 5,
+                background: D.surface,
+                border: `1px solid ${D.line}`,
+                color: D.ink,
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <FileText size={12} strokeWidth={2} color={D.blue} />
+              <span>View Original CV</span>
+            </button>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Dot color={D.mint} pulse />
+            <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>
+              LIVE
+            </span>
+          </div>
         </div>
       </div>
 

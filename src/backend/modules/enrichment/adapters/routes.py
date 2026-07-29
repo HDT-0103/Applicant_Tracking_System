@@ -23,7 +23,7 @@ logger = structlog.get_logger(__name__)
 async def sync_candidate_profile(
     candidate_uuid: str,
     background_tasks: BackgroundTasks,
-    current_user: Annotated[AuthUser, Depends(require_roles("hr", "admin"))],
+    current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin"))],
     settings: Annotated[Settings, Depends(get_settings)]
 ) -> dict:
     social_links = get_candidate_social_links(candidate_uuid)
@@ -113,7 +113,7 @@ async def sync_candidate_profile(
 @router.get("/{candidate_uuid}", response_model=CandidateEnrichment)
 async def get_enrichment_status(
     candidate_uuid: str,
-    current_user: Annotated[AuthUser, Depends(require_roles("hr", "admin", "tech_lead"))]
+    current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin", "tech_lead"))]
 ) -> CandidateEnrichment:
     if candidate_uuid not in candidate_enrichments:
         return CandidateEnrichment(

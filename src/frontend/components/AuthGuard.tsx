@@ -3,6 +3,7 @@
 import React, { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth, landingPathForRole } from "../contexts/AuthContext";
+import { isAuthRoute, isPublicRoute } from "../lib/routes";
 
 const ROLE_ROUTE_MAP: Array<{ pattern: RegExp; allowed: string[] }> = [
   { pattern: /^\/schedule/, allowed: ["hr"] },
@@ -17,20 +18,23 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   const pathname = usePathname();
   const router = useRouter();
 
-  const isPublicRoute = pathname === "/login" || pathname === "/register";
+  const publicRoute = isPublicRoute(pathname);
+  const authRoute = isAuthRoute(pathname);
 
   useEffect(() => {
     if (isLoading) return;
 
-    if (!isAuthenticated && !isPublicRoute) {
+    if (!isAuthenticated && !publicRoute) {
       router.replace("/login");
       return;
     }
 
-    if (isAuthenticated && isPublicRoute) {
+    // Only the sign-in screens bounce a logged-in user away — an HR previewing
+    // the public career page should stay on it.
+    if (isAuthenticated && authRoute) {
       router.replace(landingPathForRole(user?.role));
     }
-  }, [isAuthenticated, isLoading, isPublicRoute, router, user]);
+  }, [isAuthenticated, isLoading, publicRoute, authRoute, router, user]);
  
   if (isLoading) {
     return (
@@ -41,7 +45,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     );
   }
  
-  if (!isAuthenticated && !isPublicRoute) {
+  if (!isAuthenticated && !publicRoute) {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
@@ -49,8 +53,8 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
       </div>
     );
   }
- 
-  if (isAuthenticated && isPublicRoute) {
+
+  if (isAuthenticated && authRoute) {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />

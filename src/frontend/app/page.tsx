@@ -118,6 +118,8 @@ export default function HomePage() {
               <div style={{ display: "flex", flexDirection: "column" }}>
 
                 <button
+                  type="button"
+                  onClick={() => router.push('/analytics')}
                   style={{
                     padding: "20px",
                     borderRadius: 12,

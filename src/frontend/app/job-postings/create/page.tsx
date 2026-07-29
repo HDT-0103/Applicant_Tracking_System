@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useRef, KeyboardEvent } from "react";
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, useRef, Suspense, KeyboardEvent } from "react";
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AppHeader } from "../../../components/AppHeader";
 import { LeftSidebar } from "../../../components/LeftSidebar";
 import { D } from "../../../lib/shared";
@@ -33,7 +33,10 @@ import {
   AlignLeft,
   Code2,
   ChevronRight,
+  Copy,
+  Loader2,
 } from "lucide-react";
+import { buildJobUrl } from "../../../lib/jobUrl";
 
 interface JDState {
   title: string;
@@ -57,11 +60,17 @@ function cn(...classes: (string | undefined | false | null)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-function StepIndicator({ currentStep }: { currentStep: number }) {
+function StepIndicator({ 
+  currentStep, 
+  onSelectStep 
+}: { 
+  currentStep: number; 
+  onSelectStep: (step: number) => void;
+}) {
   const steps = [
-    { n: 1, label: "Job Details" },
-    { n: 2, label: "Preview Card" },
-    { n: 3, label: "Candidate View Portal" },
+    { n: 1, label: "1. Job Details" },
+    { n: 2, label: "2. Preview Card" },
+    { n: 3, label: "3. Candidate View Portal" },
   ];
 
   return (
@@ -71,7 +80,11 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
         const isDone = step.n < currentStep;
         return (
           <div key={step.n} className="flex items-center">
-            <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onSelectStep(step.n)}
+              className="flex items-center gap-2 hover:opacity-80 transition-all cursor-pointer text-left py-1 px-1.5 rounded-lg hover:bg-[rgba(15,17,23,0.04)]"
+            >
               <div
                 className={cn(
                   "w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 transition-all",
@@ -87,12 +100,12 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
               <span
                 className={cn(
                   "text-sm font-medium whitespace-nowrap",
-                  isActive ? "text-[#4f46e5]" : isDone ? "text-foreground" : "text-muted-foreground",
+                  isActive ? "text-[#4f46e5] font-semibold" : isDone ? "text-foreground" : "text-muted-foreground",
                 )}
               >
                 {step.label}
               </span>
-            </div>
+            </button>
             {i < steps.length - 1 && (
               <div className="flex items-center mx-3">
                 <div className={cn("h-px w-8", isDone ? "bg-[#4f46e5]/40" : "bg-border")} />
@@ -349,14 +362,59 @@ function PreviewCard({ jd }: { jd: JDState }) {
   );
 }
 
+function ShareLinkBox({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+        Public application link
+      </span>
+      <div className="flex items-stretch gap-2">
+        <input
+          readOnly
+          value={url}
+          onFocus={(e) => e.currentTarget.select()}
+          className="h-9 flex-1 min-w-0 rounded-lg border border-border bg-[#f8f9fb] px-3
+            text-xs font-mono text-foreground outline-none focus:border-[#4f46e5]"
+        />
+        <button
+          type="button"
+          onClick={copy}
+          className="h-9 shrink-0 rounded-lg bg-[#4f46e5] px-3 text-xs font-medium text-white
+            transition-colors hover:bg-[#4338ca] flex items-center gap-1.5"
+        >
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
+        Share this link anywhere. Every CV submitted through it is attached to this job only.
+      </p>
+    </div>
+  );
+}
+
 function PublishModal({
   open,
   onClose,
   jobTitle,
+  shareUrl,
 }: {
   open: boolean;
   onClose: () => void;
   jobTitle: string;
+  shareUrl: string | null;
 }) {
   if (!open) return null;
 
@@ -406,6 +464,8 @@ function PublishModal({
             Candidates can now discover and apply for this position. Profile enrichment via GitHub and LinkedIn is active for all submissions.
           </p>
 
+          {shareUrl && <ShareLinkBox url={shareUrl} />}
+
           <div className="flex flex-col gap-2.5">
             <button
               type="button"
@@ -422,8 +482,11 @@ function PublishModal({
   );
 }
 
-export default function CreateJobPostingPage() {
+function CreateJobPostingForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editJobId = searchParams.get('id');
+
   const [jd, setJD] = useState<JDState>({
     title: "",
     department: "",
@@ -446,18 +509,76 @@ export default function CreateJobPostingPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [savingError, setSavingError] = useState<string | null>(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
-  const [currentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [isEditingHeaderTitle, setIsEditingHeaderTitle] = useState(false);
+  const [isLoadingJob, setIsLoadingJob] = useState<boolean>(!!editJobId);
+  const headerTitleInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jdRef = useRef(jd);
   jdRef.current = jd;
 
+  useEffect(() => {
+    if (!editJobId) return;
+
+    let isMounted = true;
+    setPostingId(editJobId);
+    setIsLoadingJob(true);
+
+    const fetchExistingJob = async () => {
+      try {
+        const { data: job, error } = await supabase
+          .from('jobs_posting')
+          .select('*')
+          .eq('id', editJobId)
+          .single();
+
+        if (error) throw error;
+
+        if (job && isMounted) {
+          setJD({
+            title: job.job_title || "",
+            department: job.department || "",
+            location: job.location || "",
+            workMode: job.work_mode || "",
+            seniority: job.seniority_level || "",
+            targetApplicants: job.target_openings ? String(job.target_openings) : "",
+            employmentType: job.employment_type || "",
+            mustHaveSkills: Array.isArray(job.must_have_skills) ? job.must_have_skills : [],
+            niceToHaveSkills: Array.isArray(job.nice_to_have_skills) ? job.nice_to_have_skills : [],
+            overview: job.description || "",
+            responsibilities: job.key_responsibilities || "",
+            requirements: job.requirements || "",
+            niceToHaveQuals: job.nice_to_have_qualifications || "",
+            salaryMin: job.salary_min ? String(job.salary_min) : "",
+            salaryMax: job.salary_max ? String(job.salary_max) : "",
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load existing job posting:", err);
+      } finally {
+        if (isMounted) setIsLoadingJob(false);
+      }
+    };
+
+    fetchExistingJob();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [editJobId]);
+
   const saveToSupabase = async (status: 'DRAFT' | 'PUBLISHED') => {
     const data = jdRef.current;
+    if (!data.title || !data.title.trim()) {
+      setSavingError("Job title is required!");
+      setSaveStatus("idle");
+      return;
+    }
     setSaveStatus("saving");
     setSavingError(null);
 
     const payload = {
-      job_title: data.title || 'Untitled',
+      job_title: data.title.trim(),
       department: data.department || null,
       location: data.location || null,
       seniority_level: data.seniority || null,
@@ -535,18 +656,50 @@ export default function CreateJobPostingPage() {
 
             {/* Step indicator */}
             <div className="mb-6">
-              <StepIndicator currentStep={currentStep} />
+              <StepIndicator currentStep={currentStep} onSelectStep={setCurrentStep} />
             </div>
 
             {/* Page Title Bar */}
             <div className="flex items-center gap-3 mb-7">
-              <div className="w-9 h-9 rounded-xl bg-[#4f46e5]/10 flex items-center justify-center">
+              <div 
+                onClick={() => {
+                  setIsEditingHeaderTitle(true);
+                  setTimeout(() => headerTitleInputRef.current?.focus(), 50);
+                }}
+                className="w-9 h-9 rounded-xl bg-[#4f46e5]/10 hover:bg-[#4f46e5]/20 flex items-center justify-center cursor-pointer transition-colors"
+                title="Click to edit position title"
+              >
                 <Pencil className="w-4.5 h-4.5 text-[#4f46e5]" />
               </div>
               <div className="flex-1">
-                <h1 className="text-lg font-semibold text-foreground tracking-tight">Create New Job Position</h1>
+                {isEditingHeaderTitle ? (
+                  <input
+                    ref={headerTitleInputRef}
+                    value={jd.title}
+                    onChange={(e) => set("title", e.target.value)}
+                    onBlur={() => setIsEditingHeaderTitle(false)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") setIsEditingHeaderTitle(false);
+                    }}
+                    placeholder="Enter position title (Required)..."
+                    className="text-lg font-semibold text-foreground tracking-tight border-b-2 border-[#4f46e5] outline-none bg-transparent w-full"
+                  />
+                ) : (
+                  <div 
+                    onClick={() => {
+                      setIsEditingHeaderTitle(true);
+                      setTimeout(() => headerTitleInputRef.current?.focus(), 50);
+                    }}
+                    className="group flex items-center gap-2 cursor-pointer"
+                  >
+                    <h1 className={cn("text-lg font-semibold tracking-tight transition-colors group-hover:text-[#4f46e5]", jd.title.trim() ? "text-foreground" : "text-amber-600 italic")}>
+                      {jd.title.trim() || "Position Title (Required) *"}
+                    </h1>
+                    <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Fill in the details below. Changes are auto-saved as a draft.
+                  Position title is required. Click the title or pencil icon to edit directly.
                 </p>
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -556,7 +709,7 @@ export default function CreateJobPostingPage() {
               {/* Auto-save status */}
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-[90px]">
                 {savingError && (
-                  <span className="text-destructive text-[10px] max-w-[160px] truncate" title={savingError}>
+                  <span className="text-destructive text-[10px] max-w-[200px] truncate" title={savingError}>
                     {savingError}
                   </span>
                 )}
@@ -581,382 +734,478 @@ export default function CreateJobPostingPage() {
               </div>
             </div>
 
-            {/* Main Content (Form + Preview) */}
-            <div className="flex gap-7 items-stretch">
+            {isLoadingJob ? (
+              <div className="flex flex-col items-center justify-center py-28 gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-[#4f46e5]" />
+                <p className="text-sm font-medium text-muted-foreground">Loading position details...</p>
+              </div>
+            ) : (
+              <>
+            {/* STEP 1: Main Content (Form + Preview Sidebar) */}
+            {currentStep === 1 && (
+              <div className="flex gap-7 items-stretch">
 
-              {/* Form column */}
-              <div className="flex-1 min-w-0 flex flex-col gap-7 max-w-[760px]">
+                {/* Form column */}
+                <div className="flex-1 min-w-0 flex flex-col gap-7 max-w-[760px]">
 
-                {/* CARD: Position Details */}
-                <div className="bg-white rounded-xl border border-border shadow-sm p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
-                    <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Position Details</h2>
-                  </div>
-
-                  <div className="mb-5">
-                    <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-1">
-                      Job Title <span className="text-destructive text-xs">*</span>
-                    </label>
-                    <input
-                      value={jd.title}
-                      onChange={(e) => set("title", e.target.value)}
-                      placeholder='e.g. "Senior ML Engineer" or "Mobile Security Engineer Intern"'
-                      className={cn(inputCls, "h-12 text-base font-medium placeholder:font-normal placeholder:text-sm")}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                        <Building2 className="w-3.5 h-3.5 text-muted-foreground" /> Department
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={jd.department}
-                          onChange={(e) => set("department", e.target.value)}
-                          className={selectCls}
-                        >
-                          <option value="">Select department…</option>
-                          <option value="engineering">Technology – Engineering</option>
-                          <option value="search">Search & Ranking</option>
-                          <option value="security">Security & Trust</option>
-                          <option value="data">Data Science & ML</option>
-                          <option value="product">Product Management</option>
-                          <option value="design">Design & UX</option>
-                          <option value="operations">Operations</option>
-                          <option value="finance">Finance & Legal</option>
-                        </select>
-                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                      </div>
+                  {/* CARD: Position Details */}
+                  <div className="bg-white rounded-xl border border-border shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-5">
+                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Position Details</h2>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-muted-foreground" /> Location
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={jd.location}
-                          onChange={(e) => set("location", e.target.value)}
-                          className={selectCls}
-                        >
-                          <option value="">Select location…</option>
-                          <option value="hcmc-onsite">Ho Chi Minh / On-site</option>
-                          <option value="hanoi-onsite">Hanoi / On-site</option>
-                          <option value="eu-remote">EU / Remote</option>
-                          <option value="us-remote">US / Remote</option>
-                          <option value="apac-remote">APAC / Remote</option>
-                          <option value="global-remote">Global / Fully Remote</option>
-                          <option value="vancouver-hybrid">Vancouver / Hybrid</option>
-                          <option value="london-hybrid">London / Hybrid</option>
-                        </select>
-                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                        <Layers className="w-3.5 h-3.5 text-muted-foreground" /> Seniority Level
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={jd.seniority}
-                          onChange={(e) => set("seniority", e.target.value)}
-                          className={selectCls}
-                        >
-                          <option value="">Select level…</option>
-                          <option value="intern">Intern</option>
-                          <option value="junior">Junior (0–2 yrs)</option>
-                          <option value="mid">Mid-level (2–5 yrs)</option>
-                          <option value="senior">Senior (5–8 yrs)</option>
-                          <option value="staff">Staff / Principal</option>
-                          <option value="lead">Tech Lead</option>
-                          <option value="manager">Engineering Manager</option>
-                          <option value="director">Director+</option>
-                        </select>
-                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                        <Target className="w-3.5 h-3.5 text-muted-foreground" /> Target Applicants / Openings
+                    <div className="mb-5">
+                      <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-1">
+                        Job Title <span className="text-destructive text-xs">* (Required)</span>
                       </label>
                       <input
-                        type="number"
-                        min={1}
-                        value={jd.targetApplicants}
-                        onChange={(e) => set("targetApplicants", e.target.value)}
-                        placeholder="e.g. 200"
-                        className={inputCls}
+                        value={jd.title}
+                        onChange={(e) => set("title", e.target.value)}
+                        placeholder='e.g. "Senior ML Engineer" or "Mobile Security Engineer Intern"'
+                        className={cn(inputCls, "h-12 text-base font-medium placeholder:font-normal placeholder:text-sm", !jd.title.trim() && "border-amber-400 focus:border-amber-500")}
                       />
+                      {!jd.title.trim() && (
+                        <p className="text-xs text-amber-600 mt-1">Position title is required and cannot be empty.</p>
+                      )}
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                        <Briefcase className="w-3.5 h-3.5 text-muted-foreground" /> Employment Type
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={jd.employmentType}
-                          onChange={(e) => set("employmentType", e.target.value)}
-                          className={selectCls}
-                        >
-                          <option value="">Select type…</option>
-                          <option value="fulltime">Full-time</option>
-                          <option value="parttime">Part-time</option>
-                          <option value="intern">Internship</option>
-                          <option value="contract">Contract</option>
-                          <option value="freelance">Freelance</option>
-                        </select>
-                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                        <Globe className="w-3.5 h-3.5 text-muted-foreground" /> Work Mode
-                      </label>
-                      <div className="relative">
-                        <select
-                          value={jd.workMode}
-                          onChange={(e) => set("workMode", e.target.value)}
-                          className={selectCls}
-                        >
-                          <option value="">Select mode…</option>
-                          <option value="On-site">On-site</option>
-                          <option value="Hybrid">Hybrid</option>
-                          <option value="Remote">Remote</option>
-                          <option value="Flexible">Flexible</option>
-                        </select>
-                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
-                {/* CARD: Skills */}
-                <div className="bg-white rounded-xl border border-border shadow-sm p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
-                    <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Skills & Expertise</h2>
-                  </div>
-
-                  <div className="flex flex-col gap-7">
-                    <div className="rounded-lg border border-[#4f46e5]/15 bg-[#faf9ff] p-4">
-                      <div className="flex items-center gap-1.5 mb-3">
-                        <div className="w-4 h-4 rounded bg-[#4f46e5] flex items-center justify-center shrink-0">
-                          <Check className="w-2.5 h-2.5 text-white" />
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
+                          <Building2 className="w-3.5 h-3.5 text-muted-foreground" /> Department
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={jd.department}
+                            onChange={(e) => set("department", e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="">Select department…</option>
+                            <option value="engineering">Technology – Engineering</option>
+                            <option value="search">Search & Ranking</option>
+                            <option value="security">Security & Trust</option>
+                            <option value="data">Data Science & ML</option>
+                            <option value="product">Product Management</option>
+                            <option value="design">Design & UX</option>
+                            <option value="operations">Operations</option>
+                            <option value="finance">Finance & Legal</option>
+                          </select>
+                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                         </div>
-                        <span className="text-xs font-semibold text-[#4f46e5] uppercase tracking-[0.08em]">Must-Have Skills</span>
-                        <span className="ml-1.5 text-[10px] text-[#4f46e5]/60 bg-[#4f46e5]/10 px-1.5 py-0.5 rounded">Required</span>
                       </div>
-                      <TagInput
-                        label=""
-                        tags={jd.mustHaveSkills}
-                        onAdd={addMust}
-                        onRemove={removeMust}
-                        variant="primary"
-                        placeholder="Add a required skill (e.g. Python, Docker…)"
-                      />
-                    </div>
-
-                    <div className="rounded-lg border border-border bg-[#fafafa] p-4">
-                      <div className="flex items-center gap-1.5 mb-3">
-                        <div className="w-4 h-4 rounded border border-border bg-white flex items-center justify-center shrink-0">
-                          <Plus className="w-2.5 h-2.5 text-muted-foreground" />
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-muted-foreground" /> Location
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={jd.location}
+                            onChange={(e) => set("location", e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="">Select location…</option>
+                            <option value="hcmc-onsite">Ho Chi Minh / On-site</option>
+                            <option value="hanoi-onsite">Hanoi / On-site</option>
+                            <option value="eu-remote">EU / Remote</option>
+                            <option value="us-remote">US / Remote</option>
+                            <option value="apac-remote">APAC / Remote</option>
+                            <option value="global-remote">Global / Fully Remote</option>
+                            <option value="vancouver-hybrid">Vancouver / Hybrid</option>
+                            <option value="london-hybrid">London / Hybrid</option>
+                          </select>
+                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                         </div>
-                        <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">Nice-to-Have Skills</span>
-                        <span className="ml-1.5 text-[10px] text-muted-foreground bg-[rgba(15,17,23,0.06)] px-1.5 py-0.5 rounded border border-border">Optional</span>
                       </div>
-                      <TagInput
-                        label=""
-                        tags={jd.niceToHaveSkills}
-                        onAdd={addNice}
-                        onRemove={removeNice}
-                        variant="outline"
-                        placeholder="Add a preferred skill (e.g. LLM evaluation, Ray…)"
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
+                          <Layers className="w-3.5 h-3.5 text-muted-foreground" /> Seniority Level
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={jd.seniority}
+                            onChange={(e) => set("seniority", e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="">Select level…</option>
+                            <option value="intern">Intern</option>
+                            <option value="junior">Junior (0–2 yrs)</option>
+                            <option value="mid">Mid-level (2–5 yrs)</option>
+                            <option value="senior">Senior (5–8 yrs)</option>
+                            <option value="staff">Staff / Principal</option>
+                            <option value="lead">Tech Lead</option>
+                            <option value="manager">Engineering Manager</option>
+                            <option value="director">Director+</option>
+                          </select>
+                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
+                          <Target className="w-3.5 h-3.5 text-muted-foreground" /> Target Applicants / Openings
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={jd.targetApplicants}
+                          onChange={(e) => set("targetApplicants", e.target.value)}
+                          placeholder="e.g. 200"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
+                          <Briefcase className="w-3.5 h-3.5 text-muted-foreground" /> Employment Type
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={jd.employmentType}
+                            onChange={(e) => set("employmentType", e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="">Select type…</option>
+                            <option value="fulltime">Full-time</option>
+                            <option value="parttime">Part-time</option>
+                            <option value="intern">Internship</option>
+                            <option value="contract">Contract</option>
+                            <option value="freelance">Freelance</option>
+                          </select>
+                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
+                          <Globe className="w-3.5 h-3.5 text-muted-foreground" /> Work Mode
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={jd.workMode}
+                            onChange={(e) => set("workMode", e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="">Select mode…</option>
+                            <option value="On-site">On-site</option>
+                            <option value="Hybrid">Hybrid</option>
+                            <option value="Remote">Remote</option>
+                            <option value="Flexible">Flexible</option>
+                          </select>
+                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARD: Skills */}
+                  <div className="bg-white rounded-xl border border-border shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-5">
+                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Skills & Expertise</h2>
+                    </div>
+
+                    <div className="flex flex-col gap-7">
+                      <div className="rounded-lg border border-[#4f46e5]/15 bg-[#faf9ff] p-4">
+                        <div className="flex items-center gap-1.5 mb-3">
+                          <div className="w-4 h-4 rounded bg-[#4f46e5] flex items-center justify-center shrink-0">
+                            <Check className="w-2.5 h-2.5 text-white" />
+                          </div>
+                          <span className="text-xs font-semibold text-[#4f46e5] uppercase tracking-[0.08em]">Must-Have Skills</span>
+                          <span className="ml-1.5 text-[10px] text-[#4f46e5]/60 bg-[#4f46e5]/10 px-1.5 py-0.5 rounded">Required</span>
+                        </div>
+                        <TagInput
+                          label=""
+                          tags={jd.mustHaveSkills}
+                          onAdd={addMust}
+                          onRemove={removeMust}
+                          variant="primary"
+                          placeholder="Add a required skill (e.g. Python, Docker…)"
+                        />
+                      </div>
+
+                      <div className="rounded-lg border border-border bg-[#fafafa] p-4">
+                        <div className="flex items-center gap-1.5 mb-3">
+                          <div className="w-4 h-4 rounded border border-border bg-white flex items-center justify-center shrink-0">
+                            <Plus className="w-2.5 h-2.5 text-muted-foreground" />
+                          </div>
+                          <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">Nice-to-Have Skills</span>
+                          <span className="ml-1.5 text-[10px] text-muted-foreground bg-[rgba(15,17,23,0.06)] px-1.5 py-0.5 rounded border border-border">Optional</span>
+                        </div>
+                        <TagInput
+                          label=""
+                          tags={jd.niceToHaveSkills}
+                          onAdd={addNice}
+                          onRemove={removeNice}
+                          variant="outline"
+                          placeholder="Add a preferred skill (e.g. LLM evaluation, Ray…)"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARD: Job Content */}
+                  <div className="bg-white rounded-xl border border-border shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-5">
+                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Job Content</h2>
+                    </div>
+
+                    <div className="flex flex-col gap-6">
+                      <RichTextarea
+                        id="overview"
+                        label="Role Overview"
+                        value={jd.overview}
+                        onChange={(v) => set("overview", v)}
+                        placeholder="Brief summary of the role, the team, and what the candidate will accomplish…"
+                        rows={4}
+                        required
+                      />
+                      <RichTextarea
+                        id="responsibilities"
+                        label="Key Responsibilities"
+                        value={jd.responsibilities}
+                        onChange={(v) => set("responsibilities", v)}
+                        placeholder="- Own the design and implementation of…&#10;- Collaborate with cross-functional teams to…&#10;- Drive technical decisions across…"
+                        rows={6}
+                        required
+                      />
+                      <RichTextarea
+                        id="requirements"
+                        label="Requirements"
+                        value={jd.requirements}
+                        onChange={(v) => set("requirements", v)}
+                        placeholder="- 3+ years of experience with…&#10;- Strong proficiency in Python and…&#10;- Experience building production ML systems…"
+                        rows={6}
+                        required
+                      />
+                      <RichTextarea
+                        id="niceToHaveQuals"
+                        label="Nice-to-Have Qualifications"
+                        value={jd.niceToHaveQuals}
+                        onChange={(v) => set("niceToHaveQuals", v)}
+                        placeholder="- Familiarity with LLM evaluation frameworks…&#10;- Prior internship at a tech company…"
+                        rows={4}
                       />
                     </div>
                   </div>
-                </div>
 
-                {/* CARD: Job Content */}
-                <div className="bg-white rounded-xl border border-border shadow-sm p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
-                    <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Job Content</h2>
-                  </div>
-
-                  <div className="flex flex-col gap-6">
-                    <RichTextarea
-                      id="overview"
-                      label="Role Overview"
-                      value={jd.overview}
-                      onChange={(v) => set("overview", v)}
-                      placeholder="Brief summary of the role, the team, and what the candidate will accomplish…"
-                      rows={4}
-                      required
-                    />
-                    <RichTextarea
-                      id="responsibilities"
-                      label="Key Responsibilities"
-                      value={jd.responsibilities}
-                      onChange={(v) => set("responsibilities", v)}
-                      placeholder="- Own the design and implementation of…&#10;- Collaborate with cross-functional teams to…&#10;- Drive technical decisions across…"
-                      rows={6}
-                      required
-                    />
-                    <RichTextarea
-                      id="requirements"
-                      label="Requirements"
-                      value={jd.requirements}
-                      onChange={(v) => set("requirements", v)}
-                      placeholder="- 3+ years of experience with…&#10;- Strong proficiency in Python and…&#10;- Experience building production ML systems…"
-                      rows={6}
-                      required
-                    />
-                    <RichTextarea
-                      id="niceToHaveQuals"
-                      label="Nice-to-Have Qualifications"
-                      value={jd.niceToHaveQuals}
-                      onChange={(v) => set("niceToHaveQuals", v)}
-                      placeholder="- Familiarity with LLM evaluation frameworks…&#10;- Prior internship at a tech company…"
-                      rows={4}
-                    />
-                  </div>
-                </div>
-
-                {/* CARD: Compensation */}
-                <div className="bg-white rounded-xl border border-border shadow-sm p-6">
-                  <div className="flex items-center gap-2 mb-5">
-                    <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
-                    <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">
-                      Compensation <span className="font-normal text-muted-foreground normal-case tracking-normal">(Optional)</span>
-                    </h2>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 block">Salary Min (USD/yr)</label>
-                      <input
-                        type="number"
-                        value={jd.salaryMin}
-                        onChange={(e) => set("salaryMin", e.target.value)}
-                        placeholder="e.g. 80000"
-                        className={inputCls}
-                      />
+                  {/* CARD: Compensation */}
+                  <div className="bg-[#ffffff] rounded-xl border border-border shadow-sm p-6">
+                    <div className="flex items-center gap-2 mb-5">
+                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">
+                        Compensation <span className="font-normal text-muted-foreground normal-case tracking-normal">(Optional)</span>
+                      </h2>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-foreground mb-1.5 block">Salary Max (USD/yr)</label>
-                      <input
-                        type="number"
-                        value={jd.salaryMax}
-                        onChange={(e) => set("salaryMax", e.target.value)}
-                        placeholder="e.g. 120000"
-                        className={inputCls}
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 block">Salary Min (USD/yr)</label>
+                        <input
+                          type="number"
+                          value={jd.salaryMin}
+                          onChange={(e) => set("salaryMin", e.target.value)}
+                          placeholder="e.g. 80000"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-foreground mb-1.5 block">Salary Max (USD/yr)</label>
+                        <input
+                          type="number"
+                          value={jd.salaryMax}
+                          onChange={(e) => set("salaryMax", e.target.value)}
+                          placeholder="e.g. 120000"
+                          className={inputCls}
+                        />
+                      </div>
                     </div>
+                    <p className="text-xs text-muted-foreground mt-3">Leave blank to hide compensation from the candidate-facing portal.</p>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-3">Leave blank to hide compensation from the candidate-facing portal.</p>
-                </div>
 
-                {/* Bottom actions */}
-                <div className="flex items-center justify-between py-2 pb-8">
-                  <button
-                    type="button"
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                    onClick={() => { setSaveStatus("saving"); setTimeout(() => setSaveStatus("saved"), 900); }}
-                  >
-                    Discard changes
-                  </button>
-                  <div className="flex items-center gap-3">
+                  {/* Bottom actions */}
+                  <div className="flex items-center justify-between py-2 pb-8">
                     <button
                       type="button"
-                      onClick={() => saveToSupabase('DRAFT')}
-                      className="gap-1.5 border-[rgba(15,17,23,0.15)] h-9 px-4 rounded-md text-sm transition-all flex items-center"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => { setSaveStatus("saving"); setTimeout(() => setSaveStatus("saved"), 900); }}
                     >
-                      <Save className="w-4 h-4" />
-                      Save Draft
+                      Discard changes
+                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => saveToSupabase('DRAFT')}
+                        className="gap-1.5 border-[rgba(15,17,23,0.15)] h-9 px-4 rounded-md text-sm transition-all flex items-center"
+                      >
+                        <Save className="w-4 h-4" />
+                        Save Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentStep(2)}
+                        className="gap-2 bg-[#4f46e5] hover:bg-[#4338ca] text-white shadow-sm shadow-[#4f46e5]/20 h-9 px-5 rounded-md text-sm transition-all flex items-center"
+                      >
+                        <span>Preview Card (Step 2)</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preview Panel Sidebar */}
+                <div className="w-[300px] shrink-0 flex flex-col gap-4">
+                  <div className="flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">Live Preview</span>
+                    <div className="ml-auto flex items-center gap-1 text-[10px] text-emerald-600">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Updating
+                    </div>
+                  </div>
+
+                  <PreviewCard jd={jd} />
+
+                  <div className="rounded-lg border border-border bg-white p-3.5 flex flex-col gap-2">
+                    <p className="text-xs font-medium text-foreground">What candidates see</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      This card appears on the candidate portal. Clicking &quot;Apply Now&quot; opens the full application form with GitHub and LinkedIn enrichment.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: Full Preview Card View */}
+            {currentStep === 2 && (
+              <div className="flex flex-col gap-6 max-w-[800px] mx-auto py-4">
+                <div className="bg-white rounded-xl border border-border shadow-sm p-6 flex flex-col gap-6">
+                  <div className="flex items-center justify-between pb-4 border-b border-border">
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground">{jd.title || "No position title entered"}</h2>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {jd.department || "Department"} · {jd.location || "Location"} · {jd.workMode || "Work Mode"}
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Step 2: Preview Card
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Role Overview</h3>
+                    <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
+                      {jd.overview || "No role overview provided yet..."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Key Responsibilities</h3>
+                    <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
+                      {jd.responsibilities || "No responsibilities provided yet..."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Requirements</h3>
+                    <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
+                      {jd.requirements || "No requirements provided yet..."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Must-Have Skills</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {jd.mustHaveSkills.length > 0 ? (
+                        jd.mustHaveSkills.map(s => (
+                          <span key={s} className="px-2.5 py-1 rounded-md bg-[#4f46e5]/10 text-[#4f46e5] text-xs font-medium border border-[#4f46e5]/20">
+                            {s}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">No required skills added</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(1)}
+                      className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-[#f4f5f7] transition-colors"
+                    >
+                      ← Back to Edit (Step 1)
                     </button>
                     <button
                       type="button"
-                      onClick={handlePublish}
-                      className="gap-2 bg-[#4f46e5] hover:bg-[#4338ca] text-white shadow-sm shadow-[#4f46e5]/20 h-9 px-5 rounded-md text-sm transition-all flex items-center"
+                      onClick={() => setCurrentStep(3)}
+                      className="px-5 py-2 rounded-lg bg-[#4f46e5] text-white text-sm font-semibold hover:bg-[#4338ca] transition-colors flex items-center gap-2"
                     >
-                      <Globe className="w-4 h-4" />
-                      Publish & View Portal
-                      <ExternalLink className="w-4 h-4" />
+                      <span>Proceed to Candidate View Portal (Step 3)</span>
+                      <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
               </div>
+            )}
 
-              {/* Preview Panel */}
-              <div className="w-[300px] shrink-0 flex flex-col gap-4">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">Live Preview</span>
-                  <div className="ml-auto flex items-center gap-1 text-[10px] text-emerald-600">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Updating
-                  </div>
-                </div>
-
-                <PreviewCard jd={jd} />
-
-                <div className="rounded-lg border border-border bg-white p-3.5 flex flex-col gap-2">
-                  <p className="text-xs font-medium text-foreground">What candidates see</p>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    This card appears on the candidate portal. Clicking &quot;Apply Now&quot; opens the full application form with GitHub and LinkedIn enrichment.
-                  </p>
-
-                </div>
-
-                <div className="rounded-lg border border-border bg-white p-3.5">
-                  <p className="text-xs font-medium text-foreground mb-3">Completion Checklist</p>
-                  <div className="flex flex-col gap-2">
-                    {[
-                      { label: "Job title", done: !!jd.title },
-                      { label: "Department & location", done: !!(jd.department && jd.location) },
-                      { label: "Seniority level", done: !!jd.seniority },
-                      { label: "Must-have skills", done: jd.mustHaveSkills.length > 0 },
-                      { label: "Role overview", done: jd.overview.length > 30 },
-                      { label: "Key responsibilities", done: jd.responsibilities.length > 30 },
-                      { label: "Requirements", done: jd.requirements.length > 30 },
-                    ].map(({ label, done }) => (
-                      <div key={label} className="flex items-center gap-2">
-                        <div className={cn(
-                          "w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-all",
-                          done ? "bg-emerald-500" : "border-2 border-[rgba(15,17,23,0.15)]",
-                        )}>
-                          {done && <Check className="w-2.5 h-2.5 text-white" />}
-                        </div>
-                        <span className={cn("text-xs", done ? "text-foreground" : "text-muted-foreground")}>{label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-border">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[11px] text-muted-foreground">Completion</span>
-                      <span className="text-[11px] font-medium text-foreground">
-                        {Math.round(
-                          ([!!jd.title, !!(jd.department && jd.location), !!jd.seniority, jd.mustHaveSkills.length > 0, jd.overview.length > 30, jd.responsibilities.length > 30, jd.requirements.length > 30].filter(Boolean).length / 7) * 100
-                        )}%
-                      </span>
+            {/* STEP 3: Candidate View Portal */}
+            {currentStep === 3 && (
+              <div className="flex flex-col gap-6 max-w-[800px] mx-auto py-4">
+                <div className="bg-white rounded-xl border border-border shadow-sm p-6 flex flex-col gap-6">
+                  <div className="flex items-center justify-between pb-4 border-b border-border">
+                    <div>
+                      <h2 className="text-xl font-bold text-foreground">Step 3: Candidate View Portal</h2>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Public candidate application portal for job position
+                      </p>
                     </div>
-                    <div className="h-1.5 rounded-full bg-[rgba(15,17,23,0.08)] overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-[#4f46e5] transition-all duration-500"
-                        style={{
-                          width: `${Math.round(
-                            ([!!jd.title, !!(jd.department && jd.location), !!jd.seniority, jd.mustHaveSkills.length > 0, jd.overview.length > 30, jd.responsibilities.length > 30, jd.requirements.length > 30].filter(Boolean).length / 7) * 100
-                          )}%`,
-                        }}
-                      />
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>Portal Mode</span>
+                    </span>
+                  </div>
+
+                  {postingId ? (
+                    <ShareLinkBox url={buildJobUrl(postingId, jd.title || "Job")} />
+                  ) : (
+                    <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                      Click <strong>&quot;Save Draft&quot;</strong> or <strong>&quot;Publish&quot;</strong> to generate a public application link for candidates.
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-4 border-t border-border">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(2)}
+                      className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-[#f4f5f7] transition-colors"
+                    >
+                      ← Back to Preview Card (Step 2)
+                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => saveToSupabase('DRAFT')}
+                        className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-[#f4f5f7] transition-colors flex items-center gap-2"
+                      >
+                        <Save className="w-4 h-4" />
+                        Save Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePublish}
+                        className="px-5 py-2 rounded-lg bg-[#4f46e5] text-white text-sm font-semibold hover:bg-[#4338ca] transition-colors flex items-center gap-2"
+                      >
+                        <Globe className="w-4 h-4" />
+                        Publish & Open Applications
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
+              </>
+            )}
 
           </div>
         </div>
@@ -966,7 +1215,22 @@ export default function CreateJobPostingPage() {
         open={showPublishModal}
         onClose={() => setShowPublishModal(false)}
         jobTitle={jd.title}
+        shareUrl={postingId ? buildJobUrl(postingId, jd.title) : null}
       />
     </div>
+  );
+}
+
+export default function CreateJobPostingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center bg-[#f8f9fb]">
+          <Loader2 className="w-8 h-8 animate-spin text-[#4f46e5]" />
+        </div>
+      }
+    >
+      <CreateJobPostingForm />
+    </Suspense>
   );
 }

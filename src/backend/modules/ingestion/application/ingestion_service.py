@@ -102,6 +102,16 @@ def parse_github_and_linkedin_from_links(links: list[str]) -> tuple[str | None, 
     return github_username, linkedin_url
 
 
+def _clean(value) -> str | None:
+    """Gemini can answer with null, "null" or an empty string — all mean 'absent'."""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped or stripped.lower() in {"null", "none", "n/a"}:
+        return None
+    return stripped
+
+
 async def parse_cv_with_gemini(resume_text: str, settings: Settings) -> dict | None:
     if not settings.gemini_api_key:
         logger.warning("ingestion.gemini.api_key_missing")
@@ -180,25 +190,38 @@ async def process_cv_resume(
     if not linkedin_url:
         linkedin_url = parsed_linkedin_url
     
-    # full_name, email, phone come from form fields (not parsed)
+    # The public application form deliberately does not ask for name/email/phone —
+    # they are read off the CV instead. Anything a caller did supply still wins;
+    # the LLM only fills the gaps. A failure here (quota, bad JSON) returns None
+    # and the application still goes through.
+    if resume_text and not (full_name and email and phone):
+        parsed = await parse_cv_with_gemini(resume_text, settings)
+        if parsed:
+            full_name = full_name or _clean(parsed.get("full_name"))
+            email = email or _clean(parsed.get("email"))
+            phone = phone or _clean(parsed.get("phone"))
+            github_username = github_username or _clean(parsed.get("github_username"))
+            linkedin_url = linkedin_url or _clean(parsed.get("linkedin_url"))
 
-    # Gemini API disabled to avoid quota issues
-    # if resume_text and settings.gemini_api_key:
-    #     parsed = await parse_cv_with_gemini(resume_text, settings)
-    #     if parsed:
-    #         full_name = parsed.get("full_name")
-    #         if not github_username:
-    #             github_username = parsed.get("github_username")
-    #         if not linkedin_url:
-    #             linkedin_url = parsed.get("linkedin_url")
+    if not (full_name and email):
+        logger.warning(
+            "ingestion.contact_details_incomplete",
+            uuid=candidate_uuid,
+            has_full_name=bool(full_name),
+            has_email=bool(email),
+            has_phone=bool(phone),
+        )
 
     candidate = CandidateRecord(
         uuid=candidate_uuid,
         full_name=full_name,
+        email=email,
+        phone=phone,
         github_username=github_username,
         linkedin_url=linkedin_url,
         resume_text=resume_text,
         cv_file_path=cv_file_path,  # Azure Blob Storage URL
+        job_id=job_id,
         status="PARSED" if github_username or linkedin_url else "CREATED",
     )
 
