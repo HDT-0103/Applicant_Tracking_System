@@ -11,6 +11,9 @@ const ROLE_LABELS: Record<UserRole, string> = {
   recruiter: "Recruiter",
   interviewer: "Interviewer",
   admin: "Admin",
+  hr: "HR Manager",
+  hr_manager: "HR Manager",
+  tech_lead: "Tech Lead",
 };
 
 interface AppHeaderProps {

@@ -20,7 +20,7 @@ import {
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type UserRole = "recruiter" | "interviewer" | "admin";
+export type UserRole = "recruiter" | "interviewer" | "admin" | "hr" | "hr_manager" | "tech_lead";
 
 export interface AuthUser {
   id: string;
@@ -134,7 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const canUpload = useMemo(
-    () => hasRole("recruiter", "admin"),
+    () => hasRole("recruiter", "admin", "hr", "hr_manager", "tech_lead"),
     [hasRole],
   );
 

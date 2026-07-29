@@ -32,16 +32,17 @@ class AuthService:
     def resolve_role_from_supabase(self, email: str) -> UserRole:
         """
         Resolve user role by querying Supabase public.users table
-        Only allows authentication if email exists and role is 'admin'
+        Allows authentication if user exists, is active, and has a permitted role
+        (e.g., admin, hr, hr_manager, tech_lead, recruiter, interviewer)
         
         Args:
             email: User email from Google OAuth
         
         Returns:
-            UserRole if user exists and has admin role
+            UserRole if user exists and has a permitted role
         
         Raises:
-            ValueError: If user not found or doesn't have admin role
+            ValueError: If user not found, inactive, or lacks permitted role
         """
         try:
             # Query Supabase for user by email
@@ -56,15 +57,16 @@ class AuthService:
                 )
             
             user_data = result.data[0]
+            user_role = user_data.get('role')
             
-            # Verify user has admin role
-            if user_data.get('role') != 'admin':
+            allowed_roles = {'hr', 'tech_lead'}
+            if user_role not in allowed_roles:
                 raise ValueError(
-                    f"Authentication failed: User '{email}' does not have admin privileges. "
-                    f"Current role: {user_data.get('role')}"
+                    f"Authentication failed: User '{email}' does not have sufficient privileges. "
+                    f"Current role: {user_role}"
                 )
             
-            return user_data.get('role')
+            return user_role
             
         except ValueError:
             raise  # Re-raise ValueError with our custom message
