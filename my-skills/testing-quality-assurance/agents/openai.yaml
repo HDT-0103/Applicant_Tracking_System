@@ -1,0 +1,29 @@
+name: testing-quality-assurance-agent
+version: 2.0.0
+description: Agent for writing Pytest unit tests, FastAPI integration tests, and mocking external services
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: generate_pytest_suite
+    description: Generate Pytest unit test suite for Python domain service
+    type: function
+    parameters:
+      type: object
+      properties:
+        target_service:
+          type: string
+        test_cases:
+          type: array
+          items:
+            type: string
+      required:
+        - target_service
+        - test_cases
+
+env_vars:
+  required:
+    - JWT_SECRET

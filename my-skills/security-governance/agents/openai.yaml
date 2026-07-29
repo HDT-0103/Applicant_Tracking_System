@@ -1,0 +1,28 @@
+name: security-governance-agent
+version: 2.0.0
+description: Agent for enforcing enterprise security standards, JWT validation, RBAC/ABAC policies, and PII masking
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: mask_candidate_pii
+    description: Apply ABAC rules to mask sensitive candidate personal data
+    type: function
+    parameters:
+      type: object
+      properties:
+        candidate_data:
+          type: object
+        user_role:
+          type: string
+          enum: [admin, recruiter, hr_manager, tech_lead, interviewer]
+      required:
+        - candidate_data
+        - user_role
+
+env_vars:
+  required:
+    - JWT_SECRET

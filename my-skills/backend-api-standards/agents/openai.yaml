@@ -1,0 +1,30 @@
+name: backend-api-standards-agent
+version: 2.0.0
+description: Agent for constructing enterprise FastAPI routes, Pydantic DTOs, dependency injection, and REST endpoints
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: generate_fastapi_route
+    description: Generate FastAPI router endpoint with Pydantic request/response validation
+    type: function
+    parameters:
+      type: object
+      properties:
+        path:
+          type: string
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE]
+        summary:
+          type: string
+      required:
+        - path
+        - method
+
+env_vars:
+  required:
+    - JWT_SECRET

@@ -1,159 +1,111 @@
 ---
 name: enrichment-multi-source
-description: Multi-source candidate enrichment pipeline — LinkedIn (Apify), GitHub API, Gemini AI parsing, and skill matrix computation
-version: 1.0.0
+description: Multi-source candidate data harvesting pipeline — GitHub REST API, LinkedIn Apify scraping, Gemini parsing, and real-time WebSocket orchestration
+version: 2.0.0
+author: SmartATS Sourcing & Data Engineering Team
 tech_stack:
   - FastAPI
   - Python 3.11+
-  - Google Gemini 2.0 Flash
-  - ApifyClient (LinkedIn scraping)
   - GitHub REST API
-  - WebSocket (real-time push)
+  - Apify Client (LinkedIn Scraper)
+  - WebSocket Push Protocol
+  - Supabase
 when_to_use:
-  - "enrich candidate profiles with GitHub data"
-  - "scrape LinkedIn profiles via Apify"
-  - "parse PDF resumes with Gemini AI"
-  - "compute technical skill radar chart scores"
-  - "implement WebSocket push for enrichment status"
-  - "generate mock analytics for candidates without social links"
+  - "fetch public GitHub repositories, language statistics, or README files"
+  - "scrape candidate LinkedIn profiles via Apify Actor"
+  - "orchestrate multi-channel enrichment workers"
+  - "handle real-time WebSocket event pushes for candidate analysis"
 ---
 
-# Enrichment Module: Multi-Source Candidate Enrichment
+# Enrichment Module: Multi-Source Candidate Data Harvesting
 
-## Overview
+## 1. Overview & Data Sourcing Architecture
 
-After a candidate's CV is ingested, the enrichment module asynchronously fetches data from multiple external sources to build a comprehensive candidate profile. Results are pushed to the frontend in real-time via WebSocket.
-
-## Data Sources
-
-| Source | Service | API | Data Extracted |
-|--------|---------|-----|----------------|
-| Gemini AI | `gemini_parser_service.py` | Google Gemini 2.0 Flash via HTTP | full_name, email, phone, skills[], experience[], education[], projects[], languages[] |
-| GitHub | `github_ingestion_service.py` | GitHub REST API | Public repos, languages with %, README content |
-| LinkedIn | `linkedin_ingestion_service.py` | Apify Actor `GOvL4O4RwFqsdIqXF` | Headline, experience, education, certifications, avatar |
-| Local Fallback | `enrichment_service.py` | Keyword matching + language bias | Skill radar scores, semantic tags |
-
-## Flow
+The Multi-Source Enrichment module aggregates candidate footprints from external public channels to verify experience claims made on resumes.
 
 ```
-POST /api/enrichment/{uuid}/sync
-       │
-       ▼
-EnrichmentService
-  ├── Status → QUEUED
-  ├── Status → IN_PROGRESS
-  │
-  ├── 1. Get social links from Supabase
-  ├── 2. If github_username → fetch_github_profile()
-  │     ├── GET /users/{username}/repos → repos, languages
-  │     └── GET /repos/{username}/{repo}/readme → README content
-  ├── 3. If linkedin_url → fetch_linkedin_profile()
-  │     └── Apify Actor call → experience, education, certifications
-  ├── 4. Gemini parser → structured profile from PDF
-  ├── 5. Compute skill matrix → 5 category scores + affinity
-  │
-  ├── Status → ENRICHED (or FAILED)
-  └── Push to WebSocket /api/enrichment/ws/v1/analysis/{uuid}
+                  ┌─────────────────────────────────────────┐
+                  │       POST /api/enrichment/{uuid}/sync  │
+                  └────────────────────┬────────────────────┘
+                                       │
+                                       ▼
+                             [Enrichment Orchestrator]
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         ▼                             ▼                             ▼
+[GitHub Ingestion]            [LinkedIn Scraper]            [Gemini Resume Parser]
+ - GET /users/{user}/repos     - Apify Actor `GOvL4O4...`    - PDF text extraction
+ - Language % calculation      - Headline & Experience       - Structured skills & edu
+ - README semantic scan        - Educations & Certificates
+         │                             │                             │
+         └─────────────────────────────┼─────────────────────────────┘
+                                       ▼
+                       [Technical Skill Matrix Engine]
+                                       │
+                                       ▼
+                   [WebSocket Real-Time Push / Broadcast]
 ```
 
-## API Endpoints
+---
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/enrichment/{uuid}/sync` | recruiter, admin | Trigger full enrichment pipeline |
-| GET | `/api/enrichment/{uuid}` | recruiter, admin | Get enrichment status |
-| WS | `/api/enrichment/ws/v1/analysis/{uuid}` | — | Real-time enrichment results |
+## 2. External Integration Protocols
 
-### WebSocket Protocol
+### 1. GitHub Integration (`github_ingestion_service.py`)
+- **Endpoint**: `https://api.github.com/users/{username}/repos`
+- **Extracted Fields**: Repository name, language, size, stargazers count, README content.
+- **Rate Limit Handling**: Requires `GITHUB_API_TOKEN` header. Fallback to public endpoints if unauthenticated.
 
-**Server → Client message (ENRICHED):**
+### 2. LinkedIn Integration (`linkedin_ingestion_service.py`)
+- **Scraper Engine**: Apify Actor `GOvL4O4RwFqsdIqXF` via `ApifyClient`.
+- **Extracted Fields**: Profile headline, work experiences (title, company, dates, description), educations, certifications.
+- **Normalization**: Automatically strips `https://`, trailing slashes, and parameter strings from profile URLs.
+
+---
+
+## 3. WebSocket Event Schema
+
+Client connects to `ws://{host}/api/enrichment/ws/v1/analysis/{candidate_uuid}`:
+
 ```json
 {
   "status": "ENRICHED",
   "data": {
-    "candidate_uuid": "...",
-    "full_name": "Maya Lindqvist",
-    "headline": "Senior ML Engineer",
-    "github_profile": { ... },
-    "linkedin_profile": { ... },
-    "technical_skill_matrix": {
-      "frontend_development": 28,
-      "backend_development": 72,
-      "devops_cloud": 65,
-      "infosec": 45,
-      "data_ai": 91
+    "candidate_uuid": "2f7c4b54-ed1e-4273-8b36-95e6999c8b50",
+    "full_name": "Alex Mercer",
+    "headline": "Senior Software Architect",
+    "github_profile": {
+      "public_repos_count": 14,
+      "top_languages": { "Python": 65.5, "TypeScript": 24.5, "Go": 10.0 }
     },
-    "affinity_score": 85,
-    "semantic_tags": ["#python", "#machine-learning", "#pytorch", ...],
-    "experiences": [ ... ],
-    "educations": [ ... ]
+    "linkedin_profile": {
+      "experiences": [
+        { "title": "Staff Engineer", "company": "Tech Corp", "is_current": true }
+      ]
+    },
+    "technical_skill_matrix": {
+      "pre_enrichment": [55, 52, 48, 45, 50],
+      "post_enrichment": [72, 70, 66, 58, 64]
+    }
   }
 }
 ```
 
-## Skill Matrix Computation
+---
 
-Scoring in `enrichment_service.py::analyze_github_local_fallback()`:
+## 4. AI Agent Instructions & Guidelines
 
-| Category | Keywords | Language Bias |
-|----------|----------|---------------|
-| Frontend | react, nextjs, typescript, javascript, tailwind, css, html | JavaScript, TypeScript, HTML, CSS |
-| Backend | python, golang, java, nodejs, express, fastapi, postgresql, mongodb, redis | Python, Go, Java, C#, Rust |
-| Cloud Dev | docker, kubernetes, k8s, aws, azure, cicd, terraform, nginx | Dockerfile, HCL, YAML |
-| InfoSec | security, oauth, jwt, encryption, ssl, tls, authentication, authorization, pentest | — |
-| ML / AI | pytorch, tensorflow, pandas, numpy, machine learning, ai, spark | Jupyter Notebook, Python, R |
+### When Should AI Load This Skill?
+Load this skill when configuring GitHub/LinkedIn scrapers, tuning Apify integrations, editing enrichment worker tasks, or handling WebSocket server handlers.
 
-**Formula**: `score = 25 + (keyword_hits × 12) + (language_bias_pct × 0.35)`
+### What Problems Does This Skill Solve?
+Harvests external evidence to corroborate resume claims, computes objective skill metrics, and pushes live updates to recruiters.
 
-**Affinity Score**: Average of top 3 skill scores, scaled to 28-100 range.
+### Dependent Modules & Required Skills:
+- `cv-analysis-semantic-ranking` (Master analysis framework)
+- `shared-infrastructure` (Provides Supabase & HTTP settings)
+- `ai-governance-eval` (Provides fallback strategies when APIs fail)
 
-## Key Files
-
-| File | Responsibility |
-|------|----------------|
-| `enrichment_service.py` | Orchestrator: calls all services, manages status, pushes WS |
-| `gemini_parser_service.py` | Parses PDF bytes via Gemini API into structured JSON |
-| `github_ingestion_service.py` | Fetches repos, languages, README from GitHub |
-| `linkedin_ingestion_service.py` | LinkedIn scraping via Apify Actor |
-| `linkedin_scraper_service.py` | Alternative LinkedIn scraper (Renidly API) |
-| `supabase_candidate_service.py` | Reads/writes candidate profiles to Supabase |
-| `domain/models.py` | All enrichment Pydantic models |
-
-## Environment Variables
-
-```bash
-# Required for Gemini parsing
-GOOGLE_API_KEY=...
-GEMINI_MODEL=gemini-2.0-flash
-
-# Required for GitHub
-GITHUB_API_TOKEN=...
-
-# Required for LinkedIn (Apify)
-APIFY_API_TOKEN=...
-
-# Required for persistence
-SUPABASE_URL=...
-SUPABASE_SERVICE_KEY=...
-```
-
-## Duplicate Sync Prevention
-
-The service checks `candidate_enrichments[candidate_uuid].enrichment_status`:
-- If `QUEUED` or `IN_PROGRESS` → return immediately without re-queuing
-- If `ENRICHED` or `FAILED` or absent → allow new sync
-
-## WebSocket Lifecycle
-
-```python
-# Server: register + push
-active_websockets[candidate_uuid] = [websocket]
-await websocket.send_json({"status": "ENRICHED", "data": profile.model_dump()})
-
-# Client: listen
-const ws = new WebSocket(`ws://host/api/enrichment/ws/v1/analysis/${uuid}`);
-ws.onmessage = (event) => {
-  const { status, data } = JSON.parse(event.data);
-  if (status === 'ENRICHED') displayProfile(data);
-};
-```
+### Common Anti-Patterns & Implementation Mistakes:
+- **Unbounded Scraping**: Calling Apify without checking if LinkedIn URL is valid.
+- **Exhausting GitHub Rate Limits**: Forgetting to pass `GITHUB_API_TOKEN`.
+- **Blocking Socket Loop**: Calling blocking synchronous network routines inside Starlette WebSocket event loops.

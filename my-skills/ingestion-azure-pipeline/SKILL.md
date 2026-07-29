@@ -1,162 +1,120 @@
 ---
 name: ingestion-azure-pipeline
-description: CV/resume PDF ingestion pipeline with Azure Blob Storage, Azure Service Bus, and Supabase persistence
-version: 1.0.0
+description: CV/resume PDF ingestion pipeline with multi-layer PDF validation, Azure Blob Storage, Azure Service Bus messaging, and Supabase persistence
+version: 2.0.0
+author: SmartATS Ingestion & Cloud Architecture Team
 tech_stack:
   - FastAPI
   - Python 3.11+
-  - Azure Blob Storage
-  - Azure Service Bus
+  - Azure Blob Storage SDK
+  - Azure Service Bus SDK
   - Supabase
-  - Multer (file validation middleware)
+  - PyPDF / PDFPlumber
 when_to_use:
-  - "upload and store PDF resumes"
-  - "configure Azure Blob Storage for file uploads"
-  - "set up Azure Service Bus for ingestion events"
-  - "validate PDF file format and size"
-  - "persist candidate metadata to Supabase"
+  - "implement PDF resume upload endpoints"
+  - "validate PDF binary integrity, size limits, and magic bytes"
+  - "upload files to Azure Blob Storage and generate SAS URLs"
+  - "publish ingestion events to Azure Service Bus queues"
+  - "store initial candidate metadata into Supabase candidates table"
 ---
 
 # Ingestion Module: Azure-Powered CV Pipeline
 
-## Overview
+## 1. Overview & Cloud Architecture
 
-Handles PDF resume upload, validation, cloud storage, and event-driven processing for SmartATS. When a candidate uploads their CV, the system validates it, stores it in Azure Blob Storage, queues a message to Azure Service Bus, and creates a candidate record in Supabase.
-
-## Architecture
+Handles PDF resume upload, binary validation, cloud storage, and event-driven processing for SmartATS. When a candidate or recruiter uploads a CV, the system validates its integrity, uploads the raw binary to Azure Blob Storage, queues a message to Azure Service Bus, and creates an initial record in Supabase.
 
 ```
-modules/ingestion/
+src/backend/modules/ingestion/
 ├── adapters/
-│   ├── routes.py              # POST /api/v1/ingest (public)
-│   └── azure_routes.py        # Alternative Azure-triggered endpoints
+│   ├── routes.py              # POST /api/v1/ingest (Public / Form upload)
+│   └── azure_routes.py        # Azure EventGrid / Trigger endpoints
 ├── application/
-│   ├── __init__.py
-│   ├── ingestion_service.py   # Core ingestion logic
-│   └── azure_ingestion_service.py  # Azure-aware ingestion
+│   ├── ingestion_service.py   # Core ingestion orchestrator
+│   └── azure_ingestion_service.py # Azure-aware pipeline runner
 ├── domain/
-│   ├── __init__.py
-│   ├── models.py              # Candidate, ResumeIngestion models
-│   └── candidate_repository.py  # Supabase CRUD for candidates
-├── infra/
-│   ├── __init__.py
-│   ├── azure_blob_service.py  # Upload/download from Azure Blob
-│   └── azure_service_bus_service.py  # Queue messages to Service Bus
-└── __init__.py
+│   ├── models.py              # ResumeIngestion & Candidate models
+│   └── candidate_repository.py# Supabase CRUD repository
+└── infra/
+    ├── azure_blob_service.py  # Upload/download from Azure Blob containers
+    └── azure_service_bus_service.py # Queue event publisher
 ```
 
-## Pipeline Flow
+---
+
+## 2. Multi-Layer PDF Validation Rules
+
+All uploaded files MUST pass three strict validation layers before processing:
 
 ```
-Frontend (Careers Portal)
+[Uploaded File]
        │
-       ├─ POST /api/v1/ingest (multipart: file + metadata)
+       ├── Layer 1: MIME Type Check (`application/pdf` or `application/x-pdf`)
        │
-       ▼
-validateResume.ts (Middleware)
-  ├── Check file size < 10MB
-  ├── Check MIME type = application/pdf
-  ├── Check magic bytes = %PDF
-  │
+       ├── Layer 2: File Size Boundary Check (Max 10MB / `MAX_UPLOAD_MB`)
+       │
+       └── Layer 3: Magic Bytes Check (`%PDF` header bytes: `0x25 0x50 0x44 0x46`)
+               │
+               ▼ (Passes All 3 Layers)
+       Proceed to Azure Storage & Service Bus Queue
+```
+
+---
+
+## 3. Ingestion Pipeline Execution Sequence
+
+```
+Frontend / Public Portal
+       │
+       ├─ POST /api/v1/ingest (multipart form: PDF binary + metadata)
+       │
        ▼
 IngestionService
-  ├── 1. Save candidate metadata to Supabase (candidates table)
-  ├── 2. Upload PDF to Azure Blob Storage container
-  ├── 3. Send message to Azure Service Bus queue
-  │
-       ▼
-Response: { candidate_uuid: "uuid", status: "created" }
+  ├── 1. Validate PDF magic bytes (%PDF) & size limit (< 10MB)
+  ├── 2. Generate unique UUID for candidate
+  ├── 3. Save Candidate record in Supabase `candidates` table (status = 'CREATED')
+  ├── 4. Upload PDF binary to Azure Blob Storage container (`resumes/{uuid}.pdf`)
+  ├── 5. Generate secure Shared Access Signature (SAS) URL
+  └── 6. Publish event message to Azure Service Bus queue (`smartats-events`)
        │
        ▼
-Frontend redirects to /candidate-profile/enriched?uuid=...
+Response: { "uuid": "candidate_uuid", "status": "created" }
 ```
 
-## API Endpoints
+---
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/ingest` | None | Upload CV (multipart form) |
-
-### POST /api/v1/ingest
-
-**Request (multipart/form-data):**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `file` | File | Yes | PDF resume (max 10MB) |
-| `full_name` | String | Yes | Candidate full name |
-| `email` | String | Yes | Candidate email |
-| `phone` | String | No | Phone number |
-| `linkedin_url` | String | No | LinkedIn profile URL |
-| `github_url` | String | No | GitHub username/URL |
-| `job_id` | String | No | Associated job posting ID |
-
-**Response (201):**
-```json
-{
-  "candidate_uuid": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "created",
-  "message": "Resume uploaded and queued for processing"
-}
-```
-
-## Key Files
-
-| File | Responsibility |
-|------|----------------|
-| `middleware/validateResume.ts` | Express-style multer middleware: file size, MIME type, magic byte validation |
-| `modules/ingestion/application/ingestion_service.py` | Orchestrates: Supabase insert → Blob upload → Service Bus send |
-| `modules/ingestion/infra/azure_blob_service.py` | `upload_blob()`, `download_blob()`, `generate_sas_url()` for Azure Blob containers |
-| `modules/ingestion/infra/azure_service_bus_service.py` | `send_message()` to queue; `receive_messages()` for worker |
-| `modules/ingestion/domain/models.py` | Pydantic models for candidate ingestion |
-| `modules/ingestion/domain/candidate_repository.py` | Supabase queries for candidate CRUD |
-
-## Environment Variables
+## 4. Environment Variables & Credentials
 
 ```bash
-AZURE_STORAGE_CONNECTION_STRING=   # Azure Storage account connection string
-AZURE_SERVICE_BUS_CONNECTION_STRING=  # Service Bus connection string
+AZURE_STORAGE_CONNECTION_STRING=   # Connection string for Azure Storage Account
+AZURE_SERVICE_BUS_CONNECTION_STRING=  # Connection string for Azure Service Bus namespace
 AZURE_SERVICE_BUS_QUEUE_NAME=smartats-events
+UPLOAD_DIR=uploads
+MAX_UPLOAD_MB=10
 SUPABASE_URL=...
 SUPABASE_SERVICE_KEY=...
-UPLOAD_DIR=uploads
-MAX_UPLOAD_MB=25
-ALLOWED_RESUME_EXTENSIONS=pdf,docx
 ```
 
-## Middleware: File Validation
+---
 
-`src/backend/middleware/validateResume.ts` performs three-layer validation:
+## 5. AI Agent Instructions & Guidelines
 
-1. **Multer filter**: Rejects non-PDF MIME types and files > 10MB
-2. **File existence**: Checks that `req.file` is present
-3. **Magic bytes**: Reads first 4 bytes of buffer and verifies `%PDF` header (catches spoofed extensions)
+### When Should AI Load This Skill?
+Load this skill when modifying PDF upload endpoints, altering file validation rules, configuring Azure Blob Storage containers, or publishing Service Bus queue events.
 
-## Frontend Integration
+### What Problems Does This Skill Solve?
+Ensures safe, malware-free PDF file ingestion, guarantees cloud backup of resume assets, and decouples file upload from heavy AI parsing via event queues.
 
-```typescript
-// From careers/page.tsx
-const formData = new FormData();
-formData.append('file', cvFile);
-formData.append('full_name', formData.fullName);
-formData.append('email', formData.email);
-formData.append('phone', formData.phone);
-formData.append('linkedin_url', formData.linkedinUrl);
-formData.append('github_url', formData.githubUrl);
-formData.append('job_id', selectedJob?.id || '');
+### Dependent Modules & Required Skills:
+- `cv-analysis-semantic-ranking` (Consumes Azure SAS URL for Gemini parsing)
+- `ats-business-domain` (Initializes candidate status to `SUBMITTED`)
+- `shared-infrastructure` (Provides cloud configurations & Supabase client)
 
-const response = await fetch(
-  `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/v1/ingest`,
-  { method: 'POST', body: formData }
-);
-const { candidate_uuid } = await response.json();
-router.push(`/candidate-profile/enriched?uuid=${candidate_uuid}`);
-```
+### Which Files Should AI Modify vs Never Modify?
+- **Modify**: `modules/ingestion/application/*`, `modules/ingestion/infra/*`, `modules/ingestion/adapters/routes.py`.
+- **Never Modify**: Do NOT bypass magic byte check (`%PDF`) in validation code.
 
-## Error Handling
-
-| Error | HTTP Status | Response |
-|-------|-------------|----------|
-| Invalid file format | 400 | `{ "code": "HTTP_400_BAD_REQUEST", "message": "Document must be a valid PDF..." }` |
-| File too large | 400 | `{ "code": "HTTP_400_BAD_REQUEST", "message": "File size boundary limits exceed 10MB!" }` |
-| No file | 400 | `{ "status": "error", "message": "No file asset detected!" }` |
-| Spoofed PDF | 400 | `{ "code": "HTTP_400_BAD_REQUEST", "message": "Magic byte do not match PDF!" }` |
+### Common Anti-Patterns & Implementation Mistakes:
+- **Storing File Binaries in PostgreSQL**: Storing giant PDF byte arrays in Supabase DB instead of Azure Blob Storage.
+- **Exposing Private Blob URLs**: Returning raw private blob URLs without SAS signatures or security tokens.
+- **Ignoring File Content Spooks**: Relying solely on file extension (`.pdf`) without checking magic bytes.

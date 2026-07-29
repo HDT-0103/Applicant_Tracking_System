@@ -1,0 +1,26 @@
+name: ai-governance-eval-agent
+version: 2.0.0
+description: Agent for managing LLM prompts, structured outputs, AI retries, and token cost tracking
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: parse_structured_resume
+    description: Parse resume text using structured schema and fallback parser
+    type: function
+    parameters:
+      type: object
+      properties:
+        resume_text:
+          type: string
+        model_name:
+          type: string
+      required:
+        - resume_text
+
+env_vars:
+  required:
+    - GOOGLE_API_KEY

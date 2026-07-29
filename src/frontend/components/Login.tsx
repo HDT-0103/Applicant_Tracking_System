@@ -89,8 +89,9 @@ export const Login: React.FC = () => {
         </div>
 
         <div className="login-roles">
-          <span className="role-badge recruiter">Recruiter</span>
-          <span className="role-badge interviewer">Interviewer</span>
+          <span className="role-badge admin">Admin</span>
+          <span className="role-badge hr">HR Manager</span>
+          <span className="role-badge tech_lead">Tech Lead</span>
           <p className="login-roles-hint">
             Role is assigned automatically based on your organization profile.
           </p>

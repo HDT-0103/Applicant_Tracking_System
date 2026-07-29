@@ -20,7 +20,7 @@ import {
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type UserRole = "recruiter" | "interviewer" | "admin" | "hr" | "hr_manager" | "tech_lead";
+export type UserRole = "admin" | "hr" | "tech_lead";
 
 export interface AuthUser {
   id: string;
@@ -77,9 +77,9 @@ function persistUser(user: AuthUser | null): void {
 const DEMO_USER: AuthUser = {
   id: "demo-12345",
   email: "demo@smartats.com",
-  name: "Demo Recruiter",
-  role: "recruiter",
-  picture: "https://ui-avatars.com/api/?name=Demo+Recruiter&background=0d6efd&color=fff&size=128"
+  name: "Demo HR",
+  role: "hr",
+  picture: "https://ui-avatars.com/api/?name=Demo+HR&background=0d6efd&color=fff&size=128"
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -134,7 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const canUpload = useMemo(
-    () => hasRole("recruiter", "admin", "hr", "hr_manager", "tech_lead"),
+    () => hasRole("admin", "hr", "tech_lead"),
     [hasRole],
   );
 

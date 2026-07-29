@@ -1,0 +1,31 @@
+name: ats-business-domain-agent
+version: 2.0.0
+description: Agent for managing ATS candidate lifecycle, hiring state transitions, and interview workflows
+
+model:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0
+
+tools:
+  - name: transition_application_stage
+    description: Advance or transition candidate application to a new hiring stage
+    type: function
+    parameters:
+      type: object
+      properties:
+        application_id:
+          type: string
+        new_status:
+          type: string
+          enum: [SUBMITTED, SCREENING, INTERVIEW, OFFER, HIRED, REJECTED, WITHDRAWN]
+        reason:
+          type: string
+      required:
+        - application_id
+        - new_status
+
+env_vars:
+  required:
+    - SUPABASE_URL
+    - SUPABASE_SERVICE_KEY
