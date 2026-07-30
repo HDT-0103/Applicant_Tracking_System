@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 
 from src.backend.app.models import Resume, ResumeAnalysis, ResumeEmbedding, User
-from src.backend.app.repositories.resume_analysis_repository import ResumeAnalysisRepository
-from src.backend.app.repositories.resume_embedding_repository import ResumeEmbeddingRepository
+from backend.app.repositories.enrichment_repository import ResumeAnalysisRepository
+from backend.app.repositories.embedding_repository import ResumeEmbeddingRepository
 from src.backend.app.repositories.resume_repository import ResumeRepository
 from src.backend.app.repositories.user_repository import UserRepository
 from src.backend.app.services.embedding_service import EmbeddingService

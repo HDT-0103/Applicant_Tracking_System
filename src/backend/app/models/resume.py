@@ -1,35 +1,34 @@
-import uuid
-from typing import List, Optional, TYPE_CHECKING
+from __future__ import annotations
+
 from datetime import datetime
-from sqlalchemy import String, text, TIMESTAMP, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
+
+from sqlalchemy import DateTime, ForeignKey, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.backend.app.models.base import Base
 
 if TYPE_CHECKING:
-    from models.user import User
-    from models.resume_embedding import ResumeEmbedding
-    from models.resume_analysis import ResumeAnalysis  # Đổi tên import
+    from src.backend.app.models.candidate import Candidate
+
 
 class Resume(Base):
     __tablename__ = "resumes"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    candidate_uuid: Mapped[UUID] = mapped_column(
+        ForeignKey("candidates.uuid", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
-    
-    raw_text: Mapped[Optional[str]] = mapped_column(Text) 
-    file_path: Mapped[Optional[str]] = mapped_column(String(512))
-    
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"), onupdate=text("now()"))
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    text_content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
 
-    # Relationships
-    user: Mapped["User"] = relationship(back_populates="resumes")
-    embeddings: Mapped[List["ResumeEmbedding"]] = relationship(back_populates="resume", cascade="all, delete-orphan")
-    analyses: Mapped[List["ResumeAnalysis"]] = relationship(back_populates="resume", cascade="all, delete-orphan")
-
-    def __repr__(self) -> str:
-        return f"<Resume {self.id}>"
+    candidate: Mapped[Candidate] = relationship(back_populates="resumes")

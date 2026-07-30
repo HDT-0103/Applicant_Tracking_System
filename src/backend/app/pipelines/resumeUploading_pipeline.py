@@ -1,11 +1,11 @@
-from src.backend.app.repositories.resume_embedding_repository import ResumeEmbeddingRepository
+from backend.app.repositories.embedding_repository import ResumeEmbeddingRepository
 from src.backend.app.schemas.requirement_analysis import RequirementAnalysis
 from src.backend.app.services.llm_provider import GroqProvider
 from src.backend.app.services.llm_service import LLMService
 from src.backend.app.services.embedding_service import EmbeddingService
 from src.backend.app.services.parser_service import ParserService
 from src.backend.app.schemas.resume_analysis import ResumeAnalysis
-from src.backend.app.repositories.resume_analysis_repository import ResumeAnalysisRepository
+from backend.app.repositories.enrichment_repository import ResumeAnalysisRepository
 from src.backend.app.repositories.resume_repository import ResumeRepository
 from src.backend.app.models import Resume, ResumeAnalysis, ResumeEmbedding
 from sqlalchemy.ext.asyncio import AsyncSession

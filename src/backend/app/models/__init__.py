@@ -1,19 +1,21 @@
 from src.backend.app.models.base import Base
-from src.backend.app.models.user import User
+from src.backend.app.models.candidate import Candidate
+from src.backend.app.models.enrichment_profile import EnrichmentProfile
 from src.backend.app.models.resume import Resume
-from src.backend.app.models.requirement import Requirement
-from src.backend.app.models.meeting import Meeting
-from src.backend.app.models.resume_embedding import ResumeEmbedding
-from src.backend.app.models.requirement_embedding import RequirementEmbedding
-from src.backend.app.models.resume_analysis import ResumeAnalysis
-from src.backend.app.models.requirement_analysis import RequirementAnalysis
+from src.backend.app.models.resume_embedding import Embedding, ResumeEmbedding
+from src.backend.app.models.user import User
+
+from src.backend.app.schemas.requirement_analysis import RequirementAnalysis
+from src.backend.app.schemas.requirement_embedding import RequirementEmbedding
+from src.backend.app.schemas.resume_analysis import ResumeAnalysis
 
 __all__ = [
     "Base", 
+    "Candidate",
+    "EnrichmentProfile",
     "User", 
     "Resume", 
-    "Requirement", 
-    "Meeting", 
+    "Embedding",
     "ResumeEmbedding", 
     "RequirementEmbedding", 
     "ResumeAnalysis",

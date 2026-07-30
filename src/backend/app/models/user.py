@@ -1,17 +1,12 @@
 import uuid
-from typing import List, TYPE_CHECKING
 from datetime import datetime
-from sqlalchemy import String, text, TIMESTAMP, Enum
-from sqlalchemy.dialects.postgresql import UUID  # Import UUID từ postgresql dialect
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import Enum, String, TIMESTAMP, text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
 from src.backend.app.models.base import Base
 from src.backend.app.models.enums import RoleType
-
-if TYPE_CHECKING:
-    from models.resume import Resume
-    from models.requirement import Requirement
-    from models.meeting import Meeting
 
 class User(Base):
     __tablename__ = "users"
@@ -34,20 +29,6 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), 
         server_default=text("now()")
-    )
-
-    # Relationships
-    resumes: Mapped[List["Resume"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    requirements: Mapped[List["Requirement"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    
-    # Sửa cú pháp foreign_keys dạng chuỗi chuẩn khi tách file
-    hosted_meetings: Mapped[List["Meeting"]] = relationship(
-        back_populates="host", 
-        foreign_keys="Meeting.host_id"
-    )
-    participated_meetings: Mapped[List["Meeting"]] = relationship(
-        back_populates="participant", 
-        foreign_keys="Meeting.participant_id"
     )
 
     def __repr__(self) -> str:
