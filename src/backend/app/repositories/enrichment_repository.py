@@ -18,39 +18,47 @@ class EnrichmentRepository(BaseRepository):
         return EnrichmentProfile(**row)
 
     async def create_profile(
-        self,
-        candidate_uuid: str,
-        skills: list[str],
-        summary: str,
-        experience: str,
-        github: str | None = None,
-        linkedin: str | None = None,
-        enrichment_status: EnrichmentStatus = EnrichmentStatus.COMPLETED,
-        semantic_tags: list[str] | None = None,
-        skill_matrix: dict[str, Any] | None = None,
-        match_confidence_score: float | None = None,
-        score_increase: float | None = None,
+    self,
+    candidate_uuid: str,
+    skills: list[str],
+    summary: str,
+    experience: str,
+    github: str | None = None,
+    linkedin: str | None = None,
+    enrichment_status: EnrichmentStatus = EnrichmentStatus.ENRICHED,
+    semantic_tags: list[str] | None = None,
+    skill_matrix: dict[str, Any] | None = None,
+    match_confidence_score: float | None = None,
+    score_increase: float | None = None,
     ) -> EnrichmentProfile:
+        # 1. Nếu semantic_tags không truyền vào, gán mặc định là mảng rỗng [] thay vì None
+        if semantic_tags is None:
+            semantic_tags = []
+
+        payload = {
+            "candidate_uuid": candidate_uuid,
+            "enrichment_status": enrichment_status.value,
+            "skills": skills,
+            "summary": summary,
+            "experience": experience,
+            "github": github,
+            "linkedin": linkedin,
+            "semantic_tags": semantic_tags,
+            "skill_matrix": skill_matrix,
+            "match_confidence_score": match_confidence_score,
+            "score_increase": score_increase,
+        }
+
+        # 2. Loại bỏ các key mang giá trị None để tránh vi phạm constraint trong DB
+        data_to_insert = {k: v for k, v in payload.items() if v is not None}
+
         response = (
             self.client.table("enrichment_profiles")
-            .insert(
-                {
-                    "candidate_uuid": candidate_uuid,
-                    "enrichment_status": enrichment_status.value,
-                    "skills": skills,
-                    "summary": summary,
-                    "experience": experience,
-                    "github": github,
-                    "linkedin": linkedin,
-                    "semantic_tags": semantic_tags,
-                    "skill_matrix": skill_matrix,
-                    "match_confidence_score": match_confidence_score,
-                    "score_increase": score_increase,
-                }
-            )
+            .insert(data_to_insert)
             .select("*")
             .execute()
         )
+
         row = response.data[0] if response.data else None
         if row is None:
             raise ValueError("Failed to create enrichment profile.")
