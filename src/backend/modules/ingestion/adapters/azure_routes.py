@@ -212,11 +212,12 @@ async def get_candidate_cv(
         except Exception as exc:
             logger.warning("cv.supabase_lookup_failed", candidate_uuid=candidate_uuid, error=str(exc))
 
-    if settings.AZURE_STORAGE_CONNECTION_STRING:
+    conn_str = getattr(settings, "azure_storage_connection_string", "")
+    if conn_str:
         try:
             from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
             
-            blob_service_client = BlobServiceClient.from_connection_string(settings.AZURE_STORAGE_CONNECTION_STRING)
+            blob_service_client = BlobServiceClient.from_connection_string(conn_str)
             account_name = blob_service_client.account_name
             account_key = getattr(blob_service_client.credential, "account_key", None)
 
