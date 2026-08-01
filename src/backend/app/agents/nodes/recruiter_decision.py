@@ -1,6 +1,7 @@
-'''LLM Decision Making for Recruiter'''
+import asyncio
+
 from backend.app.agents.nodes.base import BaseNode
-from backend.app.agents.state import ATSState, RecruiterDecisionOutput, RecruiterDecisionInput, ActionRecord
+from backend.app.agents.state import ATSState, RecruiterDecisionOutput, RecruiterDecisionInput
 from backend.app.services.llm_provider import GroqProvider
 
 class RecruiterDecisionNode(BaseNode):
@@ -8,38 +9,44 @@ class RecruiterDecisionNode(BaseNode):
         super().__init__()
         self.llm_provider = llm_provider
 
-    async def execute(self, state: ATSState):
-        with open("recruiter_prompt.md", "r", encoding="utf-8") as file:
-            recruiter_prompt = file.read()
-        
-        
-        # 1. Read state
-        candidate = state.candidate_search.candidates 
-        decision_input = RecruiterDecisionInput(
-            mission=state.mission,
-            candidates=candidate,
-            history=state.candidate_search.history
-        )
-        # 2. Build reflection input 
-        reflection_output = self.llm_provider.invoke(
-            system_prompt=recruiter_prompt,
-            user_input=decision_input,
-            response_model=RecruiterDecisionOutput
-        )
+    async def execute(self, state: ATSState) -> ATSState:
+        recruiter_prompt = self.load_prompt("prompts/recruiter_prompt.md")
 
-        # 3. Update state with reflection output
-        state.candidate_search.final_decision = reflection_output
-        state.candidate_search.action_history.append(
-            ActionRecord(
-
-                step=len(state.candidate_search.action_history) + 1,
-
-                node_name=self.__class__.__name__,
-
-                action=decision_input.mission.current_step,
-
-                decision=reflection_output.final_summary
-
+        if not state.candidate_search.candidates:
+            state.candidate_search.final_decision = RecruiterDecisionOutput(
+                recommendations=[],
+                final_summary="No candidates were returned by the retrieval pipeline.",
             )
+            self.record_action(
+                state=state,
+                action="Synthesize recruiter recommendation",
+                decision=state.candidate_search.final_decision.final_summary,
+            )
+            return state
+        
+        # 1. Read state (Fix các biến bị trỏ sai)
+        decision_input = RecruiterDecisionInput(
+            mission=state.candidate_search.mission,  # Đã fix
+            candidates=state.candidate_search.candidates,
+            history=state.candidate_search.action_history  # Đã fix naming
         )
+        
+        # 2. Call LLM
+        decision_output = await asyncio.to_thread(
+            self.llm_provider.invoke,
+            recruiter_prompt,
+            decision_input,
+            RecruiterDecisionOutput,
+        )
+
+        # 3. Update state
+        state.candidate_search.final_decision = decision_output
+        
+        # 4. Record history
+        self.record_action(
+            state=state,
+            action=decision_input.mission.current_step,
+            decision=decision_output.final_summary
+        )
+        
         return state

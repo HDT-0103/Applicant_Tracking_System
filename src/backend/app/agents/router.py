@@ -3,38 +3,36 @@ from backend.app.agents.state import ATSState
 
 def route_after_planner(state: ATSState) -> str:
     """
-    Planner
-        ↓
-    Interaction / Retrieval
+    Planner -> Interaction / Retrieval
     """
+    query_assessment = state.candidate_search.query_assessment
+    
+    # Defensive check nếu query_assessment chưa được khởi tạo
+    if not query_assessment or not query_assessment.clarification:
+        return "retrieval"
 
-    clarification = (
-        state.candidate_search
-        .query_assessment
-        .clarification_detail
-    )
+    clarification = query_assessment.clarification
 
-    if clarification.status == "not enough":
+    # Nếu cần làm rõ thông tin từ người dùng
+    if clarification.status == "not_enough":
         return "interaction"
 
     return "retrieval"
 
-from backend.app.agents.state import ATSState
-
 
 def route_after_reflection(state: ATSState) -> str:
     """
-    Reflection
-        ↓
-    Planner / RecruiterDecision
+    Reflection -> Planner (Thử lại) / RecruiterDecision (Chấp nhận)
     """
-
     reflection = state.candidate_search.reflection
 
     if reflection is None:
-        raise ValueError("Reflection not found.")
-
-    if reflection.retry:
         return "recruiter"
 
-    return "planner"
+    mission = state.candidate_search.mission
+
+    # Guard chống vòng lặp vô hạn
+    if reflection.retry and mission.retry_count < mission.max_retries and state.iteration < state.max_steps:
+        return "planner"
+
+    return "recruiter"
