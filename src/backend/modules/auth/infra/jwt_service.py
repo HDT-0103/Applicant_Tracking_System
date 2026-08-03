@@ -4,6 +4,7 @@ import jwt
 from jwt.exceptions import InvalidTokenError
 
 from modules.auth.domain.models import AuthUser, UserRole
+from modules.shared.domain.roles import normalise_role
 from modules.shared.infrastructure.config import Settings
 
 
@@ -65,11 +66,20 @@ class JwtService:
         if token_type != expected_type:
             raise ValueError(f"Expected {expected_type} token")
 
+        # Token phát hành trước khi hợp nhất role còn mang 'recruiter' /
+        # 'interviewer' / 'hr_manager' — quy đổi tại đây để `AuthUser` luôn chỉ
+        # có 1 trong 3 role chuẩn. Token thiếu role hoặc mang role lạ bị từ chối,
+        # KHÔNG mặc định thành một role có quyền (trước đây mặc định
+        # 'interviewer' cho mọi token thiếu claim).
+        role = normalise_role(payload.get("role"))
+        if role is None:
+            raise ValueError("Token carries a missing or unknown role")
+
         return AuthUser(
             id=str(payload["sub"]),
             email=str(payload["email"]),
             name=str(payload.get("name") or payload["email"]),
-            role=payload.get("role", "interviewer"),
+            role=role,
             picture=None,
             jti=payload.get("jti"),
         )

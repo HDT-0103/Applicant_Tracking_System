@@ -3,10 +3,15 @@
 ![Database Diagram](./docs/images/database.png)
 
 # code on erasers.io
+// Hệ thống có đúng 3 role — xem migrations/V005__consolidate_roles.sql.
+//   admin     : chỉ quản trị hệ thống, không tham gia nghiệp vụ tuyển dụng
+//   hr        : vận hành tuyển dụng, thấy đầy đủ dữ liệu ứng viên
+//   tech_lead : vận hành y hệt hr, PII của ứng viên bị ABAC che thành ***
+// Ứng viên nộp hồ sơ qua cổng /careers công khai và KHÔNG có tài khoản.
 Enum user_role {
-  candidate
-  recruiter
   admin
+  hr
+  tech_lead
 }
 Enum status {
   waiting

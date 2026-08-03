@@ -31,15 +31,44 @@ numpy>=2.2,<3.0
 
 
 # ==============================================================================
-# 4. INTEGRATIONS & UTILITIES
+# 4. AUTH & SECURITY
+# ==============================================================================
+# `modules/auth/infra/jwt_service.py` dùng `import jwt` (PyJWT). Trước đây gói này
+# không được khai báo, chỉ tình cờ có mặt vì `supabase` kéo theo — CI cài đúng
+# requirements.txt thì gãy ngay ở bước import.
+PyJWT>=2.10,<3.0
+# pydantic EmailStr (AuthUser, LoginRequest…) bắt buộc phải có email-validator.
+email-validator>=2.2,<3.0
+# Xác thực Google OAuth credential trong `modules/auth/infra/google_verifier.py`.
+google-auth>=2.37,<3.0
+
+# ==============================================================================
+# 5. INTEGRATIONS & UTILITIES
 # ==============================================================================
 httpx>=0.28,<1.0
 redis>=5.2,<6.0
 structlog>=24.4,<25.0
+# Client Supabase (`modules/shared/infrastructure/supabase_client.py`).
+supabase>=2.11,<3.0
+# Azure Blob + Service Bus (`modules/ingestion/adapters/azure_routes.py`).
+azure-storage-blob>=12.24,<13.0
+azure-servicebus>=7.13,<8.0
+# Gemini, dùng trong `modules/ingestion/application/ingestion_service.py`.
+google-generativeai>=0.8,<1.0
 
 # ==============================================================================
-# 5. TESTING & QUALITY ASSURANCE
+# 6. TESTING & QUALITY ASSURANCE
 # ==============================================================================
 pytest>=8.3,<9.0
 pytest-asyncio>=0.25,<1.0
-ruff>=0.9,<1.0a
+ruff>=0.9,<1.0
+flake8>=7.1,<8.0
+
+# ==============================================================================
+# 7. CHƯA KHAI BÁO — các script scraper đứng riêng
+# ==============================================================================
+# `modules/enrichment/application/linkedin_scraper_service.py` và
+# `modules/auth/application/linkedin_scraper.py` import bs4, markdownify,
+# playwright, apify_client, pandas, requests, tqdm nhưng KHÔNG được module nào
+# khác import, nên không cài ở đây để CI khỏi nặng thêm. Nếu định đưa hai file
+# này vào luồng chạy thật thì phải bổ sung dependency trước.

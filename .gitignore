@@ -59,3 +59,7 @@ context.md
 
 # Local Postgres data directory (không được commit)
 .postgres_data/
+
+# Build artifact của TypeScript. Trước đây bị commit nên mỗi lần merge lại đẻ ra
+# một conflict vô nghĩa (nội dung là cache biên dịch, không ai đọc được).
+*.tsbuildinfo

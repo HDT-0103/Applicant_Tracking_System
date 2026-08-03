@@ -40,7 +40,7 @@ def test_admin_route_accessible_for_admin(client):
     admin_user = AuthUser(id="admin-1", name="Admin User", email="admin@example.com", role="admin", is_approved=True)
     mock_service = MagicMock()
     mock_service.get_users = AsyncMock(return_value=[
-        {"id": "usr-1", "email": "user1@example.com", "role": "recruiter", "is_approved": True}
+        {"id": "usr-1", "email": "user1@example.com", "role": "hr", "is_approved": True}
     ])
 
     app.dependency_overrides[get_current_user] = lambda: admin_user

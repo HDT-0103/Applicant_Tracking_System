@@ -1,8 +1,8 @@
-from typing import Literal
-
 from pydantic import BaseModel, EmailStr, Field
 
-UserRole = Literal["recruiter", "interviewer", "admin", "hr", "hr_manager", "tech_lead"]
+# Nguồn sự thật duy nhất về role: modules.shared.domain.roles.
+# Re-export để code cũ `from modules.auth.domain.models import UserRole` vẫn chạy.
+from modules.shared.domain.roles import UserRole  # noqa: F401
 
 
 class AuthUser(BaseModel):
@@ -49,8 +49,8 @@ class LoginRequest(BaseModel):
 
 class RegisterRequest(BaseModel):
     # Public registration only. Role is NOT client-selectable: every self-service
-    # signup becomes a recruiter (HR). Admin accounts are created via seed/Admin
-    # Dashboard (Epic 6), never through this endpoint.
+    # signup becomes an `hr`. Admin và tech_lead chỉ được cấp qua seed hoặc
+    # Admin Dashboard (Epic 6), không bao giờ qua endpoint này.
     name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=6)

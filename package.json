@@ -3,9 +3,9 @@
   "version": "4.2.1",
   "private": true,
   "scripts": {
-    "dev": "env-cmd -f .env next dev src/frontend",
-    "build": "env-cmd -f .env next build src/frontend",
-    "start": "env-cmd -f .env next start src/frontend",
+    "dev": "env-cmd -f .env --silent next dev src/frontend",
+    "build": "env-cmd -f .env --silent next build src/frontend",
+    "start": "env-cmd -f .env --silent next start src/frontend",
     "lint": "next lint src/frontend",
     "backend:dev": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --reload --host 0.0.0.0 --port 8000 --app-dir src/backend",
     "backend:start": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend",

@@ -5,6 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from modules.auth.domain.models import AuthUser, UserRole
 from modules.auth.infra.jwt_service import JwtService
+from modules.shared.domain.roles import ADMIN_ROLE, OPERATIONAL_ROLES
 from modules.shared.infrastructure.config import Settings, get_settings
 
 from sqlalchemy import select
@@ -55,6 +56,8 @@ async def get_current_user(
                 detail="Session has been revoked by admin",
             )
 
+    # Role đã được JwtService.decode_token quy đổi về 1 trong 3 role chuẩn
+    # (token mang role cũ/lạ bị ném ValueError ở trên -> 401).
     return user
 
 
@@ -72,3 +75,16 @@ def require_roles(*allowed_roles: UserRole):
         return current_user
 
     return dependency
+
+
+def require_operational_roles():
+    """Guard cho các endpoint nghiệp vụ: chỉ `hr` và `tech_lead`.
+
+    `admin` cố ý bị loại — admin chỉ quản trị hệ thống qua /api/admin/*.
+    """
+    return require_roles(*OPERATIONAL_ROLES)
+
+
+def require_admin():
+    """Guard cho /api/admin/*."""
+    return require_roles(ADMIN_ROLE)

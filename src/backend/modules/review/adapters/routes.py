@@ -7,7 +7,10 @@ from modules.auth.domain.models import AuthUser
 from modules.review.application.review_service import ReviewService
 from modules.review.domain.models import ReviewDecision, ReviewStatus
 from modules.review.infra.impl_inmemory import InMemoryReviewRepo
-from modules.shared.infrastructure.auth_dependencies import require_roles
+from modules.shared.infrastructure.auth_dependencies import (
+    require_operational_roles,
+    require_roles,
+)
 
 router = APIRouter(prefix="/api/review", tags=["review"])
 
@@ -33,7 +36,7 @@ async def submit_review(
     candidate_uuid: str,
     body: SubmitReviewRequest,
     service: ServiceDep,
-    current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "tech_lead", "admin"))],
+    current_user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> ReviewStatus:
     if body.decision not in ("approved", "rejected"):
         raise HTTPException(
@@ -59,7 +62,7 @@ async def submit_review(
 async def get_review_status(
     candidate_uuid: str,
     service: ServiceDep,
-    _current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "tech_lead", "admin"))],
+    _current_user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> ReviewStatus:
     return await service.get_status(candidate_uuid)
 
@@ -69,13 +72,9 @@ async def resolve_conflict(
     candidate_uuid: str,
     body: ResolveConflictRequest,
     service: ServiceDep,
-    current_user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin"))],
+    # Chốt final call khi HR và Tech Lead bất đồng là đặc quyền của HR.
+    _current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> ReviewStatus:
-    if current_user.role not in ("hr", "recruiter", "admin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only HR can resolve conflicts",
-        )
     return await service.resolve_conflict(
         candidate_uuid=candidate_uuid,
         hr_final_decision=body.final_decision,

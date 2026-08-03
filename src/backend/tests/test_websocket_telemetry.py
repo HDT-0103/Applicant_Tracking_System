@@ -14,10 +14,13 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 from apps.main import app
+from modules.auth.domain.models import AuthUser
+from modules.auth.infra.jwt_service import JwtService
 from modules.enrichment.application.enrichment_service import (
     active_websockets,
     candidate_enrichments,
 )
+from modules.shared.infrastructure.config import get_settings
 from modules.enrichment.domain.models import (
     CandidateEnrichment,
     EnrichmentStatus,
@@ -32,19 +35,54 @@ def client():
     return TestClient(app)
 
 
+def _token(role: str = "hr") -> str:
+    """Access token thật để đi qua handshake xác thực của WebSocket."""
+    settings = get_settings()
+    user = AuthUser(id=f"{role}-1", name=role, email=f"{role}@example.com", role=role)
+    return JwtService(settings).create_access_token(user)
+
+
+def _connect(client, uuid: str, role: str = "hr"):
+    """Mở socket, gửi frame xác thực và chờ ack trước khi trả về."""
+    ctx = client.websocket_connect(f"/api/enrichment/ws/v1/analysis/{uuid}")
+    websocket = ctx.__enter__()
+    websocket.send_json({"token": _token(role)})
+    assert websocket.receive_json() == {"status": "AUTHENTICATED"}
+    return ctx, websocket
+
+
 def test_websocket_connection_registers_in_active_map(client):
     """Connecting to WebSocket endpoint registers socket in active_websockets registry."""
     uuid = "test-cand-ws-01"
-    
+
     # Ensure empty registry before test
     active_websockets.pop(uuid, None)
 
-    with client.websocket_connect(f"/api/enrichment/ws/v1/analysis/{uuid}") as websocket:
+    ctx, _ws = _connect(client, uuid)
+    try:
         assert uuid in active_websockets
         assert len(active_websockets[uuid]) == 1
+    finally:
+        ctx.__exit__(None, None, None)
 
-    # After exiting context manager (disconnect), registry should clean up
+    # After disconnect, registry should clean up
     assert uuid not in active_websockets or len(active_websockets.get(uuid, [])) == 0
+
+
+def test_websocket_rejects_connection_without_token(client):
+    """Endpoint này trả nguyên hồ sơ ứng viên — không token thì phải bị đóng."""
+    from starlette.websockets import WebSocketDisconnect
+
+    uuid = "test-cand-ws-noauth"
+    active_websockets.pop(uuid, None)
+
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(f"/api/enrichment/ws/v1/analysis/{uuid}") as ws:
+            ws.send_json({"token": "khong-phai-token"})
+            ws.receive_json()
+
+    assert exc.value.code == 4401
+    assert uuid not in active_websockets
 
 
 def test_websocket_immediate_data_when_already_enriched(client):
@@ -71,10 +109,46 @@ def test_websocket_immediate_data_when_already_enriched(client):
     )
 
     try:
-        with client.websocket_connect(f"/api/enrichment/ws/v1/analysis/{uuid}") as websocket:
+        ctx, websocket = _connect(client, uuid, role="hr")
+        try:
             data = websocket.receive_json()
             assert data["status"] == "ENRICHED"
             assert data["data"]["full_name"] == "Cached Candidate"
+        finally:
+            ctx.__exit__(None, None, None)
+    finally:
+        candidate_enrichments.pop(uuid, None)
+
+
+def test_websocket_masks_pii_for_tech_lead(client):
+    """Cùng một socket, tech_lead nhận hồ sơ đã che PII còn HR thì không."""
+    uuid = "test-cand-ws-abac"
+
+    candidate_enrichments[uuid] = CandidateEnrichment(
+        candidate_uuid=uuid,
+        enrichment_status=EnrichmentStatus.ENRICHED,
+        enriched_profile=EnrichedProfile(
+            full_name="Cached Candidate",
+            analytics=MockAnalytics(
+                match_confidence_score=88.5,
+                score_increase=12.0,
+                semantic_tags=["Python"],
+                technical_skill_matrix=TechnicalSkillMatrix(
+                    pre_enrichment=[0.5], post_enrichment=[0.9]
+                ),
+            ),
+        ),
+    )
+
+    try:
+        ctx, websocket = _connect(client, uuid, role="tech_lead")
+        try:
+            data = websocket.receive_json()
+            assert data["data"]["full_name"] == "***"
+            # dữ liệu chuyên môn vẫn nguyên vẹn
+            assert data["data"]["analytics"]["match_confidence_score"] == 88.5
+        finally:
+            ctx.__exit__(None, None, None)
     finally:
         candidate_enrichments.pop(uuid, None)
 

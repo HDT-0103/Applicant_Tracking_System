@@ -19,16 +19,17 @@ from modules.auth.domain.models import (
 from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
 from modules.auth.infra.password_service import PasswordService
+from modules.shared.domain.roles import normalise_role
 from modules.shared.infrastructure.config import Settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 
 logger = structlog.get_logger(__name__)
 
 # --- Public self-service registration policy -------------------------------
-# Ai đăng ký qua form công khai đều là HR (recruiter) và dùng được ngay.
+# Ai đăng ký qua form công khai đều là `hr` và dùng được ngay.
 # Muốn bật lại luồng "chờ Admin duyệt" (§4.2): đổi PUBLIC_SIGNUP_AUTO_APPROVED = False,
 # lúc đó Admin Dashboard (Epic 6) sẽ set is_approved=TRUE để kích hoạt tài khoản.
-PUBLIC_SIGNUP_ROLE: UserRole = "recruiter"
+PUBLIC_SIGNUP_ROLE: UserRole = "hr"
 PUBLIC_SIGNUP_AUTO_APPROVED: bool = True
 
 
@@ -50,7 +51,10 @@ class AuthService:
     def resolve_role_from_supabase(self, email: str) -> UserRole:
         """
         Resolve user role by querying Supabase public.users table.
-        Allows any active role (admin, recruiter, interviewer, tech_lead, etc.).
+
+        Role đọc từ Supabase được quy đổi về 1 trong 3 role chuẩn
+        (admin / hr / tech_lead) qua ``normalise_role`` — bảng Supabase còn dữ
+        liệu cũ dùng ``hr_manager``, ``recruiter``, ``interviewer``.
 
         Args:
             email: User email from Google OAuth
@@ -71,9 +75,11 @@ class AuthService:
                 raise ValueError("Authentication failed. Invalid credentials or user not allowed.")
 
             user_data = result.data[0]
-            role = user_data.get('role')
+            role = normalise_role(user_data.get('role'))
 
             if not role:
+                # Role rỗng hoặc là giá trị không nhận diện được (vd 'candidate').
+                # Không fallback sang role có quyền — từ chối đăng nhập.
                 raise ValueError("Authentication failed. Invalid credentials or user not allowed.")
 
             return role
@@ -86,15 +92,22 @@ class AuthService:
 
     def resolve_role(self, email: str) -> UserRole:
         """
-        Fallback role resolution using .env configuration
-        This method is kept for backward compatibility but should not be used
-        in production when Supabase is configured.
+        Fallback role resolution using .env configuration.
+        Chỉ dùng khi Supabase chưa cấu hình (môi trường dev cục bộ).
+
+        Trước đây hàm này trả về ``interviewer`` cho MỌI email lạ — nghĩa là bất
+        kỳ ai có tài khoản Google cũng đăng nhập được. Nay email không nằm trong
+        ADMIN_EMAILS hoặc RECRUITER_EMAIL_DOMAINS sẽ bị từ chối: cấp role phải
+        là hành động có chủ đích (seed hoặc Admin Dashboard), không phải mặc định.
 
         Args:
             email: User email
 
         Returns:
             UserRole based on .env configuration
+
+        Raises:
+            ValueError: Nếu email không khớp cấu hình nào.
         """
         normalized_email = email.strip().lower()
         domain = normalized_email.split("@")[-1]
@@ -103,9 +116,17 @@ class AuthService:
             return "admin"
 
         if domain in self._settings.recruiter_domain_list:
-            return "recruiter"
+            return "hr"
 
-        return "interviewer"
+        raise ValueError("Authentication failed. Invalid credentials or user not allowed.")
+
+    @staticmethod
+    def _reject_unapproved(email: str) -> None:
+        logger.warning("auth.login.rejected_unapproved", email=email)
+        raise ValueError(
+            "Your account is awaiting approval or has been suspended. "
+            "Please contact an administrator."
+        )
 
     async def _create_db_session_record(self, user_id: str, jti: str) -> None:
         if not self.db:
@@ -163,17 +184,23 @@ class AuthService:
             db_user = await self.db.scalar(stmt)
 
             if not db_user:
-                # Auto-create user from Google profile
+                # Auto-create user from Google profile. Email đã qua được
+                # allowlist của Supabase / .env ở trên — đó chính là bước duyệt,
+                # nên tạo thẳng is_approved=True. Nếu để mặc định False thì
+                # người dùng vừa tạo sẽ bị chính check bên dưới chặn lại.
                 resolved_role = role_from_supabase or self.resolve_role(email)
                 db_user = User(
                     name=profile["name"],
                     email=email,
-                    role=RoleType(resolved_role)
+                    role=RoleType(resolved_role),
+                    is_approved=True,
                 )
                 self.db.add(db_user)
                 await self.db.commit()
                 await self.db.refresh(db_user)
                 logger.info("auth.google.auto_register", email=email, role=resolved_role)
+            elif not db_user.is_approved:
+                self._reject_unapproved(email)
 
         role = db_user.role.value if db_user else (role_from_supabase or self.resolve_role(email))
         user_id = str(db_user.id) if db_user else profile["id"]
@@ -220,6 +247,12 @@ class AuthService:
         if not PasswordService.verify_password(password, db_user.password_hash):
             raise ValueError("Invalid email or password")
 
+        # Tài khoản bị Admin khoá (is_approved=False) không được đăng nhập.
+        # Trước đây cột này không hề được kiểm tra ở bất kỳ luồng login nào, nên
+        # nút khoá tài khoản trong Admin Panel chỉ là trang trí.
+        if not db_user.is_approved:
+            self._reject_unapproved(email)
+
         user = AuthUser(
             id=str(db_user.id),
             email=db_user.email,
@@ -243,8 +276,9 @@ class AuthService:
         )
 
     async def register_user(self, name: str, email: str, password: str) -> AuthTokenResponse:
-        """Public self-service registration. Always creates an HR (recruiter);
-        role is never taken from the client. Admins come from seed/Admin Dashboard."""
+        """Public self-service registration. Always creates an `hr`; role is
+        never taken from the client. Admin và tech_lead đến từ seed hoặc Admin
+        Dashboard."""
         if not self.db:
             raise ValueError("Database session not initialized")
 

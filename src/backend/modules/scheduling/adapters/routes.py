@@ -17,7 +17,7 @@ from modules.scheduling.infra.email_notifier import EmailNotifier
 from modules.scheduling.infra.slack_notifier import SlackNotifier
 from modules.scheduling.infra.impl_inmemory import InMemorySchedulingRepo
 from modules.scheduling.application.sweep_line_service import SweepLineService
-from modules.shared.infrastructure.auth_dependencies import require_roles
+from modules.shared.infrastructure.auth_dependencies import require_operational_roles
 from modules.auth.domain.models import AuthUser
 from modules.shared.infrastructure.config import Settings, get_settings
 
@@ -81,7 +81,7 @@ class ConfirmSlotRequest(BaseModel):
 @router.get("/interviewers", response_model=list[Interviewer])
 async def list_interviewers(
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin"))],
+    _user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> list[Interviewer]:
     return await service.list_interviewers()
 
@@ -94,7 +94,7 @@ async def update_calendar_key(
     interviewer_id: str,
     body: UpdateKeyRequest,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin"))],
+    _user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> Interviewer:
     result = await service.update_calendar_key(interviewer_id, body.api_key)
     if not result:
@@ -109,7 +109,7 @@ async def update_calendar_key(
 async def query_slots(
     body: SlotsQueryRequest,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin"))],
+    _user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> list[TimeSlot]:
     try:
         date_from = datetime.fromisoformat(body.date_from)
@@ -150,7 +150,7 @@ async def query_slots(
 async def confirm_slot(
     body: ConfirmSlotRequest,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr", "recruiter", "admin"))],
+    _user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> ConfirmedSlot:
     try:
         start_time = datetime.fromisoformat(body.start_time)

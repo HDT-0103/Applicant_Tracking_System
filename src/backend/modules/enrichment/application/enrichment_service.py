@@ -19,6 +19,7 @@ from modules.enrichment.domain.models import (
     MockAnalytics,
     TechnicalSkillMatrix,
 )
+from modules.shared.infrastructure.abac import apply_abac
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 from modules.enrichment.application.supabase_candidate_service import SupabaseCandidateService
@@ -952,23 +953,27 @@ async def enrichment_worker(
         # STEP 8: Send WebSocket notification
         if candidate_uuid in active_websockets:
             dead_sockets = []
+            payload = {
+                "status": "ENRICHED",
+                "data": merged_profile.model_dump(),
+                "skills_matrix": merged_profile.analytics.technical_skill_matrix.model_dump(),
+                "career_trajectory": [
+                    {
+                        "title": exp.title,
+                        "company": exp.company,
+                        "start_date": exp.start_date,
+                        "end_date": exp.end_date
+                    }
+                    for exp in (merged_profile.linkedin.experiences if merged_profile.linkedin else [])
+                ],
+                "semantic_tags": merged_profile.analytics.semantic_tags
+            }
             for websocket in list(active_websockets[candidate_uuid]):
                 try:
-                    await websocket.send_json({
-                        "status": "ENRICHED",
-                        "data": merged_profile.model_dump(),
-                        "skills_matrix": merged_profile.analytics.technical_skill_matrix.model_dump(),
-                        "career_trajectory": [
-                            {
-                                "title": exp.title,
-                                "company": exp.company,
-                                "start_date": exp.start_date,
-                                "end_date": exp.end_date
-                            }
-                            for exp in (merged_profile.linkedin.experiences if merged_profile.linkedin else [])
-                        ],
-                        "semantic_tags": merged_profile.analytics.semantic_tags
-                    })
+                    # Mỗi socket nhận bản đã che theo role của chính nó
+                    # (role được gán lúc handshake trong adapters/routes.py).
+                    socket_role = getattr(websocket.state, "abac_role", "tech_lead")
+                    await websocket.send_json(apply_abac(payload, socket_role))
                 except Exception as ws_error:
                     logger.warning(
                         "enrichment.websocket.send.failed",

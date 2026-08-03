@@ -9,19 +9,26 @@
 -- 0) Extension cần cho gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 1) Enum role_type: đảm bảo tồn tại và đủ 4 giá trị (chữ thường)
+-- 1) Enum role_type
+-- Hệ thống chỉ dùng 3 giá trị: admin, hr, tech_lead.
+-- Các giá trị cũ (candidate/recruiter/interviewer) vẫn được thêm vào type vì DB
+-- đang chạy có thể còn dữ liệu mang chúng và Postgres không cho xoá enum value;
+-- V005__consolidate_roles.sql quy đổi dữ liệu cũ sang 3 giá trị chuẩn.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'role_type') THEN
-    CREATE TYPE role_type AS ENUM ('candidate', 'recruiter', 'admin', 'interviewer');
+    CREATE TYPE role_type AS ENUM ('admin', 'hr', 'tech_lead');
   END IF;
 END $$;
+ALTER TYPE role_type ADD VALUE IF NOT EXISTS 'admin';
+ALTER TYPE role_type ADD VALUE IF NOT EXISTS 'hr';
+ALTER TYPE role_type ADD VALUE IF NOT EXISTS 'tech_lead';
+-- Giá trị cũ, giữ để tương thích dữ liệu chưa migrate:
 ALTER TYPE role_type ADD VALUE IF NOT EXISTS 'candidate';
 ALTER TYPE role_type ADD VALUE IF NOT EXISTS 'recruiter';
-ALTER TYPE role_type ADD VALUE IF NOT EXISTS 'admin';
 ALTER TYPE role_type ADD VALUE IF NOT EXISTS 'interviewer';
 -- (Nếu Supabase báo "ALTER TYPE ... ADD VALUE cannot run inside a transaction",
---  chạy riêng 4 dòng ALTER TYPE ở trên trước, rồi Run phần còn lại.)
+--  chạy riêng các dòng ALTER TYPE ở trên trước, rồi Run phần còn lại.)
 
 -- 2) users: bổ sung 2 cột mới cho login/register + duyệt tài khoản
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) NULL;
@@ -85,9 +92,9 @@ ALTER TABLE abac_policies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAUL
 INSERT INTO abac_policies (role, resource, field_name, field_path, is_masked, masking_pattern)
 SELECT v.role, v.resource, v.field_name, v.resource || '.' || v.field_name, v.is_masked, v.masking_pattern
 FROM (VALUES
-    ('interviewer', 'resume', 'email',           TRUE, '***'),
-    ('interviewer', 'resume', 'phone',           TRUE, '***'),
-    ('interviewer', 'resume', 'expected_salary', TRUE, '***')
+    ('tech_lead', 'resume', 'email',           TRUE, '***'),
+    ('tech_lead', 'resume', 'phone',           TRUE, '***'),
+    ('tech_lead', 'resume', 'expected_salary', TRUE, '***')
 ) AS v(role, resource, field_name, is_masked, masking_pattern)
 WHERE NOT EXISTS (
     SELECT 1 FROM abac_policies p

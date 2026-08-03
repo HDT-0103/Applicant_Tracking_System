@@ -21,7 +21,8 @@ def test_verify_bad_format_is_false():
 
 
 def test_role_type_values():
-    assert {r.value for r in RoleType} == {"recruiter", "candidate", "admin", "interviewer"}
+    # Hệ thống chỉ còn 3 role; xem V005__consolidate_roles.sql.
+    assert {r.value for r in RoleType} == {"admin", "hr", "tech_lead"}
 
 
 def test_status_type_values():

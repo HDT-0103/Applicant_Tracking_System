@@ -13,20 +13,16 @@ import {
   api,
   clearStoredTokens,
   getStoredAccessToken,
-  setStoredDemoRole,
   setStoredTokens,
 } from "../services/httpClient";
+import { landingPathForRole, normaliseRole, type UserRole } from "../lib/rbac";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type UserRole = "recruiter" | "interviewer" | "admin" | "hr" | "hr_manager" | "tech_lead";
-
-/** Post-auth landing route: admins go straight to the Admin Panel. */
-export function landingPathForRole(role?: UserRole): string {
-  return role === "admin" ? "/admin" : "/";
-}
+// Định nghĩa role sống ở lib/rbac.ts. Re-export để import cũ vẫn chạy.
+export { landingPathForRole, type UserRole };
 
 export interface AuthUser {
   id: string;
@@ -52,7 +48,6 @@ interface AuthContextValue {
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   canUpload: boolean;
-  devSetRole: (role: UserRole) => void;
 }
 
 const USER_STORAGE_KEY = "smartats_user";
@@ -64,7 +59,11 @@ function readStoredUser(): AuthUser | null {
   const raw = localStorage.getItem(USER_STORAGE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as AuthUser;
+    const stored = JSON.parse(raw) as AuthUser;
+    // Session lưu trước khi hợp nhất role còn mang 'recruiter'/'interviewer'.
+    const role = normaliseRole(stored.role);
+    if (!role) return null; // role lạ -> coi như chưa đăng nhập
+    return { ...stored, role };
   } catch {
     return null;
   }
@@ -81,15 +80,6 @@ function persistUser(user: AuthUser | null): void {
 /* ------------------------------------------------------------------ */
 /*  Provider                                                            */
 /* ------------------------------------------------------------------ */
-
-// Demo user for testing without Google OAuth
-const DEMO_USER: AuthUser = {
-  id: "demo-12345",
-  email: "demo@smartats.com",
-  name: "Demo Recruiter",
-  role: "hr",
-  picture: "https://ui-avatars.com/api/?name=Demo+Recruiter&background=0d6efd&color=fff&size=128"
-};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -175,15 +165,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     [user],
   );
 
+  // hr và tech_lead dùng chung mọi chức năng; admin không tham gia nghiệp vụ.
   const canUpload = useMemo(
-    () => hasRole("recruiter", "admin", "hr", "hr_manager", "tech_lead"),
+    () => hasRole("hr", "tech_lead"),
     [hasRole],
   );
-
-  const devSetRole = useCallback((role: UserRole) => {
-    setUser((prev) => (prev && prev.id === "demo-12345" ? { ...prev, role } : prev));
-    setStoredDemoRole(role);
-  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -196,7 +182,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       logout,
       hasRole,
       canUpload,
-      devSetRole,
     }),
     [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, logout, hasRole, canUpload],
   );

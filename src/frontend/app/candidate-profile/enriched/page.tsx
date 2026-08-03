@@ -38,7 +38,7 @@ import { AppHeader } from "../../../components/AppHeader";
 import { useAuth } from "../../../contexts/AuthContext";
 import { LeftSidebar } from "../../../components/LeftSidebar";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
-import { api } from "../../../services/httpClient";
+import { api, getStoredAccessToken } from "../../../services/httpClient";
 import {
   submitReview,
   getReviewStatus,
@@ -133,6 +133,9 @@ interface WSMessage {
   data?: EnrichedProfile;
   error?: string;
 }
+
+/** Code server dùng khi từ chối handshake xác thực của WebSocket. */
+const WS_UNAUTHORIZED_CODE = 4401;
 
 interface EnrichmentStatusResponse {
   candidate_uuid: string;
@@ -2440,6 +2443,10 @@ export default function EnrichedCandidateProfilePage() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // Handshake xác thực: frame đầu tiên phải là access token, nếu không
+        // backend đóng kết nối (4401). Gửi qua message chứ không qua query
+        // string để token không lọt vào access log của server.
+        ws.send(JSON.stringify({ token: getStoredAccessToken() }));
         console.log("WebSocket connected:", wsUrl);
       };
 
@@ -2476,6 +2483,14 @@ export default function EnrichedCandidateProfilePage() {
         console.log("WebSocket disconnected, code:", event.code);
         if (manualCloseSocketsRef.current.has(ws)) return;
         if (resolvedRef.current) return;
+
+        // 4401 = server từ chối handshake xác thực. Thử lại cũng vô ích vì
+        // token sẽ vẫn hỏng — reconnect ở đây sẽ thành vòng lặp 2.5s vô hạn.
+        if (event.code === WS_UNAUTHORIZED_CODE) {
+          setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+          setLoading(false);
+          return;
+        }
 
         void (async () => {
           const resolvedByStatus = await resolveFromStatus(uuid);
@@ -2634,21 +2649,29 @@ export default function EnrichedCandidateProfilePage() {
     );
   }
 
-  if (hasRole("tech_lead")) {
-    const candidateLabel =
-      data?.full_name && data.full_name !== "***"
-        ? data.full_name
-        : `Candidate ${candidateUuid?.slice(0, 8) || ""}`;
-    return (
-      <div
-        style={{
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        <AppHeader candidateName={candidateLabel} />
+  // HR và Tech Lead dùng CHUNG một layout. Trước đây tech_lead có nhánh render
+  // riêng (không có LeftSidebar) — đó là ẩn ở tầng UI, dữ liệu PII vẫn nằm
+  // trong response. Nay việc che là của ABAC ở backend: cùng một cây component,
+  // dữ liệu tech_lead nhận về đã là "***".
+  const isTechLead = hasRole("tech_lead");
+  const candidateLabel =
+    data?.full_name && data.full_name !== "***"
+      ? data.full_name
+      : isTechLead
+        ? `Candidate ${candidateUuid?.slice(0, 8) || ""}`
+        : null;
+
+  return (
+    <div
+      style={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      <AppHeader candidateName={candidateLabel} />
+      {isTechLead && (
         <div
           style={{
             height: 30,
@@ -2666,42 +2689,7 @@ export default function EnrichedCandidateProfilePage() {
             Technical Review — PII restricted per ABAC policy
           </span>
         </div>
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            overflow: "hidden",
-            animation: "fadeSlideIn 0.4s ease both",
-          }}
-        >
-          <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
-            <EnrichmentPanel data={data} />
-          </div>
-          <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-            <EnrichedAnalytics
-              data={data}
-              userRole={user?.role || "tech_lead"}
-              candidateUuid={candidateUuid || ""}
-              reviewStatus={reviewStatus}
-              onRefreshReview={fetchReviewStatus}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
-      <AppHeader candidateName={data?.full_name || null} />
+      )}
       <div
         style={{
           flex: 1,
@@ -2724,7 +2712,7 @@ export default function EnrichedCandidateProfilePage() {
         <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           <EnrichedAnalytics
             data={data}
-            userRole={user?.role || "hr"}
+            userRole={user?.role ?? "tech_lead"}
             candidateUuid={candidateUuid || ""}
             reviewStatus={reviewStatus}
             onRefreshReview={fetchReviewStatus}

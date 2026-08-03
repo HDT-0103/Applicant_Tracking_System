@@ -92,10 +92,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_candidate_uuid ON audit_logs(candidate_uuid);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 
--- 8. Seed default ABAC policies for 'interviewer' (or tech lead) role PII masking
+-- 8. Seed default ABAC policies for the 'tech_lead' role PII masking
 INSERT INTO abac_policies (role, resource, field_name, is_masked, masking_pattern)
-VALUES 
-    ('interviewer', 'resume', 'email', TRUE, '***'),
-    ('interviewer', 'resume', 'phone', TRUE, '***'),
-    ('interviewer', 'resume', 'expected_salary', TRUE, '***')
+VALUES
+    ('tech_lead', 'resume', 'email', TRUE, '***'),
+    ('tech_lead', 'resume', 'phone', TRUE, '***'),
+    ('tech_lead', 'resume', 'expected_salary', TRUE, '***')
 ON CONFLICT (role, resource, field_name) DO NOTHING;
