@@ -21,7 +21,7 @@ import {
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type UserRole = "recruiter" | "interviewer" | "admin" | "tech_lead" | "hr";
+export type UserRole = "recruiter" | "interviewer" | "admin" | "hr" | "hr_manager" | "tech_lead";
 
 /** Post-auth landing route: admins go straight to the Admin Panel. */
 export function landingPathForRole(role?: UserRole): string {
@@ -176,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const canUpload = useMemo(
-    () => hasRole("hr", "admin"),
+    () => hasRole("recruiter", "admin", "hr", "hr_manager", "tech_lead"),
     [hasRole],
   );
 

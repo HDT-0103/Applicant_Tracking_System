@@ -1,344 +1,286 @@
 # CẤU TRÚC CÁC BẢNG TRONG SUPABASE
 
-create table public.abac_policies (
-  id uuid not null default gen_random_uuid (),
-  role character varying(50) not null,
-  field_path character varying(255) not null,
-  strategy character varying(50) not null default 'passthrough'::character varying,
-  created_at timestamp with time zone not null default now(),
-  constraint pk_abac_policy primary key (id),
-  constraint uq_abac_role_field unique (role, field_path)
-) TABLESPACE pg_default;
----
-create table public.audit_log (
-  id uuid not null default gen_random_uuid (),
-  entity_type character varying(100) not null,
-  entity_id character varying(255) not null,
-  action public.audit_action not null,
-  actor_id character varying(255) null,
-  actor_role character varying(50) null,
-  old_value jsonb null,
-  new_value jsonb null,
-  metadata jsonb null,
-  created_at timestamp with time zone not null default now(),
-  constraint pk_audit_log primary key (id)
-) TABLESPACE pg_default;
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
-create index IF not exists idx_audit_log_entity on public.audit_log using btree (entity_type, entity_id) TABLESPACE pg_default;
-
-create index IF not exists idx_audit_log_actor on public.audit_log using btree (actor_id) TABLESPACE pg_default;
-
-create index IF not exists idx_audit_log_action on public.audit_log using btree (action) TABLESPACE pg_default;
-
-create index IF not exists idx_audit_log_created on public.audit_log using btree (created_at) TABLESPACE pg_default;
-
-
----
-create table public.candidates (
-  uuid character varying(36) not null,
-  full_name character varying(255) null,
-  github_username character varying(255) null,
-  linkedin_url text null,
-  resume_text text null,
-  status character varying(50) not null default 'CREATED'::character varying,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  cv_file_path text null,
-  email character varying(255) null,
-  current_location character varying(255) null,
-  current_company character varying(255) null,
-  pronouns character varying(50) null,
-  custom_pronouns character varying(100) null,
-  github_url text null,
-  portfolio_url text null,
-  website_url text null,
-  university character varying(255) null,
-  faculty_program text null,
-  graduation_year character varying(20) null,
-  age_group character varying(50) null,
-  gender_identity character varying(100) null,
-  race text[] not null default '{}'::text[],
-  military_status character varying(50) null,
-  disability_status character varying(50) null,
-  phone character varying(20) null,
-  address text null,
-  salary_expectation numeric(12, 2) null,
-  constraint pk_candidate primary key (uuid)
-) TABLESPACE pg_default;
-
-create index IF not exists idx_candidates_status on public.candidates using btree (status) TABLESPACE pg_default;
-
-create index IF not exists idx_candidates_full_name on public.candidates using btree (full_name) TABLESPACE pg_default;
-
-create index IF not exists idx_candidates_email on public.candidates using btree (email) TABLESPACE pg_default;
-
-create trigger trg_candidates_updated_at BEFORE
-update on candidates for EACH row
-execute FUNCTION update_updated_at_column ();
-
----
-create table public.applications (
-  id uuid not null default gen_random_uuid (),
-  candidate_uuid character varying(36) not null,
-  job_posting_id uuid not null,
-  resume_id uuid not null,
-  status character varying(50) not null default 'SUBMITTED'::character varying,
-  cover_letter text null,
-  work_authorization boolean null,
-  office_attendance boolean null,
-  referral_source character varying(255) null,
-  preferred_talent_network boolean null,
-  additional_information text null,
-  submitted_at timestamp with time zone not null default now(),
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  constraint pk_applications primary key (id),
-  constraint fk_application_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE,
-  constraint fk_application_job_posting foreign KEY (job_posting_id) references jobs_posting (id) on delete CASCADE,
-  constraint fk_application_resume foreign KEY (resume_id) references resumes (id) on delete CASCADE,
-  constraint ck_application_status check (
-    (
-      (status)::text = any (
-        array[
-          ('SUBMITTED'::character varying)::text,
-          ('SCREENING'::character varying)::text,
-          ('INTERVIEW'::character varying)::text,
-          ('OFFER'::character varying)::text,
-          ('HIRED'::character varying)::text,
-          ('REJECTED'::character varying)::text,
-          ('WITHDRAWN'::character varying)::text
-        ]
-      )
-    )
-  )
-) TABLESPACE pg_default;
-
-create index IF not exists idx_applications_candidate on public.applications using btree (candidate_uuid) TABLESPACE pg_default;
-
-create index IF not exists idx_applications_job on public.applications using btree (job_posting_id) TABLESPACE pg_default;
-
-create index IF not exists idx_applications_resume on public.applications using btree (resume_id) TABLESPACE pg_default;
-
-create index IF not exists idx_applications_status on public.applications using btree (status) TABLESPACE pg_default;
-
-create index IF not exists idx_applications_created_at on public.applications using btree (created_at) TABLESPACE pg_default;
-
-create trigger trg_applications_updated_at BEFORE
-update on applications for EACH row
-execute FUNCTION update_updated_at_column ();
----
-
-create table public.confirmed_slots (
-  id character varying(36) not null,
-  candidate_uuid character varying(36) not null,
-  start_time timestamp with time zone not null,
-  end_time timestamp with time zone not null,
-  interviewer_ids text[] not null default '{}'::text[],
-  calendar_event_id text null,
-  email_notified boolean not null default false,
-  slack_notified boolean not null default false,
-  created_at timestamp with time zone not null default now(),
-  constraint pk_confirmed_slot primary key (id),
-  constraint fk_confirmed_slot_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE
-) TABLESPACE pg_default;
-
-create index IF not exists idx_confirmed_slots_candidate on public.confirmed_slots using btree (candidate_uuid) TABLESPACE pg_default;
-
-create index IF not exists idx_confirmed_slots_start on public.confirmed_slots using btree (start_time) TABLESPACE pg_default;
-
----
-create table public.cv_reviews (
-  id uuid not null default gen_random_uuid (),
-  candidate_uuid character varying(36) not null,
-  reviewer_id uuid not null,
-  reviewer_role public.role_type not null,
-  decision public.review_decision not null default 'pending'::review_decision,
-  review_text text null,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  constraint pk_cv_review primary key (id),
-  constraint uq_candidate_reviewer unique (candidate_uuid, reviewer_id),
-  constraint fk_cv_review_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE,
-  constraint fk_cv_review_reviewer foreign KEY (reviewer_id) references users (id) on delete CASCADE
-) TABLESPACE pg_default;
-
-create index IF not exists idx_cv_reviews_candidate on public.cv_reviews using btree (candidate_uuid) TABLESPACE pg_default;
-
-create index IF not exists idx_cv_reviews_reviewer on public.cv_reviews using btree (reviewer_id) TABLESPACE pg_default;
-
----
-create table public.enrichment_profiles (
-  id uuid not null default gen_random_uuid (),
-  candidate_uuid character varying(36) not null,
-  enrichment_status public.enrichment_status not null default 'QUEUED'::enrichment_status,
-  match_confidence_score double precision null,
-  score_increase double precision null,
-  skill_matrix jsonb null,
-  semantic_tags text[] not null default '{}'::text[],
-  updated_at timestamp with time zone null,
-  constraint pk_enrichment_profile primary key (id),
-  constraint uq_enrichment_profile_candidate unique (candidate_uuid),
-  constraint fk_enrichment_profile_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE
-) TABLESPACE pg_default;
-
-create index IF not exists idx_enrichment_status on public.enrichment_profiles using btree (enrichment_status) TABLESPACE pg_default;
-
----
-create table public.github_profiles (
-  id uuid not null default gen_random_uuid (),
-  candidate_uuid character varying(36) not null,
-  public_repos_count integer not null default 0,
-  top_languages jsonb not null default '{}'::jsonb,
-  readme_content text null,
-  repos jsonb not null default '[]'::jsonb,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  constraint pk_github_profile primary key (id),
-  constraint uq_github_profile_candidate unique (candidate_uuid),
-  constraint fk_github_profile_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE
-) TABLESPACE pg_default;
-
----
-create table public.interviewers (
-  id character varying(50) not null,
-  name character varying(255) not null,
-  email character varying(255) not null default ''::character varying,
-  job_title character varying(100) not null,
-  initials character varying(10) not null,
-  color character varying(10) not null,
-  cal_connected boolean not null default false,
-  calendar_api_key text null,
-  calendar_id character varying(255) not null default 'primary'::character varying,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  constraint pk_interviewer primary key (id)
-) TABLESPACE pg_default;
-
----
-create table public.linkedin_profiles (
-  id uuid not null default gen_random_uuid (),
-  candidate_uuid character varying(36) not null,
-  full_name character varying(255) null,
-  headline text null,
-  profile_url text null,
-  avatar_url text null,
-  experiences jsonb not null default '[]'::jsonb,
-  educations jsonb not null default '[]'::jsonb,
-  certifications jsonb not null default '[]'::jsonb,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  constraint pk_linkedin_profile primary key (id),
-  constraint uq_linkedin_profile_candidate unique (candidate_uuid),
-  constraint fk_linkedin_profile_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE
-) TABLESPACE pg_default;
-
----
-create table public.resumes (
-  id uuid not null default gen_random_uuid (),
-  candidate_uuid character varying(36) not null,
-  filename character varying(255) null,
-  file_path text null,
-  text_content text null,
-  created_at timestamp with time zone not null default now(),
-  constraint pk_resume primary key (id),
-  constraint fk_resume_candidate foreign KEY (candidate_uuid) references candidates (uuid) on delete CASCADE
-) TABLESPACE pg_default;
-
-create index IF not exists idx_resumes_candidate on public.resumes using btree (candidate_uuid) TABLESPACE pg_default;
----
-create table public.users (
-  id uuid not null default gen_random_uuid (),
-  email character varying(255) not null,
-  name character varying(255) not null,
-  role public.role_type not null,
-  picture text null,
-  is_active boolean not null default true,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  constraint pk_user primary key (id),
-  constraint uq_user_email unique (email)
-) TABLESPACE pg_default;
-
-create index IF not exists idx_users_role on public.users using btree (role) TABLESPACE pg_default;
----
-
-create table public.jobs_posting (
-  id uuid not null default gen_random_uuid (),
-  job_title character varying(255) not null,
-  department character varying(100) null,
-  location character varying(255) null,
-  seniority_level character varying(100) null,
-  employment_type character varying(100) null,
-  work_mode character varying(100) null,
-  target_openings integer null,
-  salary_min numeric(12, 2) null,
-  salary_max numeric(12, 2) null,
-  must_have_skills text[] not null default '{}'::text[],
-  nice_to_have_skills text[] not null default '{}'::text[],
-  description text null,
-  key_responsibilities text null,
-  requirements text null,
-  nice_to_have_qualifications text null,
-  status character varying(50) not null default 'DRAFT'::character varying,
-  posted_at timestamp with time zone null,
-  expires_at timestamp with time zone null,
-  created_by uuid null,
-  created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
-  last_saved_at timestamp with time zone not null default now(),
-  constraint pk_jobs_posting primary key (id),
-  constraint fk_jobs_posting_created_by foreign KEY (created_by) references users (id) on delete set null,
-  constraint ck_jobs_posting_status check (
-    (
-      (status)::text = any (
-        (
-          array[
-            'DRAFT'::character varying,
-            'PUBLISHED'::character varying,
-            'CLOSED'::character varying,
-            'ARCHIVED'::character varying
-          ]
-        )::text[]
-      )
-    )
-  )
-) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_title on public.jobs_posting using btree (job_title) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_department on public.jobs_posting using btree (department) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_location on public.jobs_posting using btree (location) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_status on public.jobs_posting using btree (status) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_created_by on public.jobs_posting using btree (created_by) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_posted_at on public.jobs_posting using btree (posted_at) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_expires_at on public.jobs_posting using btree (expires_at) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_skills on public.jobs_posting using gin (must_have_skills) TABLESPACE pg_default;
-
-create index IF not exists idx_jobs_posting_preferred_skills on public.jobs_posting using gin (nice_to_have_skills) TABLESPACE pg_default;
-
-create trigger trg_jobs_posting_updated_at BEFORE
-update on jobs_posting for EACH row
-execute FUNCTION update_updated_at_column ();
-
----
-
-create table public.universities (
-  id bigserial not null,
-  name text not null,
-  country text not null,
-  alpha_two_code character varying(10) null,
-  state_province text null,
-  domains text[] null,
-  web_pages text[] null,
-  constraint universities_pkey primary key (id)
-) TABLESPACE pg_default;
-
-create index IF not exists idx_universities_name_lower on public.universities using btree (lower(name)) TABLESPACE pg_default;
-
----
+CREATE TABLE public.users (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email character varying NOT NULL UNIQUE,
+  name character varying NOT NULL,
+  role USER-DEFINED NOT NULL,
+  picture text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  password_hash character varying,
+  is_approved boolean NOT NULL DEFAULT false,
+  CONSTRAINT users_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.candidates (
+  uuid character varying NOT NULL,
+  full_name character varying,
+  github_username character varying,
+  linkedin_url text,
+  resume_text text,
+  status character varying NOT NULL DEFAULT 'CREATED'::character varying,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  cv_file_path text,
+  email character varying,
+  current_location character varying,
+  current_company character varying,
+  pronouns character varying,
+  custom_pronouns character varying,
+  github_url text,
+  portfolio_url text,
+  website_url text,
+  university character varying,
+  faculty_program text,
+  graduation_year character varying,
+  age_group character varying,
+  gender_identity character varying,
+  race ARRAY NOT NULL DEFAULT '{}'::text[],
+  military_status character varying,
+  disability_status character varying,
+  phone character varying,
+  address text,
+  salary_expectation numeric,
+  education_level character varying,
+  CONSTRAINT candidates_pkey PRIMARY KEY (uuid)
+);
+CREATE TABLE public.resumes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  candidate_uuid character varying NOT NULL,
+  filename character varying,
+  file_path text,
+  text_content text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT resumes_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_resume_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid)
+);
+CREATE TABLE public.interviewers (
+  id character varying NOT NULL,
+  name character varying NOT NULL,
+  email character varying NOT NULL DEFAULT ''::character varying,
+  job_title character varying NOT NULL,
+  initials character varying NOT NULL,
+  color character varying NOT NULL,
+  cal_connected boolean NOT NULL DEFAULT false,
+  calendar_api_key text,
+  calendar_id character varying NOT NULL DEFAULT 'primary'::character varying,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT interviewers_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.confirmed_slots (
+  id character varying NOT NULL,
+  candidate_uuid character varying NOT NULL,
+  start_time timestamp with time zone NOT NULL,
+  end_time timestamp with time zone NOT NULL,
+  interviewer_ids ARRAY NOT NULL DEFAULT '{}'::text[],
+  calendar_event_id text,
+  email_notified boolean NOT NULL DEFAULT false,
+  slack_notified boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT confirmed_slots_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_confirmed_slot_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid)
+);
+CREATE TABLE public.abac_policies (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  role character varying NOT NULL,
+  field_path character varying NOT NULL,
+  strategy character varying NOT NULL DEFAULT 'passthrough'::character varying,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  resource character varying,
+  field_name character varying,
+  is_masked boolean DEFAULT true,
+  masking_pattern character varying DEFAULT '***'::character varying,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT abac_policies_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.cv_reviews (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  candidate_uuid character varying NOT NULL,
+  reviewer_id uuid NOT NULL,
+  reviewer_role USER-DEFINED NOT NULL,
+  decision USER-DEFINED NOT NULL DEFAULT 'pending'::review_decision,
+  review_text text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT cv_reviews_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_cv_review_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid),
+  CONSTRAINT fk_cv_review_reviewer FOREIGN KEY (reviewer_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.github_profiles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  candidate_uuid character varying NOT NULL UNIQUE,
+  public_repos_count integer NOT NULL DEFAULT 0,
+  top_languages jsonb NOT NULL DEFAULT '{}'::jsonb,
+  readme_content text,
+  repos jsonb NOT NULL DEFAULT '[]'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT github_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_github_profile_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid)
+);
+CREATE TABLE public.linkedin_profiles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  candidate_uuid character varying NOT NULL UNIQUE,
+  full_name character varying,
+  headline text,
+  profile_url text,
+  avatar_url text,
+  experiences jsonb NOT NULL DEFAULT '[]'::jsonb,
+  educations jsonb NOT NULL DEFAULT '[]'::jsonb,
+  certifications jsonb NOT NULL DEFAULT '[]'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT linkedin_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_linkedin_profile_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid)
+);
+CREATE TABLE public.enrichment_profiles (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  candidate_uuid character varying NOT NULL UNIQUE,
+  enrichment_status USER-DEFINED NOT NULL DEFAULT 'QUEUED'::enrichment_status,
+  match_confidence_score double precision,
+  score_increase double precision,
+  skill_matrix jsonb,
+  semantic_tags ARRAY NOT NULL DEFAULT '{}'::text[],
+  updated_at timestamp with time zone,
+  skills ARRAY NOT NULL DEFAULT '{}'::text[],
+  summary text,
+  experience text,
+  github text,
+  linkedin text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT enrichment_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_enrichment_profile_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid)
+);
+CREATE TABLE public.user_sessions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  token_jti character varying,
+  user_agent character varying,
+  ip_address character varying,
+  expires_at timestamp with time zone,
+  is_revoked boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT user_sessions_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.audit_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  action character varying,
+  candidate_uuid uuid,
+  ip_address character varying,
+  user_agent character varying,
+  details jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT audit_logs_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.llm_usage_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  model_name character varying,
+  prompt_tokens integer DEFAULT 0,
+  completion_tokens integer DEFAULT 0,
+  total_tokens integer DEFAULT 0,
+  estimated_cost numeric DEFAULT 0.000000,
+  operation_type character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT llm_usage_logs_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.api_rate_limits (
+  provider character varying NOT NULL,
+  rate_limit_total integer,
+  rate_limit_remaining integer,
+  rate_limit_reset timestamp with time zone,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT api_rate_limits_pkey PRIMARY KEY (provider)
+);
+CREATE TABLE public.jobs_posting (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  job_title character varying NOT NULL,
+  department character varying,
+  location character varying,
+  seniority_level character varying,
+  employment_type character varying,
+  work_mode character varying,
+  target_openings integer,
+  salary_min numeric,
+  salary_max numeric,
+  must_have_skills ARRAY NOT NULL DEFAULT '{}'::text[],
+  nice_to_have_skills ARRAY NOT NULL DEFAULT '{}'::text[],
+  description text,
+  key_responsibilities text,
+  requirements text,
+  nice_to_have_qualifications text,
+  status character varying NOT NULL DEFAULT 'DRAFT'::character varying CHECK (status::text = ANY (ARRAY['DRAFT'::character varying, 'PUBLISHED'::character varying, 'CLOSED'::character varying, 'ARCHIVED'::character varying]::text[])),
+  posted_at timestamp with time zone,
+  expires_at timestamp with time zone,
+  created_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  last_saved_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT jobs_posting_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_jobs_posting_created_by FOREIGN KEY (created_by) REFERENCES public.users(id)
+);
+CREATE TABLE public.universities (
+  id bigint NOT NULL DEFAULT nextval('universities_id_seq'::regclass),
+  name text NOT NULL,
+  country text NOT NULL,
+  alpha_two_code character varying,
+  state_province text,
+  domains ARRAY,
+  web_pages ARRAY,
+  CONSTRAINT universities_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.applications (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  candidate_uuid character varying NOT NULL,
+  job_posting_id uuid NOT NULL,
+  resume_id uuid NOT NULL,
+  status character varying NOT NULL DEFAULT 'SUBMITTED'::character varying CHECK (status::text = ANY (ARRAY['SUBMITTED'::character varying::text, 'SCREENING'::character varying::text, 'INTERVIEW'::character varying::text, 'OFFER'::character varying::text, 'HIRED'::character varying::text, 'REJECTED'::character varying::text, 'WITHDRAWN'::character varying::text])),
+  cover_letter text,
+  work_authorization boolean,
+  office_attendance boolean,
+  referral_source character varying,
+  preferred_talent_network boolean,
+  additional_information text,
+  submitted_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  expected_salary_min numeric,
+  expected_salary_max numeric,
+  salary_currency character varying NOT NULL DEFAULT 'VND'::character varying,
+  salary_basis character varying CHECK (salary_basis IS NULL OR (salary_basis::text = ANY (ARRAY['gross'::character varying, 'net'::character varying]::text[]))),
+  work_mode_pref ARRAY NOT NULL DEFAULT '{}'::text[],
+  availability_bucket character varying CHECK (availability_bucket IS NULL OR (availability_bucket::text = ANY (ARRAY['immediate'::character varying, 'two_weeks'::character varying, 'one_month'::character varying, 'other'::character varying]::text[]))),
+  availability_date date,
+  experience_bucket character varying CHECK (experience_bucket IS NULL OR (experience_bucket::text = ANY (ARRAY['under_1'::character varying, '1_3'::character varying, '3_5'::character varying, 'over_5'::character varying]::text[]))),
+  skill_ratings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  portfolio_url text,
+  proudest_project text,
+  motivation_reason character varying CHECK (motivation_reason IS NULL OR (motivation_reason::text = ANY (ARRAY['growth'::character varying, 'promotion'::character varying, 'pivot'::character varying, 'other'::character varying]::text[]))),
+  motivation_other text,
+  conflict_story text,
+  work_style character varying CHECK (work_style IS NULL OR (work_style::text = ANY (ARRAY['independent'::character varying, 'collaborative'::character varying, 'structured'::character varying]::text[]))),
+  consent_data_sharing boolean NOT NULL DEFAULT false,
+  consent_at timestamp with time zone,
+  CONSTRAINT applications_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_application_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid),
+  CONSTRAINT fk_application_job_posting FOREIGN KEY (job_posting_id) REFERENCES public.jobs_posting(id),
+  CONSTRAINT fk_application_resume FOREIGN KEY (resume_id) REFERENCES public.resumes(id)
+);
+CREATE TABLE public.embeddings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  enrichment_profile_id uuid NOT NULL,
+  source_type character varying NOT NULL CHECK (source_type::text = ANY (ARRAY['summary'::character varying, 'experience'::character varying, 'github'::character varying, 'linkedin'::character varying]::text[])),
+  text_content text NOT NULL,
+  embedding USER-DEFINED NOT NULL,
+  model_name character varying NOT NULL DEFAULT 'intfloat/multilingual-e5-base'::character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT embeddings_pkey PRIMARY KEY (id),
+  CONSTRAINT fk_embeddings_enrichment_profile FOREIGN KEY (enrichment_profile_id) REFERENCES public.enrichment_profiles(id)
+);

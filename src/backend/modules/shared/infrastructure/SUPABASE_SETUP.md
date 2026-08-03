@@ -116,15 +116,15 @@ src/backend/modules/
 The `AuthService` class has been refactored to:
 
 1. **Query Supabase for user roles**: Instead of checking `.env` email lists, it queries the `public.users` table
-2. **Admin-only authentication**: Only users with `role = 'admin'` can authenticate
+2. **Role-based authentication**: Users with active roles (`admin`, `hr`, `hr_manager`, `tech_lead`, `recruiter`, `interviewer`) in `public.users` can authenticate
 3. **Fallback support**: Maintains backward compatibility with `.env` configuration
 
 ```python
-# New method in AuthService
+# Updated method in AuthService
 def resolve_role_from_supabase(self, email: str) -> UserRole:
-    # Queries public.users table
-    # Only returns 'admin' if user exists and has admin role
-    # Raises ValueError if user not found or not admin
+    # Queries public.users table for active user
+    # Returns the user's role if it is in the permitted role list
+    # Raises ValueError if user is not found, inactive, or unpermitted
 ```
 
 ### Usage
