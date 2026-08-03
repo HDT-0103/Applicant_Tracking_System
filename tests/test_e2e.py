@@ -156,7 +156,7 @@ async def run_e2e_test() -> None:
         min_similarity=0.5,
     )
 
-    llm_provider = GroqProvider(model="llama-3.3-70b-versatile")
+    llm_provider = GroqProvider(model="llama-3.1-8b-instant")
     interaction_gateway = CLIInteractionGateway()
 
     app = build_graph(

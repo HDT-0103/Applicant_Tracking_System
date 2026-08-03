@@ -6,4 +6,4 @@ class BaseRepository:
 
     def __init__(self, session):
         self.session = session
-        self.client = supabase
+        self.client = session or supabase
