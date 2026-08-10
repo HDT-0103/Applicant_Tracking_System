@@ -23,3 +23,7 @@ class IngestionResponse(BaseModel):
     candidate_uuid: str
     storage_url: str
     message: str
+    # Stage 0 persistence: set when Supabase is configured; application_id only
+    # when the upload carried a job_id (public career-page applications).
+    resume_id: Optional[str] = None
+    application_id: Optional[str] = None

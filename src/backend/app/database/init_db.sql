@@ -2,7 +2,12 @@ create extension if not exists vector;
 create extension if not exists pgcrypto;
 
 create type status_type as enum('done', 'waiting', 'canceled');
-create type role_type as enum('candidate', 'recruiter', 'admin');
+-- Hệ thống có đúng 3 role. Ứng viên nộp hồ sơ qua cổng /careers công khai và
+-- KHÔNG có tài khoản, nên không có role 'candidate'.
+--   admin     : chỉ quản trị hệ thống
+--   hr        : vận hành tuyển dụng, thấy đầy đủ dữ liệu ứng viên
+--   tech_lead : vận hành y hệt hr, PII của ứng viên bị ABAC che thành ***
+create type role_type as enum('admin', 'hr', 'tech_lead');
 
 -- =========================================================================
 -- BUSINESS TABLES

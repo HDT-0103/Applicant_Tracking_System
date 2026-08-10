@@ -15,6 +15,7 @@ from modules.enrichment.adapters.routes import router as enrichment_router
 from modules.admin.adapters.routes import router as admin_router
 from modules.scheduling.adapters.routes import router as scheduling_router
 from modules.review.adapters.routes import router as review_router
+from modules.scoring.adapters.routes import router as scoring_router
 from modules.shared.infrastructure.config import get_settings
 
 structlog.configure(
@@ -56,6 +57,7 @@ app.include_router(enrichment_router)
 app.include_router(admin_router)
 app.include_router(scheduling_router)
 app.include_router(review_router)
+app.include_router(scoring_router)
 
 
 @app.get("/health")

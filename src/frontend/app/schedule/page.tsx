@@ -225,7 +225,9 @@ export default function SchedulePage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (user && !hasRole("hr", "admin")) {
+    // hr và tech_lead dùng chung mọi màn hình nghiệp vụ; admin đã bị AuthGuard
+    // đẩy về /admin trước khi tới đây.
+    if (user && !hasRole("hr", "tech_lead")) {
       router.replace("/");
     }
   }, [user, hasRole, router]);

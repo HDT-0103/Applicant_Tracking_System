@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     apify_api_token: str = Field(default="", alias="APIFY_API_TOKEN")
 
+    # Embedding cho job posting (modules/scoring). "local-e5" = sentence-transformers
+    # intfloat/multilingual-e5-base chạy local; thêm provider khác thì đổi giá trị này.
+    embedding_provider: str = Field(default="local-e5", alias="EMBEDDING_PROVIDER")
+
     # Azure Cloud Services
     azure_storage_connection_string: str = Field(
         default="", alias="AZURE_STORAGE_CONNECTION_STRING"

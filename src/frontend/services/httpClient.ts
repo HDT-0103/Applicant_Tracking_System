@@ -58,16 +58,8 @@ async function refreshAccessToken(): Promise<string | null> {
   return data.accessToken;
 }
 
-const DEMO_ROLE_KEY = "smartats_demo_role";
-
-export function getStoredDemoRole(): string {
-  if (typeof window === "undefined") return "hr";
-  return localStorage.getItem(DEMO_ROLE_KEY) ?? "hr";
-}
-
-export function setStoredDemoRole(role: string): void {
-  localStorage.setItem(DEMO_ROLE_KEY, role);
-}
+// `smartats_demo_role` (role giả lưu trong localStorage) đã được gỡ: role chỉ
+// đến từ JWT do backend cấp. Client tự đặt role không phải là phân quyền.
 
 async function getValidAccessToken(): Promise<string | null> {
   const accessToken = getStoredAccessToken();

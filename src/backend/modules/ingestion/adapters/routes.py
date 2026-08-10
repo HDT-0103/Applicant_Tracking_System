@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from modules.auth.domain.models import AuthUser
 from modules.ingestion.application.ingestion_service import process_cv_resume
-from modules.shared.infrastructure.auth_dependencies import require_roles
+from modules.shared.infrastructure.auth_dependencies import require_operational_roles
 from modules.shared.infrastructure.config import Settings, get_settings
 
 router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])
@@ -19,7 +19,7 @@ MAX_PDF_BYTES = 10 * 1024 * 1024
 @router.post("/upload")
 async def upload_resume(
     file: Annotated[UploadFile, File(...)],
-    current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin", "hr", "hr_manager", "tech_lead"))],
+    current_user: Annotated[AuthUser, Depends(require_operational_roles())],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, str | None]:
     if file.content_type not in {"application/pdf", "application/x-pdf"}:

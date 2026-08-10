@@ -10,12 +10,16 @@ from enum import Enum
 
 
 class RoleType(str, Enum):
-    """Role type enum as defined in public.role_type"""
+    """Role type enum as defined in public.role_type.
+
+    Thống nhất với ``modules.shared.domain.roles.UserRole`` — chỉ 3 giá trị.
+    Các giá trị cũ (``hr_manager``, ``recruiter``, ``interviewer``, ``candidate``)
+    còn tồn tại trong dữ liệu Supabase được quy đổi khi đọc, xem
+    ``roles.normalise_role`` và ``AuthService.resolve_role_from_supabase``.
+    """
     ADMIN = "admin"
-    HR_MANAGER = "hr_manager"
+    HR = "hr"
     TECH_LEAD = "tech_lead"
-    INTERVIEWER = "interviewer"
-    CANDIDATE = "candidate"
 
 
 class User(BaseModel):

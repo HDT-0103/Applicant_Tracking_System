@@ -104,7 +104,7 @@ export default function HomePage() {
                 Dashboard Overview
               </h1>
               <p style={{ fontSize: 14, color: D.muted }}>
-                Welcome back! Here's what's happening with your recruitment pipeline today.
+                Welcome back! Here&apos;s what&apos;s happening with your recruitment pipeline today.
               </p>
             </div>
 
@@ -118,6 +118,8 @@ export default function HomePage() {
               <div style={{ display: "flex", flexDirection: "column" }}>
 
                 <button
+                  type="button"
+                  onClick={() => router.push('/analytics')}
                   style={{
                     padding: "20px",
                     borderRadius: 12,

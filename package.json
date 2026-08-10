@@ -3,12 +3,14 @@
   "version": "4.2.1",
   "private": true,
   "scripts": {
-    "dev": "next dev src/frontend",
-    "build": "next build src/frontend",
-    "start": "next start src/frontend",
+    "dev": "env-cmd -f .env --silent next dev src/frontend",
+    "build": "env-cmd -f .env --silent next build src/frontend",
+    "start": "env-cmd -f .env --silent next start src/frontend",
     "lint": "next lint src/frontend",
     "backend:dev": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --reload --host 0.0.0.0 --port 8000 --app-dir src/backend",
-    "backend:start": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend"
+    "backend:start": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend",
+    "test": "vitest run src/frontend",
+    "test:watch": "vitest src/frontend"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
@@ -28,6 +30,7 @@
     "eslint-config-next": "^15.5.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.10"
   }
 }

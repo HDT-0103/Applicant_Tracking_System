@@ -10,8 +10,10 @@ from backend.app.models.llm_usage_log import LlmUsageLog
 from backend.app.models.api_rate_limit import ApiRateLimit
 from backend.app.models.audit_log import AuditLog
 from backend.app.models.enums import RoleType
+from modules.shared.domain.roles import ALL_ROLES
 
-VALID_ROLES = {"recruiter", "interviewer", "admin"}
+#: Role mà Admin Dashboard được phép cấp — đúng 3 role của hệ thống.
+VALID_ROLES = set(ALL_ROLES)
 
 class AdminService:
     def __init__(self, db: AsyncSession):
@@ -21,8 +23,10 @@ class AdminService:
     # USER MANAGEMENT & ACCESS
     # ----------------------------------------------------
     async def get_users(self) -> list[dict]:
-        # Đọc role dưới dạng text (CAST) để KHÔNG vỡ khi DB có role ngoài enum
-        # (vd dữ liệu cũ 'hr', 'tech_lead' từ thiết kế trước). Admin vẫn thấy để sửa.
+        # Đọc role dưới dạng text (CAST) để KHÔNG vỡ khi DB còn role ngoài enum
+        # (dữ liệu cũ 'recruiter'/'interviewer' nếu V005 chưa chạy). Giữ lại có
+        # chủ đích: đây là màn hình duy nhất admin dùng để sửa lại role hỏng, nó
+        # phải load được kể cả khi dữ liệu chưa migrate.
         stmt = (
             select(
                 User.id,
@@ -98,6 +102,20 @@ class AdminService:
             values["role"] = RoleType(role)
         await self.db.execute(update(User).where(User.id == row.id).values(**values))
 
+        # Role nằm TRONG access token: nếu không thu hồi phiên thì người vừa bị
+        # hạ quyền/khoá vẫn giữ nguyên quyền cũ cho tới khi token hết hạn.
+        sessions_revoked = 0
+        if new_role != old_role or new_approved != old_approved:
+            result = await self.db.execute(
+                update(UserSession)
+                .where(
+                    UserSession.user_id == row.id,
+                    UserSession.is_revoked.is_(False),
+                )
+                .values(is_revoked=True)
+            )
+            sessions_revoked = result.rowcount or 0
+
         self.db.add(
             AuditLog(
                 user_id=uuid.UUID(actor_id),
@@ -107,6 +125,7 @@ class AdminService:
                     "target_email": row.email,
                     "role": {"from": old_role, "to": new_role},
                     "is_approved": {"from": old_approved, "to": new_approved},
+                    "sessions_revoked": sessions_revoked,
                 },
             )
         )

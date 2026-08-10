@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppHeader } from "../../components/AppHeader";
 import { api } from "../../services/httpClient";
 import { useAuth } from "../../contexts/AuthContext";
+import { ALL_ROLES, ROLE_LABELS, type UserRole } from "../../lib/rbac";
 import { D } from "../../lib/shared";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -41,7 +42,9 @@ interface UserRow {
   id: string;
   name: string;
   email: string;
-  role: "recruiter" | "interviewer" | "admin";
+  // Dữ liệu chưa migrate có thể còn role cũ; API trả role dạng text để admin
+  // vẫn thấy và sửa lại được (xem V005__consolidate_roles.sql).
+  role: UserRole | string;
   is_approved: boolean;
   created_at: string | null;
 }
@@ -120,7 +123,7 @@ const tdStyle: React.CSSProperties = { padding: "13px 16px", color: D.sub, fontS
 const h1Style: React.CSSProperties = { fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em", color: D.ink, margin: "0 0 6px" };
 const subStyle: React.CSSProperties = { color: D.muted, fontSize: 13, margin: "0 0 20px" };
 
-const roleColor = (r: string) => (r === "admin" ? D.amber : r === "recruiter" ? D.blue : D.mint);
+const roleColor = (r: string) => (r === "admin" ? D.amber : r === "hr" ? D.blue : D.mint);
 
 const RoleBadge: React.FC<{ role: string }> = ({ role }) => (
   <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 4, textTransform: "uppercase", color: roleColor(role), background: `${roleColor(role)}14`, border: `1px solid ${roleColor(role)}30` }}>
@@ -344,9 +347,12 @@ export default function AdminDashboard() {
                               onChange={(e) => editUser(u.id, { role: e.target.value as UserRow["role"] })}
                               style={{ padding: "6px 8px", borderRadius: 6, border: `1px solid ${D.line}`, background: D.canvas, color: D.ink, fontSize: 12.5, fontFamily: D.font, cursor: "pointer" }}
                             >
-                              <option value="recruiter">Recruiter</option>
-                              <option value="interviewer">Interviewer</option>
-                              <option value="admin">Admin</option>
+                              {/* Role cũ (recruiter/interviewer) nếu còn trong
+                                  DB vẫn hiện ở value nhưng không chọn lại được —
+                                  chọn 1 trong 3 role dưới đây là đã migrate. */}
+                              {ALL_ROLES.map((r) => (
+                                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                              ))}
                             </select>
                           </td>
                           <td style={tdStyle}>

@@ -14,8 +14,17 @@ def _build_database_url() -> str:
     mật khẩu chứa ký tự đặc biệt (@ : / # ...)."""
     raw = os.environ.get("DATABASE_URL")
     if raw:
-        # Chuẩn hoá về driver async psycopg
-        for prefix in ("postgresql+psycopg://", "postgresql://", "postgres://"):
+        # Chuẩn hoá về driver async psycopg.
+        # `postgresql+asyncpg://` phải nằm trong danh sách này: project dùng
+        # psycopg3, không cài asyncpg. Thiếu nó thì một URL cũ sót lại trong
+        # .env hay CI sẽ làm cả app sập ngay lúc import (engine tạo ở module
+        # level), với lỗi ModuleNotFoundError khó lần ra nguyên nhân.
+        for prefix in (
+            "postgresql+psycopg://",
+            "postgresql+asyncpg://",
+            "postgresql://",
+            "postgres://",
+        ):
             if raw.startswith(prefix):
                 return "postgresql+psycopg://" + raw[len(prefix):]
         return raw
