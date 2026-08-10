@@ -16,10 +16,18 @@ import {
   buildScreeningPayload,
   formatVnd,
   pickRatedSkills,
+  screeningAnswersFromRow,
   toAmount,
   validateScreening,
   type Choice,
+  type ScreeningAnswers,
 } from "../../../lib/screening";
+import {
+  clearStoredApplication,
+  readStoredApplication,
+  writeStoredApplication,
+  type StoredApplicationRef,
+} from "../../../lib/applicationStorage";
 import {
   Upload,
   FileText,
@@ -131,6 +139,59 @@ interface JobPosting {
 
 /** How the URL resolved to a job — decides what the page renders. */
 type Resolution = "loading" | "ok" | "closed" | "list" | "notfound" | "error";
+
+/** A previous submission by this browser for the current job → form opens in edit mode. */
+interface ExistingApplication {
+  ref: StoredApplicationRef;
+  answers: ScreeningAnswers;
+  resumeFilename: string | null;
+  submittedAt: string | null;
+}
+
+/**
+ * One application per candidate per job: if this browser already submitted to
+ * `jobId` (tracked in localStorage), load that application so the form can
+ * pre-fill and update it instead of inserting a duplicate.
+ */
+async function loadExistingApplication(jobId: string): Promise<ExistingApplication | null> {
+  const ref = readStoredApplication(jobId);
+  if (!ref) return null;
+
+  const { data, error } = await supabase
+    .from('applications')
+    .select(
+      'id, job_posting_id, candidate_uuid, resume_id, submitted_at, ' +
+      'expected_salary_min, expected_salary_max, salary_basis, work_mode_pref, ' +
+      'availability_bucket, availability_date, skill_ratings, motivation_reason, ' +
+      'motivation_other, work_style, consent_data_sharing, resumes(filename)'
+    )
+    .eq('id', ref.applicationId)
+    .maybeSingle();
+
+  if (error) {
+    // Transient fetch problem: keep the stored ref, fall back to a fresh form.
+    console.error('Failed to load previous application:', error);
+    return null;
+  }
+  // supabase-js cannot infer types from a concatenated select string.
+  const row = data as unknown as Record<string, unknown> | null;
+  if (!row || row.job_posting_id !== jobId || row.candidate_uuid !== ref.candidateUuid) {
+    // The application was removed (or the ref is corrupt) — forget it.
+    clearStoredApplication(jobId);
+    return null;
+  }
+
+  const resumeRel = row.resumes as { filename?: string } | { filename?: string }[] | null;
+  const resumeFilename =
+    (Array.isArray(resumeRel) ? resumeRel[0]?.filename : resumeRel?.filename) ?? null;
+
+  return {
+    ref,
+    answers: screeningAnswersFromRow(row),
+    resumeFilename,
+    submittedAt: (row.submitted_at as string | null) ?? ref.submittedAt ?? null,
+  };
+}
 
 const isExpired = (job: Pick<JobPosting, "expires_at">) =>
   !!job.expires_at && new Date(job.expires_at).getTime() < Date.now();
@@ -325,7 +386,22 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
   );
 }
 
-function LoadingScreen() {
+function LoadingScreen({ updating = false }: { updating?: boolean }) {
+  if (updating) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 gap-6">
+        <div className="w-14 h-14 rounded-2xl bg-[#4f46e5]/10 flex items-center justify-center">
+          <Loader2 className="w-7 h-7 text-[#4f46e5] animate-spin" />
+        </div>
+        <div className="text-center">
+          <p className="font-semibold text-foreground">Saving your changes…</p>
+          <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+            Updating the answers on your application.
+          </p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col items-center justify-center py-32 gap-6">
       <div className="w-14 h-14 rounded-2xl bg-[#4f46e5]/10 flex items-center justify-center">
@@ -352,7 +428,7 @@ function LoadingScreen() {
   );
 }
 
-function ResultsPanel({ jobTitle, onReset }: { jobTitle: string; onReset: () => void }) {
+function ResultsPanel({ jobTitle, updated, onReset }: { jobTitle: string; updated: boolean; onReset: () => void }) {
   return (
     <div className="flex flex-col items-center gap-6 py-12 text-center">
       <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
@@ -361,24 +437,35 @@ function ResultsPanel({ jobTitle, onReset }: { jobTitle: string; onReset: () => 
       <div>
         <p className="text-2xl font-semibold text-foreground">Thank you!</p>
         <p className="text-muted-foreground mt-1">
-          Your application for <span className="font-medium text-foreground">{jobTitle}</span> has
-          been submitted. We will be in touch at the email address on your CV.
+          {updated ? (
+            <>Your application for <span className="font-medium text-foreground">{jobTitle}</span> has
+            been updated. We will be in touch at the email address on your CV.</>
+          ) : (
+            <>Your application for <span className="font-medium text-foreground">{jobTitle}</span> has
+            been submitted. We will be in touch at the email address on your CV.</>
+          )}
         </p>
       </div>
       <button onClick={onReset} className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
-        Submit another application
+        Review or edit your application
       </button>
     </div>
   );
 }
 
-function ApplicationForm({ job, onSubmit }: { job: JobPosting; onSubmit: (d: FormData) => void }) {
+function ApplicationForm({ job, onSubmit, existing }: {
+  job: JobPosting;
+  onSubmit: (d: FormData) => void;
+  existing?: ExistingApplication | null;
+}) {
+  const editing = !!existing;
   const [form, setForm] = useState<FormData>({
     resume: null,
     salaryMin: "", salaryMax: "", salaryBasis: "gross",
     workModePref: [], availabilityBucket: "", availabilityDate: "",
     skillRatings: {}, workStyle: "",
     motivationReason: "", motivationOther: "", consent: false,
+    ...(existing?.answers ?? {}),
   });
   const [errors, setErrors] = useState<FieldErrors>({});
 
@@ -391,7 +478,8 @@ function ApplicationForm({ job, onSubmit }: { job: JobPosting; onSubmit: (d: For
 
   const validate = (): FieldErrors => {
     const e: FieldErrors = {};
-    if (!form.resume) e.resume = "Please upload your CV";
+    // In edit mode the CV from the original submission is kept, so no upload.
+    if (!editing && !form.resume) e.resume = "Please upload your CV";
     Object.assign(e, validateScreening(form, ratedSkills));
     return e;
   };
@@ -412,13 +500,51 @@ function ApplicationForm({ job, onSubmit }: { job: JobPosting; onSubmit: (d: For
   return (
     <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-9">
 
+      {/* Returning candidate — one application per job, so this is an edit */}
+      {editing && (
+        <div
+          className="flex items-start gap-2.5 rounded-md border px-4 py-3"
+          style={{ borderColor: D.blue, background: D.blueSoft }}
+        >
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" style={{ color: D.blue }} />
+          <p className="text-sm leading-relaxed" style={{ color: D.sub }}>
+            You already applied for this position
+            {existing?.submittedAt && (
+              <> on <strong style={{ color: D.ink }}>
+                {new Date(existing.submittedAt).toLocaleDateString()}
+              </strong></>
+            )}. Your previous answers are pre-filled below — change anything you like and save.
+          </p>
+        </div>
+      )}
+
       {/* CV — everything we can read off it, we do not ask for */}
-      <section data-error={!!errors.resume}>
-        <ResumeUploader file={form.resume} onChange={(f) => set("resume", f)} error={errors.resume} />
-        <p className="-mt-3 text-xs" style={{ color: D.muted }}>
-          We read your name, contact details and links straight from the CV — no need to retype them.
-        </p>
-      </section>
+      {editing ? (
+        <section>
+          <FieldLabel>Resume / CV</FieldLabel>
+          <div className="flex items-center gap-3 p-3 rounded-md border border-[#4f46e5]/30 bg-[#f5f3ff]">
+            <div className="w-9 h-9 rounded-lg bg-[#4f46e5]/10 flex items-center justify-center shrink-0">
+              <FileText className="w-4 h-4 text-[#4f46e5]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">
+                {existing?.resumeFilename || "resume.pdf"}
+              </p>
+              <p className="text-xs text-muted-foreground">Submitted with your original application</p>
+            </div>
+          </div>
+          <p className="mt-2 text-xs" style={{ color: D.muted }}>
+            Your CV on file is kept. To submit a different CV, please contact the hiring team.
+          </p>
+        </section>
+      ) : (
+        <section data-error={!!errors.resume}>
+          <ResumeUploader file={form.resume} onChange={(f) => set("resume", f)} error={errors.resume} />
+          <p className="-mt-3 text-xs" style={{ color: D.muted }}>
+            We read your name, contact details and links straight from the CV — no need to retype them.
+          </p>
+        </section>
+      )}
 
       <div className="h-px" style={{ background: D.line }} />
 
@@ -568,7 +694,7 @@ function ApplicationForm({ job, onSubmit }: { job: JobPosting; onSubmit: (d: For
             disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#4f46e5] disabled:active:scale-100
             focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:ring-offset-2"
         >
-          Submit Application
+          {editing ? "Update Application" : "Submit Application"}
         </button>
 
         <p className="mt-4 text-[11px] leading-relaxed text-center" style={{ color: D.muted }}>
@@ -735,6 +861,9 @@ export default function CareersPortalPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("form");
+  // Set when this browser already applied to the selected job → edit mode.
+  const [existingApp, setExistingApp] = useState<ExistingApplication | null>(null);
+  const [justUpdated, setJustUpdated] = useState(false);
 
   useEffect(() => {
     const listOpenJobs = async () => {
@@ -766,7 +895,9 @@ export default function CareersPortalPage() {
           }
           const job = data as JobPosting;
           setSelectedJob(job);
-          setResolution(job.status !== 'PUBLISHED' || isExpired(job) ? 'closed' : 'ok');
+          const open = job.status === 'PUBLISHED' && !isExpired(job);
+          setResolution(open ? 'ok' : 'closed');
+          if (open) setExistingApp(await loadExistingApplication(job.id));
           return;
         }
 
@@ -785,6 +916,7 @@ export default function CareersPortalPage() {
           if (open.length === 1) {
             setSelectedJob(open[0]);
             setResolution('ok');
+            setExistingApp(await loadExistingApplication(open[0].id));
             return;
           }
           setOpenJobs(await listOpenJobs());
@@ -806,9 +938,55 @@ export default function CareersPortalPage() {
     loadJobData();
   }, [slug, jobId]);
 
+  /** Edit mode: the candidate already applied — update their answers in place. */
+  const handleUpdate = async (form: FormData) => {
+    if (!selectedJob || !existingApp) return;
+    setSubmitting(true);
+    setError(null);
+    setPhase("loading");
+
+    try {
+      const { error: applicationError } = await supabase
+        .from('applications')
+        .update(buildScreeningPayload(form, new Date().toISOString()))
+        .eq('id', existingApp.ref.applicationId);
+
+      if (applicationError) {
+        console.error('application update error:', applicationError);
+        throw new Error(applicationError.message || 'Failed to update application');
+      }
+
+      // Keep the headline figure on the candidate row in sync (same as create).
+      const { error: candidateError } = await supabase
+        .from('candidates')
+        .update({ salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin) })
+        .eq('uuid', existingApp.ref.candidateUuid);
+      if (candidateError) {
+        // Reporting-only field — the application itself was saved, so don't fail.
+        console.error('candidate update error:', candidateError);
+      }
+
+      const { resume: _resume, ...answers } = form;
+      setExistingApp({ ...existingApp, answers });
+      setJustUpdated(true);
+      setSubmitting(false);
+      setPhase("results");
+    } catch (err) {
+      console.error('Application update failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update application');
+      setSubmitting(false);
+      setPhase("form");
+    }
+  };
+
   const handleSubmit = async (form: FormData) => {
     if (!selectedJob) {
       setError('No job selected for this application.');
+      return;
+    }
+    // One application per job: a returning candidate edits instead of re-submitting.
+    if (existingApp) {
+      await handleUpdate(form);
       return;
     }
     setSubmitting(true);
@@ -875,19 +1053,39 @@ export default function CareersPortalPage() {
       }
 
       // Create application record
-      const { error: applicationError } = await supabase
+      const { data: applicationData, error: applicationError } = await supabase
         .from('applications')
         .insert({
           candidate_uuid: candidateUuid,
           job_posting_id: selectedJob.id,
           resume_id: resumeData.id,
           ...buildScreeningPayload(form, new Date().toISOString()),
-        });
+        })
+        .select('id, submitted_at')
+        .single();
 
       if (applicationError) {
         console.error('application insert error:', applicationError);
         throw new Error(applicationError.message || 'Failed to save application');
       }
+
+      // Remember this submission so a return visit becomes an edit, not a duplicate.
+      const submittedAt = (applicationData.submitted_at as string | null) ?? new Date().toISOString();
+      const ref: StoredApplicationRef = {
+        applicationId: applicationData.id as string,
+        candidateUuid,
+        resumeId: resumeData.id as string,
+        submittedAt,
+      };
+      writeStoredApplication(selectedJob.id, ref);
+      const { resume: _resume, ...answers } = form;
+      setExistingApp({
+        ref,
+        answers,
+        resumeFilename: form.resume?.name ?? null,
+        submittedAt,
+      });
+      setJustUpdated(false);
 
       setSubmitting(false);
       setPhase("results");
@@ -993,15 +1191,24 @@ export default function CareersPortalPage() {
                       </p>
                     </div>
                     <div className="bg-white rounded-xl border border-border p-8 shadow-sm">
-                      <ApplicationForm job={selectedJob} onSubmit={handleSubmit} />
+                      <ApplicationForm
+                        key={existingApp?.ref.applicationId ?? "new"}
+                        job={selectedJob}
+                        onSubmit={handleSubmit}
+                        existing={existingApp}
+                      />
                     </div>
                   </>
                 )}
 
-                {phase === "loading" && <LoadingScreen />}
+                {phase === "loading" && <LoadingScreen updating={!!existingApp} />}
 
                 {phase === "results" && (
-                  <ResultsPanel jobTitle={selectedJob.job_title} onReset={() => setPhase("form")} />
+                  <ResultsPanel
+                    jobTitle={selectedJob.job_title}
+                    updated={justUpdated}
+                    onReset={() => setPhase("form")}
+                  />
                 )}
               </>
             )}

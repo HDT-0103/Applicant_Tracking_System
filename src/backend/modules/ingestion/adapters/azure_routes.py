@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse
 
 from modules.ingestion.application.azure_ingestion_service import AzureIngestionService
 from modules.ingestion.domain.models import IngestionResponse
-from modules.ingestion.infra.azure_blob_service import AzureBlobService
+from modules.ingestion.infra.azure_blob_service import BLOB_CONTAINER_NAME, AzureBlobService
 from modules.ingestion.infra.azure_service_bus_service import AzureServiceBusService
 from modules.enrichment.application.enrichment_service import enrichment_worker
 from modules.shared.infrastructure.config import Settings, get_settings
@@ -160,6 +160,7 @@ async def ingest_cv(
             linkedin_url=linkedin_url,
             github_url=clean_github_username,
             job_id=job_id,
+            filename=file.filename,
         )
         # Trigger enrichment in background (GitHub + LinkedIn + skill matrix)
         background_tasks.add_task(enrichment_worker, result.candidate_uuid, settings)
@@ -224,13 +225,13 @@ async def get_candidate_cv(
             if account_name and account_key:
                 sas_token = generate_blob_sas(
                     account_name=account_name,
-                    container_name="resumes",
+                    container_name=BLOB_CONTAINER_NAME,
                     blob_name=f"{candidate_uuid}.pdf",
                     account_key=account_key,
                     permission=BlobSasPermissions(read=True),
                     expiry=datetime.now(timezone.utc) + timedelta(hours=1)
                 )
-                sas_url = f"https://{account_name}.blob.core.windows.net/resumes/{candidate_uuid}.pdf?{sas_token}"
+                sas_url = f"https://{account_name}.blob.core.windows.net/{BLOB_CONTAINER_NAME}/{candidate_uuid}.pdf?{sas_token}"
                 return RedirectResponse(url=sas_url)
         except Exception as exc:
             logger.warning("cv.azure_sas_failed", candidate_uuid=candidate_uuid, error=str(exc))

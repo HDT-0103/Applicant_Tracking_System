@@ -27,7 +27,9 @@ torch>=2.2,<3.0                  # <--- THÊM: Core để chạy model (Mặc đ
 langchain>=0.3,<1.0
 langchain-community>=0.3,<1.0
 langchain-groq>=0.2,<0.3         
-numpy>=2.2,<3.0
+# numpy phải <2: torch 2.2.2 (bản cuối cho Intel mac) compile với NumPy 1.x,
+# numpy>=2 làm model.encode() chết với "Numpy is not available".
+numpy>=1.26,<2.0
 
 
 # ==============================================================================

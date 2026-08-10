@@ -5,6 +5,7 @@ import {
   buildScreeningPayload,
   formatVnd,
   pickRatedSkills,
+  screeningAnswersFromRow,
   toAmount,
   validateScreening,
 } from "../screening";
@@ -214,5 +215,27 @@ describe("buildScreeningPayload", () => {
   it("records the consent flag as given", () => {
     expect(buildScreeningPayload(valid({ consent: false }), CONSENT_AT).consent_data_sharing).toBe(false);
     expect(buildScreeningPayload(valid(), CONSENT_AT).consent_data_sharing).toBe(true);
+  });
+});
+
+describe("screeningAnswersFromRow", () => {
+  it("round-trips a payload back into the same answers", () => {
+    const answers = valid({ availabilityBucket: "other", availabilityDate: "2026-09-01" });
+    const row = buildScreeningPayload(answers, CONSENT_AT);
+    expect(screeningAnswersFromRow(row)).toEqual(answers);
+  });
+
+  it("formats stored salary numbers for the inputs", () => {
+    const a = screeningAnswersFromRow({ expected_salary_min: 15000000, expected_salary_max: 20000000 });
+    expect(a.salaryMin).toBe("15,000,000");
+    expect(a.salaryMax).toBe("20,000,000");
+  });
+
+  it("falls back to safe defaults on an empty or malformed row", () => {
+    const a = screeningAnswersFromRow({ work_mode_pref: "hybrid", skill_ratings: [1, 2] });
+    expect(a.salaryBasis).toBe("gross");
+    expect(a.workModePref).toEqual([]);
+    expect(a.skillRatings).toEqual({});
+    expect(a.consent).toBe(false);
   });
 });

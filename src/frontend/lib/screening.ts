@@ -113,6 +113,30 @@ export function validateScreening(
   return e;
 }
 
+/**
+ * Inverse of buildScreeningPayload: maps an `applications` row back onto form
+ * answers, so a returning candidate sees their previous submission pre-filled.
+ */
+export function screeningAnswersFromRow(row: Record<string, unknown>): ScreeningAnswers {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return {
+    salaryMin: row.expected_salary_min != null ? formatVnd(String(row.expected_salary_min)) : "",
+    salaryMax: row.expected_salary_max != null ? formatVnd(String(row.expected_salary_max)) : "",
+    salaryBasis: str(row.salary_basis) || "gross",
+    workModePref: Array.isArray(row.work_mode_pref) ? (row.work_mode_pref as string[]) : [],
+    availabilityBucket: str(row.availability_bucket),
+    availabilityDate: str(row.availability_date),
+    skillRatings:
+      row.skill_ratings && typeof row.skill_ratings === "object" && !Array.isArray(row.skill_ratings)
+        ? (row.skill_ratings as Record<string, number>)
+        : {},
+    workStyle: str(row.work_style),
+    motivationReason: str(row.motivation_reason),
+    motivationOther: str(row.motivation_other),
+    consent: !!row.consent_data_sharing,
+  };
+}
+
 /** Maps answers onto the `applications` columns added by V004. */
 export function buildScreeningPayload(a: ScreeningAnswers, consentAt: string) {
   return {
