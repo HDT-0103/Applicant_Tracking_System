@@ -37,6 +37,11 @@ class EmbeddingSource(str, enum.Enum):
     LINKEDIN = "linkedin"
 
 
+class JobEmbeddingSource(str, enum.Enum):
+    SUMMARY = "summary"
+    REQUIREMENTS = "requirements"
+
+
 class ReviewDecision(str, enum.Enum):
     PENDING = "pending"
     APPROVED = "approved"

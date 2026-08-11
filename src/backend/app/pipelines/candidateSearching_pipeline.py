@@ -30,3 +30,5 @@ class SemanticPipeline:
 
         # 3. Ranking
         return self.ranking_service.rank(req_emb, resumes_emb, resumes_data)
+    
+    
