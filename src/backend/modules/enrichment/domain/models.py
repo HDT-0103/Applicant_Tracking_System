@@ -20,6 +20,8 @@ class GitHubRepo(BaseModel):
     name: str
     language: str | None = None
     size: int
+    description: str | None = None  
+    topics: List[str] = []        
 
 
 class GitHubProfile(BaseModel):

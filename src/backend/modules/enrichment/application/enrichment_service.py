@@ -225,11 +225,13 @@ async def fetch_github_profile(
             
             repos = [
                 GitHubRepo(
-                    name=repo["name"],
+                    name=repo.get("name", ""),
                     language=repo.get("language"),
-                    size=repo["size"]
+                    size=repo.get("size", 0),                # Safe fallback nếu size null
+                    description=repo.get("description"),     # Trả về str hoặc None
+                    topics=repo.get("topics", [])            # Trả về list[str] hoặc []
                 )
-                for repo in repos_data
+                for repo in repos_data if isinstance(repo, dict)
             ]
             
             language_totals: Dict[str, int] = {}
