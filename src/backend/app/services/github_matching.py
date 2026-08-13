@@ -10,16 +10,9 @@ from src.backend.app.services.github_retrieval import (
     GitHubRetrievalService,
 )
 
+from src.backend.app.dtos.github_matching import GitHubMatchResult
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class GitHubMatchResult:
-    """Kết quả Matching GitHub của ứng viên cho 1 Job Posting."""
-
-    github_score: float | None
-    best_project: GitHubProjectDTO | None
-    best_embedding: list[float] | None
 
 
 class GitHubMatchingService:
