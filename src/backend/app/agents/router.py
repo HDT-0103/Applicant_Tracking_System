@@ -1,13 +1,12 @@
-from backend.app.agents.state import ATSState
+from __future__ import annotations
+
+from src.backend.app.agents.state import ATSState
 
 
 def route_after_planner(state: ATSState) -> str:
-    """
-    Planner -> Interaction / Retrieval
-    """
+    """Điều hướng sau Planner: Chuyển sang Interaction nếu thiếu thông tin, ngược lại sang Retrieval."""
     query_assessment = state.candidate_search.query_assessment
-    
-    # Defensive check nếu query_assessment chưa được khởi tạo
+
     if not query_assessment or not query_assessment.clarification:
         return "retrieval"
 
@@ -21,9 +20,7 @@ def route_after_planner(state: ATSState) -> str:
 
 
 def route_after_reflection(state: ATSState) -> str:
-    """
-    Reflection -> Planner (Thử lại) / RecruiterDecision (Chấp nhận)
-    """
+    """Điều hướng sau Reflection: Thử lại (Planner) hoặc Chấp nhận (RecruiterDecision)."""
     reflection = state.candidate_search.reflection
 
     if reflection is None:
@@ -31,7 +28,7 @@ def route_after_reflection(state: ATSState) -> str:
 
     mission = state.candidate_search.mission
 
-    # Guard chống vòng lặp vô hạn
+    # Chống vòng lặp vô hạn
     if reflection.retry and mission.retry_count < mission.max_retries and state.iteration < state.max_steps:
         return "planner"
 

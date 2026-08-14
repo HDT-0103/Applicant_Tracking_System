@@ -2,15 +2,15 @@ import asyncio
 from typing import List, Optional
 from uuid import UUID
 
-from backend.app.dtos.candidate_search import (
+from src.backend.app.dtos.candidate_search import (
     CandidateSearchResultDTO,
     SearchRequirementDTO,
 )
-from backend.app.mappers.candidate_mapper import CandidateMapper
-from backend.app.repositories.candidate_search_repository import CandidateSearchRepository
-from backend.app.repositories.enrichment_repository import EnrichmentRepository
-from backend.app.services.embedding_service import EmbeddingService
-from backend.app.services.ranking_service import CandidateScoreFusion, RankingService
+from src.backend.app.mappers.candidate_mapper import CandidateMapper
+from src.backend.app.repositories.candidate_search_repository import CandidateSearchRepository
+from src.backend.app.repositories.enrichment_repository import EnrichmentRepository
+from src.backend.app.services.embedding_service import EmbeddingService
+from src.backend.app.services.ranking_service import CandidateScoreFusion, RankingService
 
 
 class CandidateSearchService:

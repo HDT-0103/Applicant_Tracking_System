@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from backend.app.agents.state import ATSState, ActionRecord
+from src.backend.app.agents.state import ATSState, ActionRecord
 
 class BaseNode(ABC):
     @abstractmethod

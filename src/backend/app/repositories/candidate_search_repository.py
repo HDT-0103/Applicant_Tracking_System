@@ -4,7 +4,7 @@ from uuid import UUID
 
 from supabase import Client
 
-from backend.app.schemas.search import (
+from src.backend.app.schemas.search import (
     LexicalSearchResult,
     SemanticSearchResult,
     SkillFilterResult,

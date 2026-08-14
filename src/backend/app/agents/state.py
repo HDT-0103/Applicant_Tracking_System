@@ -377,15 +377,13 @@ class RecruiterDecisionOutput(BaseModel):
 
 
 class CandidateSearchState(BaseModel):
-    """
-    Runtime state for Candidate Search Agent.
-    """
+    """Runtime state for Candidate Search Agent."""
 
     # Mission management
     mission: Mission
 
-    # Query quality
-    query_assessment: QueryAssessment
+    # Query quality (Cho phép None khi bắt đầu, Planner sẽ điền sau)
+    query_assessment: QueryAssessment | None = None
 
     # Planner decomposition result
     search_requirement: SearchRequirement | None = None

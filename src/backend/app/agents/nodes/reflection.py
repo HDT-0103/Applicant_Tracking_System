@@ -1,11 +1,11 @@
 import asyncio
 
-from backend.app.agents.nodes.base import BaseNode
-from backend.app.agents.state import ATSState, ReflectionInput, ReflectionOutput, Reflection, MissionStatus
-from backend.app.services.llm_provider import GroqProvider
+from src.backend.app.agents.nodes.base import BaseNode
+from src.backend.app.agents.state import ATSState, ReflectionInput, ReflectionOutput, Reflection, MissionStatus
+from src.backend.app.services.llm_provider import LLMProvider
 
 class ReflectionNode(BaseNode):
-    def __init__(self, llm_provider: GroqProvider):
+    def __init__(self, llm_provider: LLMProvider):
         super().__init__()
         self.llm_provider = llm_provider
         

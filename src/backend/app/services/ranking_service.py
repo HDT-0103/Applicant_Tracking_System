@@ -2,7 +2,7 @@ from typing import Dict, List
 from uuid import UUID
 from pydantic import BaseModel
 
-from backend.app.schemas.search import LexicalSearchResult, SemanticSearchResult
+from src.backend.app.schemas.search import LexicalSearchResult, SemanticSearchResult
 
 
 class CandidateScoreFusion(BaseModel):

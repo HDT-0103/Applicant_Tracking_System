@@ -1,5 +1,5 @@
 from typing import Any, List
-from backend.app.dtos.candidate_search import CandidateSearchResultDTO, ExperienceDTO
+from src.backend.app.dtos.candidate_search import CandidateSearchResultDTO, ExperienceDTO
 
 
 class CandidateMapper:

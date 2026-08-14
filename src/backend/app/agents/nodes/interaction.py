@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 import asyncio
 
-from backend.app.agents.nodes.base import BaseNode
-from backend.app.agents.state import ATSState
+from src.backend.app.agents.nodes.base import BaseNode
+from src.backend.app.agents.state import ATSState
 
 
 class HumanInteractionGateway(ABC):
