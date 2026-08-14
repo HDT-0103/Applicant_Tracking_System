@@ -1,10 +1,10 @@
 from sentence_transformers import SentenceTransformer
 
-from backend.app.schemas.resume_analysis import ResumeAnalysis
-from backend.app.schemas.requirement_analysis import RequirementAnalysis
+from src.backend.app.schemas.resume_analysis import ResumeAnalysis
+from src.backend.app.schemas.requirement_analysis import RequirementAnalysis
 
-from backend.app.schemas.resume_embedding import ResumeEmbedding
-from backend.app.schemas.requirement_embedding import RequirementEmbedding
+from src.backend.app.schemas.resume_embedding import ResumeEmbedding
+from src.backend.app.schemas.requirement_embedding import RequirementEmbedding
 class EmbeddingService:
     def __init__(self, model_name = 'intfloat/multilingual-e5-base'):
         self.model_name = model_name

@@ -127,3 +127,20 @@ class ApplicationRepository(BaseRepository):
             raise ValueError(f"Application with ID '{application_id}' not found.")
 
         return Application(**row)
+    
+    async def get_ranked_applications(
+        self,
+        job_posting_id: UUID,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Application]:
+        """Lấy danh sách Application theo job_posting_id, xếp hạng theo overall_score giảm dần."""
+        response = (
+            self.client.table("applications")
+            .select(self._COLUMNS)
+            .eq("job_posting_id", str(job_posting_id))
+            .order("overall_score", desc=True, nullsfirst=False)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+        return [Application(**row) for row in response.data or []]
