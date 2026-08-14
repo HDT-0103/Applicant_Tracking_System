@@ -1,0 +1,111 @@
+name: SmartATS Continuous Integration & Deployment
+
+on:
+  # Chạy trên MỌI nhánh, không chỉ main/develop — trước đây push lên
+  # feature/* không kích hoạt gì cả nên lỗi chỉ lộ ra lúc mở PR.
+  push:
+  pull_request:
+    branches: [ "main", "develop" ]
+
+# Push mới lên cùng một nhánh sẽ huỷ lần chạy cũ còn dở, đỡ xếp hàng.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ==========================================
+  # JOB 1: KIỂM THỬ VÀ LÀM SẠCH BACKEND (FASTAPI)
+  # ==========================================
+  backend-ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/backend # Chạy lệnh bên trong folder backend
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip' # Tự động cache các thư viện để lần sau chạy nhanh hơn
+        cache-dependency-path: src/backend/requirements.txt
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # KHÔNG dùng `if [ -f requirements.txt ]` như trước: nếu file đổi chỗ
+        # thì bước này im lặng bỏ qua và job gãy tận lúc chạy pytest với một
+        # ModuleNotFoundError khó hiểu. Thiếu file thì phải fail ngay tại đây.
+        pip install -r requirements.txt
+
+    - name: Run Code Linter (Flake8)
+      run: |
+        # Dừng build nếu có lỗi cú pháp hoặc lỗi hệ thống
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Cảnh báo các lỗi format thông thường nhưng không làm sập build
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run Backend Unit Tests (PyTest)
+      env:
+        # Giả lập môi trường test, tránh kết nối thật vào DB hệ thống.
+        # Phải là `+psycopg`: project cài psycopg3, KHÔNG cài asyncpg. Chuỗi
+        # `+asyncpg` cũ làm engine (tạo ở module level) ném ModuleNotFoundError
+        # ngay lúc pytest collect, trước cả khi chạy được test nào.
+        DATABASE_URL: "postgresql+psycopg://test:test@localhost:5432/test_db"
+      run: pytest -q
+
+  # ==========================================
+  # JOB 2: KIỂM THỬ VÀ BUILD FRONTEND (NEXT.JS)
+  # ==========================================
+  frontend-ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: . # package.json nằm ở ROOT repo; Next build source trong src/frontend
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+        cache: 'npm' # Tự động cache node_modules
+        cache-dependency-path: package-lock.json
+
+    - name: Install Frontend Dependencies
+      run: npm ci # Sử dụng 'ci' thay vì 'install' để đảm bảo cài đúng version trong package-lock.json
+
+    - name: Check Code Quality & Formatting
+      run: npm run lint --if-present
+
+    - name: Run Frontend Unit Tests (Vitest)
+      run: npm test
+
+    - name: Build Next.js Application
+      # `.env` nằm trong .gitignore nên runner không bao giờ có file này; script
+      # build dùng `env-cmd --silent` để bỏ qua thay vì gãy. Biến công khai cần
+      # cho build thì khai báo thẳng ở đây.
+      env:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      run: npm run build
+
+  # ==========================================
+  # JOB 3: DEPLOYMENT (CHỈ CHẠY KHI MERGE VÀO MAIN VÀ CI TRÊN ĐÃ PASS)
+  # ==========================================
+  deploy:
+    needs: [backend-ci, frontend-ci] # Phải pass hết test ở trên mới cho deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Cloud Deployment Placeholder
+      run: |
+        echo "Tất cả các bài test cho Ingestion Module và Frontend đã PASS!"
+        echo "Đang kích hoạt quy trình CD để đẩy container lên Azure..."
+        # Sau này khi deploy lên Azure, ông sẽ thêm các step dùng Azure login
+        # và Azure Web App deploy/Docker build vào đây.

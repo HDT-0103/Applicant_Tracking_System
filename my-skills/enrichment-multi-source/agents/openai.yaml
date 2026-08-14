@@ -1,0 +1,70 @@
+name: enrichment-multi-source-agent
+version: 1.0.0
+description: Agent for orchestrating multi-source candidate enrichment (Gemini, GitHub, LinkedIn)
+
+model:
+  provider: google
+  model: gemini-2.0-flash
+  temperature: 0.1
+  fallback_provider: openai
+  fallback_model: gpt-4o-mini
+
+tools:
+  - name: gemini_parse_pdf
+    description: Parse PDF resume bytes using Gemini 2.0 Flash into structured JSON
+    type: function
+    parameters:
+      type: object
+      properties:
+        pdf_sas_url:
+          type: string
+          description: Azure Blob SAS URL of the PDF
+      required:
+        - pdf_sas_url
+
+  - name: fetch_github_profile
+    description: Fetch GitHub repos, languages, and README for a username
+    type: function
+    parameters:
+      type: object
+      properties:
+        username:
+          type: string
+      required:
+        - username
+
+  - name: scrape_linkedin_apify
+    description: Scrape LinkedIn profile using Apify Actor GOvL4O4RwFqsdIqXF
+    type: function
+    parameters:
+      type: object
+      properties:
+        profile_url:
+          type: string
+          format: uri
+      required:
+        - profile_url
+
+  - name: compute_skill_radar
+    description: Compute 5-category skill scores and affinity from parsed data
+    type: function
+    parameters:
+      type: object
+      properties:
+        skills:
+          type: array
+          items:
+            type: string
+        github_languages:
+          type: object
+        readme_content:
+          type: string
+      required:
+        - skills
+
+env_vars:
+  required:
+    - GOOGLE_API_KEY
+    - GEMINI_MODEL
+    - APIFY_API_TOKEN
+    - GITHUB_API_TOKEN

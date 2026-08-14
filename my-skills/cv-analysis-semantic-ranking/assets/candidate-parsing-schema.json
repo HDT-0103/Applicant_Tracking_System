@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Candidate Profile Schema",
+  "description": "Structured schema for parsed candidate CV data in SmartATS",
+  "type": "object",
+  "required": ["name", "email", "skills", "seniority_level"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Full name of the candidate",
+      "minLength": 2,
+      "maxLength": 255
+    },
+    "email": {
+      "type": "string",
+      "description": "Primary email address",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Phone number (optional)",
+      "pattern": "^\\+?[\\d\\s\\-\\(\\)]+$"
+    },
+    "skills": {
+      "type": "array",
+      "description": "List of technical skills and technologies",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "experience": {
+      "type": "array",
+      "description": "Work experience entries",
+      "items": {
+        "type": "object",
+        "required": ["title", "company"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Job title"
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name"
+          },
+          "duration": {
+            "type": "string",
+            "description": "Duration (e.g., '2 years', 'Jan 2020 - Present')"
+          },
+          "description": {
+            "type": "string",
+            "description": "Job description and responsibilities"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date in ISO format (YYYY-MM-DD)"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date in ISO format (YYYY-MM-DD), or 'present'"
+          }
+        }
+      }
+    },
+    "education": {
+      "type": "array",
+      "description": "Education entries",
+      "items": {
+        "type": "object",
+        "required": ["degree", "institution"],
+        "properties": {
+          "degree": {
+            "type": "string",
+            "description": "Degree obtained (e.g., 'B.S. Computer Science')"
+          },
+          "institution": {
+            "type": "string",
+            "description": "Educational institution"
+          },
+          "year": {
+            "type": "string",
+            "description": "Graduation year"
+          },
+          "gpa": {
+            "type": "number",
+            "description": "GPA if available"
+          }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "description": "Notable projects",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Project name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Project description"
+          },
+          "technologies": {
+            "type": "array",
+            "description": "Technologies used",
+            "items": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "type": "string",
+            "description": "Project URL (optional)",
+            "format": "uri"
+          }
+        }
+      }
+    },
+    "seniority_level": {
+      "type": "string",
+      "description": "Assessed seniority level",
+      "enum": ["Junior", "Mid-level", "Senior", "Lead", "Principal", "Executive"]
+    },
+    "total_years_experience": {
+      "type": "number",
+      "description": "Total years of professional experience",
+      "minimum": 0,
+      "maximum": 50
+    },
+    "languages": {
+      "type": "array",
+      "description": "Programming languages known",
+      "items": {
+        "type": "string"
+      }
+    },
+    "frameworks": {
+      "type": "array",
+      "description": "Frameworks and libraries",
+      "items": {
+        "type": "string"
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "description": "Professional certifications",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "description": "External profile links",
+      "properties": {
+        "linkedin": {
+          "type": "string",
+          "format": "uri"
+        },
+        "github": {
+          "type": "string",
+          "format": "uri"
+        },
+        "portfolio": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "description": "Location information",
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "boolean",
+          "description": "Willingness to work remotely"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Parsing metadata",
+      "properties": {
+        "parsed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "parser_version": {
+          "type": "string"
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}
