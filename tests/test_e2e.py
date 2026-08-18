@@ -44,9 +44,9 @@ load_environment()
 
 from supabase import Client, create_client
 
-from backend.app.agents.graph import build_graph
-from backend.app.agents.nodes.interaction import CLIInteractionGateway
-from backend.app.agents.state import (
+from src.backend.app.agents.graph import build_graph
+from src.backend.app.agents.nodes.interaction import CLIInteractionGateway
+from src.backend.app.agents.state import (
     ATSState,
     CandidateSearchState,
     ClarificationDetail,
@@ -54,12 +54,12 @@ from backend.app.agents.state import (
     MissionStatus,
     QueryAssessment,
 )
-from backend.app.repositories.candidate_search_repository import CandidateSearchRepository
-from backend.app.repositories.enrichment_repository import EnrichmentRepository
-from backend.app.services.candidate_search_service import CandidateSearchService
-from backend.app.services.embedding_service import EmbeddingService
-from backend.app.services.llm_provider import GroqProvider
-from backend.app.services.ranking_service import RankingService
+from src.backend.app.repositories.candidate_search_repository import CandidateSearchRepository
+from src.backend.app.repositories.enrichment_repository import EnrichmentRepository
+from src.backend.app.services.candidate_search_service import CandidateSearchService
+from src.backend.app.services.embedding_service import EmbeddingService
+from src.backend.app.services.llm_provider import GroqProvider
+from src.backend.app.services.ranking_service import RankingService
 
 
 logging.basicConfig(

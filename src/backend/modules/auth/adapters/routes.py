@@ -2,21 +2,21 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import Client
 
-from backend.app.database.connection import get_db_session
 from modules.auth.application.auth_service import AuthService
 from modules.auth.domain.models import (
     AuthTokenResponse,
     GoogleLoginRequest,
+    LoginRequest,
     RefreshTokenRequest,
     RefreshTokenResponse,
-    LoginRequest,
     RegisterRequest,
 )
 from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
 from modules.shared.infrastructure.config import Settings, get_settings
+from src.backend.app.dependencies import get_supabase_admin_client
 
 logger = structlog.get_logger(__name__)
 
@@ -25,13 +25,13 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 def get_auth_service(
     settings: Annotated[Settings, Depends(get_settings)],
-    db: Annotated[AsyncSession, Depends(get_db_session)],
+    client: Annotated[Client, Depends(get_supabase_admin_client)],
 ) -> AuthService:
     return AuthService(
         settings=settings,
         google_verifier=GoogleTokenVerifier(settings),
         jwt_service=JwtService(settings),
-        db=db,
+        client=client,
     )
 
 

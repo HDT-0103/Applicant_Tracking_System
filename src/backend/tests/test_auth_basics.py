@@ -1,7 +1,7 @@
 """Unit test nhẹ, KHÔNG cần DB — đủ để pytest có test pass trong CI và kiểm
 đúng phần logic auth mà app phụ thuộc (băm mật khẩu + enum role)."""
 from modules.auth.infra.password_service import PasswordService
-from backend.app.models.enums import RoleType, StatusType
+from src.backend.app.models.enums import RoleType, StatusType
 
 
 def test_password_hash_roundtrip():

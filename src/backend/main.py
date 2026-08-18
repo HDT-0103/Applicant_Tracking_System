@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.api import ingestion, websocket
+from src.backend.app.api import ingestion, websocket
 
 app = FastAPI(title="SmartATS Ingestion Subsystem Backend")
 

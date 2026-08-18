@@ -27,7 +27,15 @@ class Settings(BaseSettings):
         extra="ignore",
         populate_by_name=True,
     )
+    
+    SUPABASE_URL: str
+    SUPABASE_ANON_KEY: str
+    SUPABASE_SERVICE_ROLE_KEY: str
+    JWT_SECRET: str
+    JWT_ALGORITHM: str = "HS256"
 
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    
     app_name: str = Field(default="SmartATS", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")

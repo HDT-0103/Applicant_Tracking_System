@@ -2,16 +2,13 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from supabase import Client
 
 from modules.auth.domain.models import AuthUser, UserRole
 from modules.auth.infra.jwt_service import JwtService
 from modules.shared.domain.roles import ADMIN_ROLE, OPERATIONAL_ROLES
 from modules.shared.infrastructure.config import Settings, get_settings
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.database.connection import get_db_session
-from backend.app.models.user_session import UserSession
+from src.backend.app.dependencies import get_supabase_client
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -28,7 +25,7 @@ async def get_current_user(
         Depends(_bearer_scheme),
     ],
     jwt_service: Annotated[JwtService, Depends(get_jwt_service)],
-    db: Annotated[AsyncSession, Depends(get_db_session)],
+    supabase_client: Annotated[Client, Depends(get_supabase_client)],
 ) -> AuthUser:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
@@ -48,16 +45,19 @@ async def get_current_user(
         ) from exc
 
     if user.jti:
-        stmt = select(UserSession).where(UserSession.token_jti == user.jti)
-        session_rec = await db.scalar(stmt)
-        if session_rec and session_rec.is_revoked:
+        session_rec = (
+            supabase_client.table("user_sessions")
+            .select("is_revoked")
+            .eq("token_jti", user.jti)
+            .limit(1)
+            .execute()
+        )
+        if session_rec.data and session_rec.data[0].get("is_revoked"):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Session has been revoked by admin",
             )
 
-    # Role đã được JwtService.decode_token quy đổi về 1 trong 3 role chuẩn
-    # (token mang role cũ/lạ bị ném ValueError ở trên -> 401).
     return user
 
 
@@ -78,10 +78,7 @@ def require_roles(*allowed_roles: UserRole):
 
 
 def require_operational_roles():
-    """Guard cho các endpoint nghiệp vụ: chỉ `hr` và `tech_lead`.
-
-    `admin` cố ý bị loại — admin chỉ quản trị hệ thống qua /api/admin/*.
-    """
+    """Guard cho các endpoint nghiệp vụ: chỉ `hr` và `tech_lead`."""
     return require_roles(*OPERATIONAL_ROLES)
 
 
