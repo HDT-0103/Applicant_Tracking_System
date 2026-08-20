@@ -2,7 +2,7 @@ import uuid
 from typing import List, Optional
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.models.resume_analysis import ResumeAnalysis
+from app.models.resume_analysis import ResumeAnalysis
 
 class ResumeAnalysisRepository:
     def __init__(self, session: AsyncSession):

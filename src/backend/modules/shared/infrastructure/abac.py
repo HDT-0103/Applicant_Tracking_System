@@ -82,8 +82,62 @@ OPAQUE_FIELDS: frozenset[str] = frozenset({"top_languages"})
 _ROLE_VISIBLE_FIELDS: dict[str, frozenset[str] | None] = {
     "hr": None,  # None = thấy tất cả
     "admin": None,
-    "tech_lead": TECH_LEAD_VISIBLE_FIELDS,
+    "tech_lead": frozenset(), # Sẽ được nạp từ DB
 }
+
+import time
+_CACHE_TTL = 300  # Cập nhật cache mỗi 5 phút
+_last_fetch_time = 0
+
+def _get_dynamic_policy(role: str) -> frozenset[str] | None:
+    if role in ("hr", "admin"):
+        return None
+        
+    global _last_fetch_time, _ROLE_VISIBLE_FIELDS
+    now = time.time()
+    
+    # Refresh cache nếu đã quá hạn hoặc policy đang rỗng
+    if now - _last_fetch_time > _CACHE_TTL or not _ROLE_VISIBLE_FIELDS.get(role):
+        try:
+            from modules.shared.infrastructure.config import get_settings
+            from modules.shared.infrastructure.supabase_client import get_supabase_client
+            
+            settings = get_settings()
+            client = get_supabase_client(settings, use_admin=True)
+            
+            if client:
+                res = client.table("abac_policies").select("role, field_path, strategy, is_masked").execute()
+                
+                new_policies: dict[str, set[str]] = {}
+                for row in res.data:
+                    r = row["role"]
+                    f = row.get("field_path") or row.get("field_name")
+                    if not f:
+                        continue
+                    
+                    # Policy rule: strategy='passthrough' HOẶC is_masked=false
+                    if row.get("strategy") == "passthrough" or row.get("is_masked") is False:
+                        if r not in new_policies:
+                            new_policies[r] = set()
+                        new_policies[r].add(f)
+                
+                # Cập nhật global cache
+                for r, fields in new_policies.items():
+                    _ROLE_VISIBLE_FIELDS[r] = frozenset(fields)
+                    
+                _last_fetch_time = now
+                logger.info("abac.policies_loaded_from_db", roles=list(new_policies.keys()))
+        except Exception as e:
+            logger.error("abac.load_policies_failed", error=str(e))
+            
+    # Fallback to hardcoded list if fetch fails and cache is empty
+    cached_fields = _ROLE_VISIBLE_FIELDS.get(role)
+    if not cached_fields and role == "tech_lead":
+        logger.warning("abac.using_fallback_hardcoded_policy", role=role)
+        return TECH_LEAD_VISIBLE_FIELDS
+        
+    return cached_fields or frozenset()
+
 
 
 def _mask_value(value: Any) -> Any:
@@ -116,7 +170,7 @@ def apply_abac(data: dict, role: str) -> dict:
 
     Role lạ được xử lý như `tech_lead` (che nhiều nhất) — fail closed.
     """
-    visible = _ROLE_VISIBLE_FIELDS.get(role, TECH_LEAD_VISIBLE_FIELDS)
+    visible = _get_dynamic_policy(role)
     if visible is None:
         return data
     return _filter(data, visible)

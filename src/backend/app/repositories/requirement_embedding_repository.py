@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.models.requirement_embedding import RequirementEmbedding
+from app.models.requirement_embedding import RequirementEmbedding
 
 class RequirementEmbeddingRepository:
     def __init__(self, session: AsyncSession):

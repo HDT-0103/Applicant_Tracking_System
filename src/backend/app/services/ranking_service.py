@@ -1,6 +1,6 @@
-from backend.app.models import RequirementEmbedding, ResumeEmbedding
-from backend.app.schemas.resume_analysis import ResumeAnalysis
-from backend.app.schemas.resume_score import ResumeScore
+from app.models import RequirementEmbedding, ResumeEmbedding
+from app.schemas.resume_analysis import ResumeAnalysis
+from app.schemas.resume_score import ResumeScore
 from sentence_transformers import util
 class RankingService:
     def cosine(

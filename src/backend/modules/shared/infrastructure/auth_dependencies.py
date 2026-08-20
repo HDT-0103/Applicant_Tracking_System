@@ -10,8 +10,8 @@ from modules.shared.infrastructure.config import Settings, get_settings
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.database.connection import get_db_session
-from backend.app.models.user_session import UserSession
+from app.database.connection import get_db_session
+from app.models.user_session import UserSession
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 

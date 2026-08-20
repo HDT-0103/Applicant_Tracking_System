@@ -1,7 +1,7 @@
 import re
 
-from backend.app.services.llm_provider import LLMProvider
-from backend.app.schemas.resume_analysis import ResumeAnalysis
+from app.services.llm_provider import LLMProvider
+from app.schemas.resume_analysis import ResumeAnalysis
 import json
 class LLMService:
     def __init__(self, provider: LLMProvider):

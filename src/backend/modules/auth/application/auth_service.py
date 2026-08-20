@@ -6,10 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
-from backend.app.models.audit_log import AuditLog
-from backend.app.models.enums import RoleType
-from backend.app.models.user import User
-from backend.app.models.user_session import UserSession
+from app.models.audit_log import AuditLog
+from app.models.enums import RoleType
+from app.models.user import User
+from app.models.user_session import UserSession
 from modules.auth.domain.models import (
     AuthTokenResponse,
     AuthUser,

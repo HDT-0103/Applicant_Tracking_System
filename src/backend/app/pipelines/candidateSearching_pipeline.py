@@ -1,10 +1,10 @@
 import uuid
 
-from backend.app.services.ranking_service import RankingService
+from app.services.ranking_service import RankingService
 
-from backend.app.schemas.resume_score import ResumeScore
-from backend.app.repositories.resume_repository import ResumeRepository
-from backend.app.repositories.requirement_embedding_repository import RequirementEmbeddingRepository
+from app.schemas.resume_score import ResumeScore
+from app.repositories.resume_repository import ResumeRepository
+from app.repositories.requirement_embedding_repository import RequirementEmbeddingRepository
 from sqlalchemy.ext.asyncio import AsyncSession
  
 

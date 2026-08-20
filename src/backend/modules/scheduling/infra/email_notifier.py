@@ -30,34 +30,54 @@ class EmailNotifier:
         slot: ConfirmedSlot,
         candidate_name: str,
         interviewers: list[Interviewer],
+        candidate_email: Optional[str] = None,
     ) -> bool:
-        recipients = [p for p in interviewers if p.email]
+        recipients = [p.email for p in interviewers if p.email]
+        if candidate_email:
+            recipients.append(candidate_email)
+
         if not recipients:
             logger.info("scheduling.email.no_recipients")
             return True
 
-        for recipient in recipients:
-            email = recipient.email
-            lines = [
-                f"Hello {recipient.name},",
-                "",
-                f"An interview has been scheduled with {candidate_name}.",
-                "",
-                f"Date: {slot.start_time.strftime('%A, %B %d, %Y')}",
-                f"Time: {slot.start_time.strftime('%I:%M %p')} - {slot.end_time.strftime('%I:%M %p')} (UTC)",
-                f"Duration: {int((slot.end_time - slot.start_time).total_seconds() / 60)} minutes",
-                "",
-                "Best regards,",
-                "SmartATS",
-            ]
+        for email in recipients:
+            if email == candidate_email:
+                subject = "Thư mời phỏng vấn - SmartATS"
+                lines = [
+                    f"Chào bạn {candidate_name},",
+                    "",
+                    f"Chúc mừng bạn đã vượt qua vòng sơ loại. Bạn đã được chọn để tham gia phỏng vấn vào thời gian sau:",
+                    "",
+                    f"Thời gian: {slot.start_time.strftime('%I:%M %p')} - {slot.end_time.strftime('%I:%M %p')} ngày {slot.start_time.strftime('%d/%m/%Y')}",
+                    "",
+                    "Chi tiết về địa điểm và phòng phỏng vấn sẽ được chúng tôi thông báo cho bạn sau.",
+                    "",
+                    "Trân trọng,",
+                    "Phòng nhân sự SmartATS",
+                ]
+            else:
+                subject = f"Interview Scheduled: {candidate_name}"
+                lines = [
+                    "Hello,",
+                    "",
+                    f"An interview has been scheduled with {candidate_name}.",
+                    "",
+                    f"Date: {slot.start_time.strftime('%A, %B %d, %Y')}",
+                    f"Time: {slot.start_time.strftime('%I:%M %p')} - {slot.end_time.strftime('%I:%M %p')}",
+                    f"Duration: {int((slot.end_time - slot.start_time).total_seconds() / 60)} minutes",
+                    "",
+                    "Best regards,",
+                    "SmartATS",
+                ]
+            
             body_text = "\n".join(lines)
 
             if self._smtp_username and self._smtp_password:
                 try:
                     msg = MIMEMultipart("alternative")
-                    msg["From"] = self._from_email
+                    msg["From"] = f"SmartATS HR <{self._from_email}>"
                     msg["To"] = email
-                    msg["Subject"] = f"Interview Scheduled: {candidate_name}"
+                    msg["Subject"] = subject
                     msg.attach(MIMEText(body_text, "plain"))
 
                     with smtplib.SMTP(self._smtp_host, self._smtp_port) as server:

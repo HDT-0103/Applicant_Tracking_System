@@ -3,13 +3,13 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, update, func, text, cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.user import User
-from backend.app.models.user_session import UserSession
-from backend.app.models.abac_policy import AbacPolicy
-from backend.app.models.llm_usage_log import LlmUsageLog
-from backend.app.models.api_rate_limit import ApiRateLimit
-from backend.app.models.audit_log import AuditLog
-from backend.app.models.enums import RoleType
+from app.models.user import User
+from app.models.user_session import UserSession
+from app.models.abac_policy import AbacPolicy
+from app.models.llm_usage_log import LlmUsageLog
+from app.models.api_rate_limit import ApiRateLimit
+from app.models.audit_log import AuditLog
+from app.models.enums import RoleType
 from modules.shared.domain.roles import ALL_ROLES
 
 #: Role mà Admin Dashboard được phép cấp — đúng 3 role của hệ thống.
