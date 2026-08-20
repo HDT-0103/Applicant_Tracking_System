@@ -18,5 +18,75 @@
     "review_text": "",
     "created_at": "2026-07-07T16:05:18.525809+00:00",
     "updated_at": "2026-07-07T16:05:18.525819+00:00"
+  },
+  "4c30aad9-1341-480d-a591-973c0117fd10::tech_lead": {
+    "id": "2ffd8a6b-ad1c-43b3-9ea0-14663bd91961",
+    "candidate_uuid": "4c30aad9-1341-480d-a591-973c0117fd10",
+    "reviewer_id": "be6eac8e-8d4d-47aa-98cf-5dd2e5674ee0",
+    "reviewer_role": "tech_lead",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-08-20T10:34:04.301094+00:00",
+    "updated_at": "2026-08-20T10:34:04.301106+00:00"
+  },
+  "cand-uuid-dev-02::tech_lead": {
+    "id": "d1591bc9-dc66-4683-844c-7e012dd6d7f2",
+    "candidate_uuid": "cand-uuid-dev-02",
+    "reviewer_id": "be6eac8e-8d4d-47aa-98cf-5dd2e5674ee0",
+    "reviewer_role": "tech_lead",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-08-20T10:34:23.101267+00:00",
+    "updated_at": "2026-08-20T10:34:23.101278+00:00"
+  },
+  "cand-uuid-dev-02::hr": {
+    "id": "1b9647a0-f579-4dfe-b6ee-88c6a3d20f05",
+    "candidate_uuid": "cand-uuid-dev-02",
+    "reviewer_id": "e90f3a67-c284-4b06-9a9e-193ad8ad4657",
+    "reviewer_role": "hr",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-08-20T10:34:43.981876+00:00",
+    "updated_at": "2026-08-20T10:34:43.981887+00:00"
+  },
+  "0843929c-0e98-4d65-b307-2b4d03253d00::tech_lead": {
+    "id": "0dcb1747-d429-4be1-b694-f66a58d28b95",
+    "candidate_uuid": "0843929c-0e98-4d65-b307-2b4d03253d00",
+    "reviewer_id": "be6eac8e-8d4d-47aa-98cf-5dd2e5674ee0",
+    "reviewer_role": "tech_lead",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-08-20T10:49:29.178894+00:00",
+    "updated_at": "2026-08-20T10:49:29.178904+00:00"
+  },
+  "0843929c-0e98-4d65-b307-2b4d03253d00::hr": {
+    "id": "9eb057e9-2421-4b8b-8708-e4b7120c784a",
+    "candidate_uuid": "0843929c-0e98-4d65-b307-2b4d03253d00",
+    "reviewer_id": "e90f3a67-c284-4b06-9a9e-193ad8ad4657",
+    "reviewer_role": "hr",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-08-20T10:49:49.734193+00:00",
+    "updated_at": "2026-08-20T10:49:49.734204+00:00"
+  },
+  "494d78ac-2c02-4618-a4c5-2925a4ad1234::tech_lead": {
+    "id": "a2b4b98a-2887-45b8-b72c-39d072d0ebbc",
+    "candidate_uuid": "494d78ac-2c02-4618-a4c5-2925a4ad1234",
+    "reviewer_id": "be6eac8e-8d4d-47aa-98cf-5dd2e5674ee0",
+    "reviewer_role": "tech_lead",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-08-20T11:30:43.579801+00:00",
+    "updated_at": "2026-08-20T11:30:43.579812+00:00"
+  },
+  "494d78ac-2c02-4618-a4c5-2925a4ad1234::hr": {
+    "id": "773b79cb-c753-4ef7-8438-9a47f193364c",
+    "candidate_uuid": "494d78ac-2c02-4618-a4c5-2925a4ad1234",
+    "reviewer_id": "e90f3a67-c284-4b06-9a9e-193ad8ad4657",
+    "reviewer_role": "hr",
+    "decision": "approved",
+    "review_text": "",
+    "created_at": "2026-08-20T11:31:11.171246+00:00",
+    "updated_at": "2026-08-20T11:31:11.171257+00:00"
   }
 }

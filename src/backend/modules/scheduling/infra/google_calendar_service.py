@@ -58,8 +58,8 @@ class GoogleCalendarService:
         interviewer: Interviewer,
         date_from: datetime,
         date_to: datetime,
-        work_start: str = "07:30",
-        work_end: str = "17:00",
+        work_start: str = "01:00",
+        work_end: str = "10:00",
         override_api_key: str = "",
     ) -> list[FreeBusyInterval]:
         key = override_api_key or interviewer.calendar_api_key
@@ -107,9 +107,14 @@ class GoogleCalendarService:
                     status=resp.status_code,
                     body=resp.text[:500],
                 )
-                return []
+                resp.raise_for_status()
             resp.raise_for_status()
             data = resp.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise e
+            logger.error("scheduling.google.fetch_failed", error=str(e))
+            return []
         except Exception as e:
             logger.error(
                 "scheduling.google.fetch_failed",

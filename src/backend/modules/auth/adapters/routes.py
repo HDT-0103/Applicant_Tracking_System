@@ -4,7 +4,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.database.connection import get_db_session
+from app.database.connection import get_db_session
 from modules.auth.application.auth_service import AuthService
 from modules.auth.domain.models import (
     AuthTokenResponse,

@@ -263,7 +263,7 @@ class _FakeUser:
     def __init__(self, is_approved: bool):
         import uuid as _uuid
 
-        from backend.app.models.enums import RoleType
+        from app.models.enums import RoleType
 
         self.id = _uuid.uuid4()
         self.name = "Someone"

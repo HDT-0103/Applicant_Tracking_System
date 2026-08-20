@@ -31,6 +31,7 @@ export interface ConfirmedSlot {
 }
 
 export interface SlotsRequest {
+  candidate_uuid: string;
   candidate_name: string;
   candidate_email?: string;
   interviewer_uuids: string[];
@@ -41,6 +42,7 @@ export interface SlotsRequest {
 }
 
 export interface ConfirmRequest {
+  candidate_uuid: string;
   candidate_name: string;
   candidate_email?: string;
   interviewer_uuids: string[];
@@ -95,10 +97,12 @@ export async function fetchInterviewers(): Promise<Interviewer[]> {
 export async function updateCalendarKey(
   interviewerUuid: string,
   calendarApiKey: string,
+  refreshToken?: string
 ): Promise<Interviewer> {
   type BackendIV = { id: string; name: string; role: string; initials: string; color: string; cal_connected: boolean; calendar_api_key: string | null; calendar_id: string };
   const raw = await api.put<BackendIV>(`/api/scheduling/interviewers/${interviewerUuid}/calendar-key`, {
     api_key: calendarApiKey,
+    refresh_token: refreshToken,
   });
   return {
     uuid: raw.id,
@@ -116,7 +120,7 @@ export async function updateCalendarKey(
 export async function querySlots(req: SlotsRequest): Promise<TimeSlot[]> {
   type BackendSlot = { start_time: string; end_time: string; duration_min: number; interviewer_ids: string[]; recommendation: string };
   const raw = await api.post<BackendSlot[]>("/api/scheduling/slots", {
-    candidate_id: req.candidate_name,
+    candidate_id: req.candidate_uuid,
     interviewer_ids: req.interviewer_uuids,
     date_from: req.date_from,
     date_to: req.date_to,
@@ -134,7 +138,7 @@ export async function querySlots(req: SlotsRequest): Promise<TimeSlot[]> {
 export async function confirmSlot(req: ConfirmRequest): Promise<ConfirmedSlot> {
   type BackendConfirm = { id: string; candidate_id: string; start_time: string; end_time: string; interviewer_ids: string[]; calendar_event_id: string | null; slack_notified: boolean; email_notified: boolean; created_at: string };
   const raw = await api.post<BackendConfirm>("/api/scheduling/confirm", {
-    candidate_id: req.candidate_name,
+    candidate_id: req.candidate_uuid,
     candidate_name: req.candidate_name,
     start_time: req.start,
     end_time: req.end,

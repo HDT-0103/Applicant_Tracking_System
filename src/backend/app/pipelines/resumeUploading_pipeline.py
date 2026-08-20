@@ -1,13 +1,13 @@
-from backend.app.repositories.resume_embedding_repository import ResumeEmbeddingRepository
-from backend.app.schemas.requirement_analysis import RequirementAnalysis
-from backend.app.services.llm_provider import GroqProvider
-from backend.app.services.llm_service import LLMService
-from backend.app.services.embedding_service import EmbeddingService
-from backend.app.services.parser_service import ParserService
-from backend.app.schemas.resume_analysis import ResumeAnalysis as ResumeAnalysisSchema
-from backend.app.repositories.resume_analysis_repository import ResumeAnalysisRepository
-from backend.app.repositories.resume_repository import ResumeRepository
-from backend.app.models import Resume, ResumeAnalysis as ResumeAnalysisModel, ResumeEmbedding as ResumeEmbeddingModel
+from app.repositories.resume_embedding_repository import ResumeEmbeddingRepository
+from app.schemas.requirement_analysis import RequirementAnalysis
+from app.services.llm_provider import GroqProvider
+from app.services.llm_service import LLMService
+from app.services.embedding_service import EmbeddingService
+from app.services.parser_service import ParserService
+from app.schemas.resume_analysis import ResumeAnalysis as ResumeAnalysisSchema
+from app.repositories.resume_analysis_repository import ResumeAnalysisRepository
+from app.repositories.resume_repository import ResumeRepository
+from app.models import Resume, ResumeAnalysis as ResumeAnalysisModel, ResumeEmbedding as ResumeEmbeddingModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 class ResumePipeline:

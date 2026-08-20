@@ -5,7 +5,7 @@ from sqlalchemy import String, text, TIMESTAMP, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.app.models.base import Base
+from app.models.base import Base
 
 if TYPE_CHECKING:
     from models.user import User

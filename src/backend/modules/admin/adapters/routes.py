@@ -2,7 +2,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.database.connection import get_db_session
+from app.database.connection import get_db_session
 from modules.admin.application.admin_service import AdminService
 from modules.auth.domain.models import AuthUser
 from modules.shared.infrastructure.auth_dependencies import get_current_user, require_roles

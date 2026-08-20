@@ -2,7 +2,7 @@ import uuid
 from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.models.resume_embedding import ResumeEmbedding
+from app.models.resume_embedding import ResumeEmbedding
 
 class ResumeEmbeddingRepository:
     def __init__(self, session: AsyncSession):

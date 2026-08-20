@@ -4,9 +4,9 @@ from typing import Dict,Any
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-from backend.app.services.websocket_manager import manager
-from backend.app.schemas.ingestion_event import IngestionEvent, IngestionEventType
-from backend.app.pipelines.resumeUploading_pipeline import ResumePipeline
+from app.services.websocket_manager import manager
+from app.schemas.ingestion_event import IngestionEvent, IngestionEventType
+from app.pipelines.resumeUploading_pipeline import ResumePipeline
 
 class IngestionGateway:
     def __init__(self):

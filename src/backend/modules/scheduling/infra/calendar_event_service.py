@@ -67,6 +67,12 @@ class CalendarEventService:
                     html_link=data.get("htmlLink"),
                 )
                 return event_id
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise e
+            fake_id = str(uuid.uuid4())
+            logger.info("scheduling.calendar_event.mock_fallback", event_id=fake_id, error=str(e))
+            return fake_id
         except Exception as e:
             fake_id = str(uuid.uuid4())
             logger.info(

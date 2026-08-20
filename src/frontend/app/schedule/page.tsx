@@ -124,13 +124,17 @@ function WorkHoursBar({ slots }: { slots: TimeSlot[] }) {
   );
 }
 
-function ApiKeyModal({ open, storedKey, onSave, onClose }: { open: boolean; storedKey: string; onSave: (key: string) => void; onClose: () => void }) {
+function ApiKeyModal({ open, storedKey, storedRefresh, onSave, onClose, cancellable = true }: { open: boolean; storedKey: string; storedRefresh: string; onSave: (key: string, refresh: string) => void; onClose: () => void; cancellable?: boolean }) {
   const [value, setValue] = React.useState(storedKey);
+  const [refreshToken, setRefreshToken] = React.useState(storedRefresh);
   const [show, setShow] = React.useState(false);
 
   React.useEffect(() => {
-    if (open) setValue(storedKey);
-  }, [open, storedKey]);
+    if (open) {
+      setValue(storedKey);
+      setRefreshToken(storedRefresh);
+    }
+  }, [open, storedKey, storedRefresh]);
 
   if (!open) return null;
 
@@ -151,41 +155,61 @@ function ApiKeyModal({ open, storedKey, onSave, onClose }: { open: boolean; stor
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Key size={14} strokeWidth={1.8} color={D.blue} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: D.ink }}>Google Calendar API Key</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: D.ink }}>Cấu hình Google Calendar API</span>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: D.muted }}>
-            <X size={16} strokeWidth={2} />
-          </button>
+          {cancellable && (
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: D.muted }}>
+              <X size={16} strokeWidth={2} />
+            </button>
+          )}
         </div>
         <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ fontSize: 11, color: D.sub, lineHeight: 1.5 }}>
-            This key is used to check interviewer calendar availability. It is stored for the session.
+            Nhập Access Token (bắt buộc) và Refresh Token (không bắt buộc). Có Refresh Token thì sẽ không cần đăng nhập lại nữa.
           </div>
+          
+          <div style={{ fontSize: 11, fontWeight: 600, color: D.ink, marginBottom: -6 }}>Access Token *</div>
           <input
             type={show ? "text" : "password"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Paste your Google Calendar API key"
+            placeholder="ya29.a0..."
             style={{
               width: "100%", fontSize: 11.5, fontFamily: D.mono, padding: "8px 10px",
               border: `1px solid ${D.line}`, borderRadius: 5, background: D.surface,
               color: D.ink, outline: "none",
             }}
           />
+
+          <div style={{ fontSize: 11, fontWeight: 600, color: D.ink, marginBottom: -6, marginTop: 4 }}>Refresh Token</div>
+          <input
+            type={show ? "text" : "password"}
+            value={refreshToken}
+            onChange={(e) => setRefreshToken(e.target.value)}
+            placeholder="1//04..."
+            style={{
+              width: "100%", fontSize: 11.5, fontFamily: D.mono, padding: "8px 10px",
+              border: `1px solid ${D.line}`, borderRadius: 5, background: D.surface,
+              color: D.ink, outline: "none",
+            }}
+          />
+
           <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: D.muted, cursor: "pointer" }}>
             <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} style={{ accentColor: D.blue }} />
-            Show key
+            Show tokens
           </label>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 18px", borderTop: `1px solid ${D.line}` }}>
-          <button onClick={onClose} style={{
-            padding: "7px 14px", border: `1px solid ${D.line}`, borderRadius: 5,
-            background: D.canvas, cursor: "pointer", fontSize: 11, color: D.sub,
-          }}>
-            Cancel
-          </button>
+          {cancellable && (
+            <button onClick={onClose} style={{
+              padding: "7px 14px", border: `1px solid ${D.line}`, borderRadius: 5,
+              background: D.canvas, cursor: "pointer", fontSize: 11, color: D.sub,
+            }}>
+              Cancel
+            </button>
+          )}
           <button
-            onClick={() => { onSave(value); onClose(); }}
+            onClick={() => { onSave(value, refreshToken); onClose(); }}
             disabled={!value.trim()}
             style={{
               padding: "7px 14px", border: "none", borderRadius: 5,
@@ -193,7 +217,7 @@ function ApiKeyModal({ open, storedKey, onSave, onClose }: { open: boolean; stor
               cursor: value.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 600,
             }}
           >
-            Save Key
+            Save Tokens
           </button>
         </div>
       </div>
@@ -205,11 +229,11 @@ export default function SchedulePage() {
   const searchParams = useSearchParams();
   const { user, hasRole } = useAuth();
 
+  const candidateUuid = searchParams.get("uuid") || "00000000-0000-0000-0000-000000000000";
   const candidateName = searchParams.get("name") || "Candidate";
   const prefillUuids = searchParams.get("interviewers")?.split(",").filter(Boolean) || [];
 
   const [interviewers, setInterviewers] = useState<Interviewer[]>([]);
-  const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set(prefillUuids));
   const [dateFrom, setDateFrom] = useState(daysFromNow(1));
   const [dateTo, setDateTo] = useState(daysFromNow(7));
   const [slots, setSlots] = useState<TimeSlot[]>([]);
@@ -220,21 +244,23 @@ export default function SchedulePage() {
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [refreshToken, setRefreshToken] = useState("");
   const [showApiModal, setShowApiModal] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState(45);
   const router = useRouter();
 
   useEffect(() => {
-    // hr và tech_lead dùng chung mọi màn hình nghiệp vụ; admin đã bị AuthGuard
-    // đẩy về /admin trước khi tới đây.
     if (user && !hasRole("hr", "tech_lead")) {
       router.replace("/");
     }
   }, [user, hasRole, router]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("smartats_calendar_api_key");
-    if (saved) setApiKey(saved);
+    const savedKey = localStorage.getItem("smartats_calendar_api_key");
+    const savedRefresh = localStorage.getItem("smartats_calendar_refresh_token");
+    if (savedKey) setApiKey(savedKey);
+    if (savedRefresh) setRefreshToken(savedRefresh);
+    
     fetchInterviewers()
       .then(setInterviewers)
       .catch((err) => setError(err.message))
@@ -244,20 +270,34 @@ export default function SchedulePage() {
   useEffect(() => {
     if (apiKey) localStorage.setItem("smartats_calendar_api_key", apiKey);
     else localStorage.removeItem("smartats_calendar_api_key");
+    
+    if (refreshToken) localStorage.setItem("smartats_calendar_refresh_token", refreshToken);
+    else localStorage.removeItem("smartats_calendar_refresh_token");
+  }, [apiKey, refreshToken]);
+
+  useEffect(() => {
+    // Tự động bật Modal không cho tắt nếu chưa có API Key
+    if (!apiKey) {
+      setShowApiModal(true);
+    }
   }, [apiKey]);
 
-  const handleToggleInterviewer = useCallback((uuid: string) => {
-    setSelectedUuids((prev) => {
-      const next = new Set(prev);
-      if (next.has(uuid)) next.delete(uuid);
-      else next.add(uuid);
-      return next;
-    });
-  }, []);
+  const handleSaveTokens = async (newKey: string, newRefresh: string) => {
+    setApiKey(newKey);
+    setRefreshToken(newRefresh);
+    // Also save to backend immediately so auto-refresh works
+    if (user?.id) {
+      try {
+        await import("../../services/schedulingService").then(m => m.updateCalendarKey(user.id, newKey, newRefresh));
+      } catch (err) {
+        console.error("Failed to save tokens to backend", err);
+      }
+    }
+  };
 
   const handleFindSlots = async () => {
-    if (selectedUuids.size === 0) {
-      setError("Select at least one interviewer");
+    if (!user?.id) {
+      setError("User session not found");
       return;
     }
     if (!apiKey.trim()) {
@@ -269,10 +309,10 @@ export default function SchedulePage() {
     setSelectedSlot(null);
     setConfirmedSlot(null);
     try {
-      const uuids = Array.from(selectedUuids);
       const result = await querySlots({
+        candidate_uuid: candidateUuid,
         candidate_name: candidateName,
-        interviewer_uuids: uuids,
+        interviewer_uuids: [user.id],
         date_from: dateFrom,
         date_to: dateTo,
         api_key: apiKey,
@@ -286,13 +326,14 @@ export default function SchedulePage() {
   };
 
   const handleConfirm = async () => {
-    if (!selectedSlot) return;
+    if (!selectedSlot || !user?.id) return;
     setConfirming(true);
     setError(null);
     try {
       const result = await confirmSlot({
+        candidate_uuid: candidateUuid,
         candidate_name: candidateName,
-        interviewer_uuids: Array.from(selectedUuids),
+        interviewer_uuids: [user.id],
         start: selectedSlot.start,
         end: selectedSlot.end,
         api_key: apiKey,
@@ -317,7 +358,14 @@ export default function SchedulePage() {
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <AppHeader candidateName={candidateName} />
 
-      <ApiKeyModal open={showApiModal} storedKey={apiKey} onSave={setApiKey} onClose={() => setShowApiModal(false)} />
+      <ApiKeyModal
+        open={showApiModal}
+        storedKey={apiKey}
+        storedRefresh={refreshToken}
+        onSave={handleSaveTokens}
+        onClose={() => setShowApiModal(false)}
+        cancellable={!!apiKey}
+      />
 
       {/* Sub-header */}
       <div style={{ height: 38, background: D.canvas, borderBottom: `1px solid ${D.line}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 6, flexShrink: 0 }}>
@@ -347,35 +395,6 @@ export default function SchedulePage() {
       </div>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {/* Left Panel — Interviewers */}
-        <div style={{ flex: "0 0 26%", minWidth: 0, display: "flex", flexDirection: "column", background: D.bg, borderRight: `1px solid ${D.line}` }}>
-          <div style={{
-            height: 36, background: D.canvas, borderBottom: `1px solid ${D.line}`,
-            display: "flex", alignItems: "center", padding: "0 16px", flexShrink: 0, gap: 6,
-          }}>
-            <Users size={12} strokeWidth={1.8} color={D.muted} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: D.ink }}>Interviewers</span>
-            <Badge color={D.sub} bg={D.surface}>{interviewers?.length ?? 0}</Badge>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-            {loadingInterviewers ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: 20 }}>
-                <Loader2 size={14} strokeWidth={2} color={D.blue} style={{ animation: "spin 1s linear infinite" }} />
-                <span style={{ fontSize: 11, color: D.muted }}>Loading...</span>
-              </div>
-            ) : (
-              (interviewers ?? []).map((iv) => (
-                <InterviewerCard
-                  key={iv.uuid}
-                  interviewer={iv}
-                  selected={selectedUuids.has(iv.uuid)}
-                  onToggle={() => handleToggleInterviewer(iv.uuid)}
-                />
-              ))
-            )}
-          </div>
-        </div>
-
         {/* Center Panel — Date Range + Slots */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: D.canvas }}>
           <div style={{
@@ -429,12 +448,12 @@ export default function SchedulePage() {
             <div style={{ flex: 1 }} />
             <button
               onClick={handleFindSlots}
-              disabled={loadingSlots || selectedUuids.size === 0}
+              disabled={loadingSlots || !user?.id}
               style={{
                 display: "flex", alignItems: "center", gap: 5, padding: "4px 14px",
                 border: `1px solid ${D.blue}`, borderRadius: 5, background: D.blue, color: "#fff",
-                fontSize: 10.5, fontWeight: 600, cursor: selectedUuids.size === 0 ? "default" : "pointer",
-                opacity: selectedUuids.size === 0 ? 0.5 : 1,
+                fontSize: 10.5, fontWeight: 600, cursor: (!user?.id) ? "default" : "pointer",
+                opacity: (!user?.id) ? 0.5 : 1,
               }}
             >
               {loadingSlots
@@ -504,7 +523,7 @@ export default function SchedulePage() {
                             </div>
                             <Clock size={11} strokeWidth={2} color={isSelected ? D.blue : D.muted} />
                             <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, fontFamily: D.mono }}>
-                              {slot.start.slice(11, 16)} — {slot.end.slice(11, 16)}
+                              {new Date(slot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(slot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                             <Badge color={D.blue} bg={D.blueSoft}>{slot.duration_minutes} min</Badge>
                             <div style={{ flex: 1 }} />
@@ -528,7 +547,7 @@ export default function SchedulePage() {
                 padding: "40px 20px", gap: 8,
               }}>
                 <Calendar size={28} strokeWidth={1.5} color={D.dim} />
-                <span style={{ fontSize: 12, color: D.muted }}>Select interviewers and date range, then click &quot;Find Available Slots&quot;</span>
+                <span style={{ fontSize: 12, color: D.muted }}>Select date range, then click &quot;Find Available Slots&quot;</span>
               </div>
             )}
           </div>
@@ -560,8 +579,8 @@ export default function SchedulePage() {
                 <Divider />
                 <div style={{ fontSize: 10, color: D.sub, fontFamily: D.mono, lineHeight: 1.7 }}>
                   <div><strong style={{ color: D.ink }}>Candidate:</strong> {confirmedSlot.candidate_name}</div>
-                  <div><strong style={{ color: D.ink }}>Start:</strong> {formatDate(confirmedSlot.start)} {confirmedSlot.start.slice(11, 16)}</div>
-                  <div><strong style={{ color: D.ink }}>End:</strong> {formatDate(confirmedSlot.end)} {confirmedSlot.end.slice(11, 16)}</div>
+                  <div><strong style={{ color: D.ink }}>Start:</strong> {formatDate(confirmedSlot.start)} {new Date(confirmedSlot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  <div><strong style={{ color: D.ink }}>End:</strong> {formatDate(confirmedSlot.end)} {new Date(confirmedSlot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={{
@@ -587,7 +606,7 @@ export default function SchedulePage() {
                     {confirmedSlot.notified ? <Check size={10} strokeWidth={2} color={D.mint} /> : <AlertCircle size={10} strokeWidth={2} color={D.amber} />}
                     <span>
                       {confirmedSlot.notified
-                        ? <>Email notification sent to <strong style={{ color: D.ink, fontFamily: D.mono }}>cn20378@gmail.com</strong></>
+                        ? <>Email notification sent to <strong style={{ color: D.ink, fontFamily: D.mono }}>the candidate</strong></>
                         : "Email notification not sent (configure SMTP in .env)"}
                     </span>
                   </div>
@@ -617,7 +636,7 @@ export default function SchedulePage() {
                       {formatDate(selectedSlot.start)}
                     </div>
                     <div style={{ fontSize: 12, fontFamily: D.mono, color: D.blue, marginBottom: 4 }}>
-                      {selectedSlot.start.slice(11, 16)} — {selectedSlot.end.slice(11, 16)}
+                      {new Date(selectedSlot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedSlot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <Badge color={D.blue} bg={D.blueSoft}>
                       <Clock size={9} strokeWidth={2} /> {selectedSlot.duration_minutes} minutes
@@ -637,11 +656,8 @@ export default function SchedulePage() {
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
                       <Users size={10} strokeWidth={2} color={D.muted} style={{ marginTop: 2 }} />
                       <div>
-                        <strong style={{ color: D.ink }}>Interviewers:</strong>
-                        {Array.from(selectedUuids).map((uuid) => {
-                            const iv = (interviewers ?? []).find((i) => i.uuid === uuid);
-                          return iv ? <div key={uuid} style={{ fontSize: 10, color: D.sub, fontFamily: D.mono, marginLeft: 10 }}>— {iv.name}</div> : null;
-                        })}
+                        <strong style={{ color: D.ink }}>Interviewer:</strong>
+                        <div style={{ fontSize: 10, color: D.sub, fontFamily: D.mono, marginLeft: 10 }}>— {user?.name || "HR / Logged in User"}</div>
                       </div>
                     </div>
                   </div>

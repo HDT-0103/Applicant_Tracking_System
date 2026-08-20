@@ -15,8 +15,12 @@ class ISchedulingRepo(ABC):
 
     @abstractmethod
     def update_calendar_key(
-        self, interviewer_id: str, api_key: str
+        self, interviewer_id: str, api_key: str, refresh_token: Optional[str] = None
     ) -> Optional[Interviewer]:
+        ...
+
+    @abstractmethod
+    def get_candidate_email(self, candidate_id: str) -> Optional[str]:
         ...
 
     @abstractmethod

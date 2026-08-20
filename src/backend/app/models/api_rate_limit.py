@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import String, text, TIMESTAMP, Integer
 from sqlalchemy.orm import Mapped, mapped_column
-from backend.app.models.base import Base
+from app.models.base import Base
 
 class ApiRateLimit(Base):
     __tablename__ = "api_rate_limits"

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from backend.app.services.ingestion_gateway import gateway_service
+from app.services.ingestion_gateway import gateway_service
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.database.connection import get_db_session
+from app.database.connection import get_db_session
 router = APIRouter(prefix="/api/v1/ingestion", tags=["Ingestion"])
 
 @router.post("/resumes", status_code=status.HTTP_202_ACCEPTED)

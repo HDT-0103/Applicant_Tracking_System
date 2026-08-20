@@ -1932,7 +1932,7 @@ function EnrichedAnalytics({
           <button
             onClick={() =>
               router.push(
-                `/schedule?name=${encodeURIComponent(data?.full_name || "Candidate")}`,
+                `/schedule?uuid=${candidateUuid}&name=${encodeURIComponent(data?.full_name || "Candidate")}`,
               )
             }
             style={{

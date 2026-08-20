@@ -2,7 +2,7 @@ import uuid
 from typing import List, Optional
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.models.requirement_analysis import RequirementAnalysis
+from app.models.requirement_analysis import RequirementAnalysis
 
 class RequirementAnalysisRepository:
     def __init__(self, session: AsyncSession):

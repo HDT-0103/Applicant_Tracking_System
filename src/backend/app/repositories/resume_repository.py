@@ -3,9 +3,9 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.models.resume import Resume
-from backend.app.models.resume_analysis import ResumeAnalysis
-from backend.app.models.resume_embedding import ResumeEmbedding
+from app.models.resume import Resume
+from app.models.resume_analysis import ResumeAnalysis
+from app.models.resume_embedding import ResumeEmbedding
 
 class ResumeRepository:
     def __init__(self, session: AsyncSession):
