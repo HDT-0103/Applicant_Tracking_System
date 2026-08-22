@@ -1,3 +1,5 @@
+import zoneinfo
+from datetime import datetime, timezone, timedelta
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -10,6 +12,16 @@ from modules.scheduling.domain.models import ConfirmedSlot, Interviewer
 logger = structlog.get_logger(__name__)
 
 
+def to_local_tz(dt: datetime, tz_name: str = "Asia/Ho_Chi_Minh") -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        tz = timezone(timedelta(hours=7))
+    return dt.astimezone(tz)
+
+
 class EmailNotifier:
     def __init__(
         self,
@@ -18,12 +30,14 @@ class EmailNotifier:
         smtp_username: str = "",
         smtp_password: str = "",
         from_email: str = "",
+        app_timezone: str = "Asia/Ho_Chi_Minh",
     ) -> None:
         self._smtp_host = smtp_host
         self._smtp_port = smtp_port
         self._smtp_username = smtp_username
         self._smtp_password = smtp_password
         self._from_email = from_email or smtp_username
+        self._app_timezone = app_timezone
 
     async def notify_interviewers(
         self,
@@ -45,6 +59,8 @@ class EmailNotifier:
             for p in interviewers if p.name
         ]) or "Technical Interview Team"
         duration_minutes = int((slot.end_time - slot.start_time).total_seconds() / 60)
+        local_start = to_local_tz(slot.start_time, self._app_timezone)
+        local_end = to_local_tz(slot.end_time, self._app_timezone)
 
         for email in recipients:
             if email == candidate_email:
@@ -54,8 +70,8 @@ class EmailNotifier:
                     "",
                     "Congratulations! Following your application review, we are pleased to invite you for an interview with our team:",
                     "",
-                    f"• Date: {slot.start_time.strftime('%A, %B %d, %Y')}",
-                    f"• Time: {slot.start_time.strftime('%I:%M %p')} - {slot.end_time.strftime('%I:%M %p')} (UTC)",
+                    f"• Date: {local_start.strftime('%A, %B %d, %Y')}",
+                    f"• Time: {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} (GMT+7)",
                     f"• Duration: {duration_minutes} minutes",
                     f"• Interview Panel: {interviewer_list}",
                     "",
@@ -71,9 +87,9 @@ class EmailNotifier:
                     "",
                     f"An interview has been scheduled with {candidate_name}.",
                     "",
-                    f"Date: {slot.start_time.strftime('%A, %B %d, %Y')}",
-                    f"Time: {slot.start_time.strftime('%I:%M %p')} - {slot.end_time.strftime('%I:%M %p')}",
-                    f"Duration: {int((slot.end_time - slot.start_time).total_seconds() / 60)} minutes",
+                    f"Date: {local_start.strftime('%A, %B %d, %Y')}",
+                    f"Time: {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} (GMT+7)",
+                    f"Duration: {duration_minutes} minutes",
                     "",
                     "Best regards,",
                     "SmartATS",
