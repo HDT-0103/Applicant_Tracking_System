@@ -1,16 +1,14 @@
-from typing import Optional, Protocol
+﻿from typing import List
 
-from modules.review.domain.models import CvReview
+from .models import CvReview
 
 
-class IReviewRepo(Protocol):
-    def save(self, review: CvReview) -> CvReview:
-        ...
+class IReviewRepo:
+    async def get_reviews(self, candidate_uuid: str) -> List[CvReview]:
+        raise NotImplementedError
 
-    def get_by_candidate(self, candidate_uuid: str) -> list[CvReview]:
-        ...
+    async def save_review(self, review: CvReview) -> None:
+        raise NotImplementedError
 
-    def get_by_reviewer(
-        self, candidate_uuid: str, reviewer_id: str
-    ) -> Optional[CvReview]:
-        ...
+    async def get_total_tech_leads(self) -> int:
+        raise NotImplementedError
