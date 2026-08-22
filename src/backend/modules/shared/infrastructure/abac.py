@@ -130,13 +130,14 @@ def _get_dynamic_policy(role: str) -> frozenset[str] | None:
         except Exception as e:
             logger.error("abac.load_policies_failed", error=str(e))
             
-    # Fallback to hardcoded list if fetch fails and cache is empty
+    # Fallback to hardcoded list if fetch fails or role is unknown
     cached_fields = _ROLE_VISIBLE_FIELDS.get(role)
-    if not cached_fields and role == "tech_lead":
+    if not cached_fields:
         logger.warning("abac.using_fallback_hardcoded_policy", role=role)
         return TECH_LEAD_VISIBLE_FIELDS
         
-    return cached_fields or frozenset()
+    return cached_fields
+
 
 
 
