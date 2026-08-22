@@ -13,7 +13,7 @@ from modules.scheduling.domain.models import (
 )
 from modules.scheduling.infra.google_calendar_service import GoogleCalendarService
 from modules.scheduling.infra.calendar_event_service import CalendarEventService
-from modules.scheduling.infra.email_notifier import EmailNotifier
+from modules.scheduling.infra.email_notifier import EmailNotifier, to_local_tz
 from modules.scheduling.infra.slack_notifier import SlackNotifier
 from modules.scheduling.infra.impl_supabase import SupabaseSchedulingRepo
 from modules.scheduling.application.sweep_line_service import SweepLineService
@@ -48,6 +48,7 @@ def _build_service(
         smtp_username=settings.smtp_username,
         smtp_password=settings.smtp_password,
         from_email=settings.smtp_from_email,
+        app_timezone=settings.app_timezone,
     )
     oauth_service = GoogleOAuthService(
         client_id=settings.google_client_id,
@@ -323,7 +324,8 @@ async def send_interview_details(
     cand_email = cand_res.data[0].get("email")
 
     start_dt = datetime.fromisoformat(slot_row["start_time"])
-    slot_time = start_dt.strftime("%A, %B %d, %Y at %I:%M %p (UTC)")
+    local_start = to_local_tz(start_dt, service._email_notifier._app_timezone)
+    slot_time = local_start.strftime("%A, %B %d, %Y at %I:%M %p (GMT+7)")
 
     room = body.room or "Conference Room A - 3rd Floor"
     address = body.address or "SmartATS HQ, 123 Tech Blvd"
