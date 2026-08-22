@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Annotated, Optional
-
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -17,7 +17,7 @@ from modules.scheduling.infra.email_notifier import EmailNotifier
 from modules.scheduling.infra.slack_notifier import SlackNotifier
 from modules.scheduling.infra.impl_supabase import SupabaseSchedulingRepo
 from modules.scheduling.application.sweep_line_service import SweepLineService
-from modules.shared.infrastructure.auth_dependencies import require_operational_roles
+from modules.shared.infrastructure.auth_dependencies import require_operational_roles, require_roles
 from modules.auth.domain.models import AuthUser
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
@@ -49,6 +49,11 @@ def _build_service(
         smtp_password=settings.smtp_password,
         from_email=settings.smtp_from_email,
     )
+    oauth_service = GoogleOAuthService(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        redirect_uri=settings.google_redirect_uri,
+    )
     return SchedulingService(
         repo=repo,
         calendar=calendar,
@@ -57,6 +62,7 @@ def _build_service(
         calendar_event=calendar_event,
         email_notifier=email_notifier,
         slack_webhook_url=settings.slack_webhook_url or None,
+        oauth_service=oauth_service,
     )
 
 
@@ -73,7 +79,6 @@ class SlotsQueryRequest(BaseModel):
     interviewer_ids: list[str]
     date_from: str
     date_to: str
-    api_key: str = ""
 
 
 class ConfirmSlotRequest(BaseModel):
@@ -82,7 +87,10 @@ class ConfirmSlotRequest(BaseModel):
     start_time: str
     end_time: str
     interviewer_ids: list[str]
-    api_key: str = ""
+
+
+class GoogleAuthCallbackRequest(BaseModel):
+    code: str
 
 
 # ---- Endpoints ----
@@ -114,6 +122,42 @@ async def update_calendar_key(
         )
     return result
 
+
+@router.get("/calendar-status")
+async def calendar_status(
+    service: ServiceDep,
+    user: AuthUser = Depends(require_operational_roles()),
+):
+    """Check if the current user has a valid calendar connection"""
+    interviewer = service._repo.get_interviewer(user.id)
+    connected = bool(
+        interviewer
+        and (interviewer.calendar_api_key or interviewer.calendar_refresh_token)
+    )
+    return {"connected": connected}
+
+
+@router.get("/connected-interviewers")
+async def list_connected_interviewers(
+    service: ServiceDep,
+    user: AuthUser = Depends(require_operational_roles()),
+    oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
+):
+    """List all interviewers who have valid calendar connections."""
+    all_interviewers = await service.list_interviewers()
+    connected = []
+    for iv in all_interviewers:
+        if iv.calendar_api_key or iv.calendar_refresh_token:
+            if not iv.calendar_api_key and iv.calendar_refresh_token:
+                new_token = await oauth_service.refresh_access_token(iv.calendar_refresh_token)
+                if new_token:
+                    await service.update_calendar_key(iv.id, new_token, iv.calendar_refresh_token)
+                    iv.calendar_api_key = new_token
+            if iv.calendar_api_key:
+                connected.append(iv)
+    return connected
+
+
 @router.get("/auth/google/url")
 async def get_google_auth_url(
     oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
@@ -122,29 +166,33 @@ async def get_google_auth_url(
     """Lấy URL để Frontend mở cửa sổ đăng nhập Google"""
     return {"url": oauth_service.get_authorization_url()}
 
-@router.get("/auth/google/callback")
+
+@router.post("/auth/google/callback")
 async def google_auth_callback(
-    code: str = Query(...),
+    body: GoogleAuthCallbackRequest,
     oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
     scheduling_service: SchedulingService = Depends(_build_service),
     user: AuthUser = Depends(require_operational_roles()),
 ):
-    """Nhận code từ Frontend, lấy token và lưu vào Database cho user hiện tại"""
-    access_token, refresh_token = await oauth_service.exchange_code(code)
+    """Receive code from Frontend, exchange for tokens and save to DB"""
+    access_token, refresh_token = await oauth_service.exchange_code(body.code)
     if not access_token:
-        raise HTTPException(status_code=400, detail="Lấy token thất bại")
-    
-    # Lưu vào database cho HR đang đăng nhập (đã chuẩn hoá để nhận cả refresh_token)
+        raise HTTPException(status_code=400, detail="Failed to exchange code for tokens")
+
+    # If Google did not return a new refresh token, preserve the existing one in DB
+    existing_iv = scheduling_service._repo.get_interviewer(user.id)
+    if not refresh_token and existing_iv and existing_iv.calendar_refresh_token:
+        refresh_token = existing_iv.calendar_refresh_token
+
     await scheduling_service.update_calendar_key(user.id, access_token, refresh_token)
-    return {"status": "success", "message": "Liên kết Google Calendar thành công"}
+    return {"status": "success", "message": "Google Calendar connected successfully"}
 
 
 @router.post("/slots", response_model=list[TimeSlot])
 async def query_slots(
     body: SlotsQueryRequest,
     service: ServiceDep,
-    user: AuthUser = Depends(require_operational_roles()),
-    oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
+    user: AuthUser = Depends(require_roles("hr")),
 ) -> list[TimeSlot]:
     try:
         date_from = datetime.fromisoformat(body.date_from)
@@ -172,38 +220,18 @@ async def query_slots(
             detail="At least one interviewer_id is required",
         )
 
-    interviewer = service._repo.get_interviewer(user.id)
-    api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else body.api_key
-    refresh_token = interviewer.calendar_refresh_token if interviewer else None
-
-    try:
-        slots = await service.query_slots(
-            interviewer_ids=body.interviewer_ids,
-            date_from=date_from,
-            date_to=date_to,
-            api_key=api_key,
-        )
-        return slots
-    except Exception as e:
-        if "401" in str(e) and refresh_token:
-            new_access_token = await oauth_service.refresh_access_token(refresh_token)
-            if new_access_token:
-                await service.update_calendar_key(user.id, new_access_token, refresh_token)
-                slots = await service.query_slots(
-                    interviewer_ids=body.interviewer_ids,
-                    date_from=date_from,
-                    date_to=date_to,
-                    api_key=new_access_token,
-                )
-                return slots
-        raise e
+    return await service.query_slots(
+        interviewer_ids=body.interviewer_ids,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 @router.post("/confirm", response_model=ConfirmedSlot)
 async def confirm_slot(
     body: ConfirmSlotRequest,
     service: ServiceDep,
-    user: AuthUser = Depends(require_operational_roles()),
+    user: AuthUser = Depends(require_roles("hr")),
     oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
 ) -> ConfirmedSlot:
     try:
@@ -232,8 +260,14 @@ async def confirm_slot(
             detail="At least one interviewer_id is required",
         )
 
+    if not body.candidate_id or body.candidate_id == "00000000-0000-0000-0000-000000000000":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A valid candidate must be selected for scheduling. Please select a candidate from the dashboard.",
+        )
+
     interviewer = service._repo.get_interviewer(user.id)
-    api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else body.api_key
+    api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else ""
     refresh_token = interviewer.calendar_refresh_token if interviewer else None
 
     try:
@@ -247,7 +281,8 @@ async def confirm_slot(
         )
         return slot
     except Exception as e:
-        if "401" in str(e) and refresh_token:
+        is_401 = "401" in str(e) or (isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401)
+        if is_401 and refresh_token:
             new_access_token = await oauth_service.refresh_access_token(refresh_token)
             if new_access_token:
                 await service.update_calendar_key(user.id, new_access_token, refresh_token)
@@ -261,3 +296,43 @@ async def confirm_slot(
                 )
                 return slot
         raise e
+
+class SendDetailsRequest(BaseModel):
+    room: str = ""
+    address: str = ""
+
+@router.post("/{slot_id}/send-details")
+async def send_interview_details(
+    slot_id: str,
+    body: SendDetailsRequest,
+    service: ServiceDep,
+    _user: AuthUser = Depends(require_roles("hr")),
+):
+    """Send room and location details to candidate via email"""
+    res = service._repo._supabase.table("confirmed_slots").select("*").eq("id", slot_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Confirmed slot not found")
+    slot_row = res.data[0]
+
+    cand_id = slot_row["candidate_uuid"]
+    cand_res = service._repo._supabase.table("candidates").select("full_name, email").eq("uuid", cand_id).execute()
+    if not cand_res.data or not cand_res.data[0].get("email"):
+        raise HTTPException(status_code=400, detail="Candidate email not found")
+
+    cand_name = cand_res.data[0].get("full_name") or "Candidate"
+    cand_email = cand_res.data[0].get("email")
+
+    start_dt = datetime.fromisoformat(slot_row["start_time"])
+    slot_time = start_dt.strftime("%A, %B %d, %Y at %I:%M %p (UTC)")
+
+    room = body.room or "Conference Room A - 3rd Floor"
+    address = body.address or "SmartATS HQ, 123 Tech Blvd"
+
+    await service._email_notifier.send_room_details(
+        candidate_name=cand_name,
+        candidate_email=cand_email,
+        slot_time=slot_time,
+        room=room,
+        address=address,
+    )
+    return {"status": "success", "message": "Interview room and location details sent to candidate successfully"}

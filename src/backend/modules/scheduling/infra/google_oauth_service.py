@@ -18,7 +18,7 @@ class GoogleOAuthService:
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
-            "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
+            "scope": "https://www.googleapis.com/auth/calendar",
             "access_type": "offline",
             "prompt": "consent",  # Force consent to ensure we get a refresh token
         }

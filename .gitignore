@@ -1,7 +1,30 @@
 # Environment files
 .env
 .env.*
+.env*.local
+*.env
+**/.env
+**/.env.*
+**/.env*.local
 !.env.example
+!**/.env.example
+
+# Auth, credentials & tokens
+*.token
+*.pem
+*.key
+token.json
+credentials.json
+client_secret*.json
+client_secret.json
+client_secrets.json
+auth_token.json
+
+# Local test & scratch scripts
+test_*.py
+test_token.py
+test_query.py
+scratch/
 
 # Python
 __pycache__/

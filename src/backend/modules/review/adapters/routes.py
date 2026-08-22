@@ -1,4 +1,4 @@
-from typing import Annotated
+﻿from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -6,17 +6,20 @@ from pydantic import BaseModel
 from modules.auth.domain.models import AuthUser
 from modules.review.application.review_service import ReviewService
 from modules.review.domain.models import ReviewDecision, ReviewStatus
-from modules.review.infra.impl_inmemory import InMemoryReviewRepo
+from modules.review.infra.impl_supabase import SupabaseReviewRepo
 from modules.shared.infrastructure.auth_dependencies import (
     require_operational_roles,
     require_roles,
 )
+from modules.shared.infrastructure.supabase_client import get_supabase_client
+from modules.shared.infrastructure.config import Settings, get_settings
 
 router = APIRouter(prefix="/api/review", tags=["review"])
 
 
-def _build_service() -> ReviewService:
-    return ReviewService(repo=InMemoryReviewRepo())
+def _build_service(settings: Settings = Depends(get_settings)) -> ReviewService:
+    client = get_supabase_client(settings, use_admin=True)
+    return ReviewService(repo=SupabaseReviewRepo(client))
 
 
 ServiceDep = Annotated[ReviewService, Depends(_build_service)]
@@ -72,7 +75,6 @@ async def resolve_conflict(
     candidate_uuid: str,
     body: ResolveConflictRequest,
     service: ServiceDep,
-    # Chốt final call khi HR và Tech Lead bất đồng là đặc quyền của HR.
     _current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> ReviewStatus:
     return await service.resolve_conflict(

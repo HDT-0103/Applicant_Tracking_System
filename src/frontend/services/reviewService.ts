@@ -1,19 +1,27 @@
 import { api } from "./httpClient";
 
-/* ─── Types ──────────────────────────────────────────────────────────── */
+/* ─── Types ──────────────────────────────────────────────────────── */
 
 export type ReviewDecision = "pending" | "approved" | "rejected";
+
+export interface TLReviewSummary {
+  reviewer_id: string;
+  decision: ReviewDecision;
+  review_text: string;
+}
 
 export interface ReviewStatus {
   candidate_uuid: string;
   hr_decision: ReviewDecision;
-  tl_decision: ReviewDecision;
   hr_review_text: string;
-  tl_review_text: string;
-  overall_status: "waiting" | "ready_to_schedule" | "rejected" | "conflict";
+  tl_reviews: TLReviewSummary[];
+  total_tls: number;
+  approved_tls: number;
+  rejected_tls: number;
+  overall_status: "waiting_for_tls" | "rejected_by_tls" | "waiting_for_hr" | "rejected_by_hr" | "ready_to_schedule";
 }
 
-/* ─── API Calls ──────────────────────────────────────────────────────── */
+/* ─── API Calls ────────────────────────────────────────────────────── */
 
 export async function submitReview(
   candidateUuid: string,
@@ -30,13 +38,4 @@ export async function getReviewStatus(
   candidateUuid: string,
 ): Promise<ReviewStatus> {
   return api.get<ReviewStatus>(`/api/review/${candidateUuid}`);
-}
-
-export async function resolveConflict(
-  candidateUuid: string,
-  finalDecision: ReviewDecision,
-): Promise<ReviewStatus> {
-  return api.post<ReviewStatus>(`/api/review/${candidateUuid}/resolve`, {
-    final_decision: finalDecision,
-  });
 }
