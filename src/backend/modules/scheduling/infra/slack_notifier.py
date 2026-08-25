@@ -4,6 +4,7 @@ import httpx
 import structlog
 
 from modules.scheduling.domain.models import ConfirmedSlot, Interviewer
+from modules.scheduling.infra.email_notifier import to_local_tz
 
 logger = structlog.get_logger(__name__)
 
@@ -21,11 +22,12 @@ class SlackNotifier:
             return False
 
         interviewer_names = ", ".join([p.name for p in interviewers])
+        local_start = to_local_tz(slot.start_time)
         payload = {
             "text": (
                 f"Interview scheduled: *{candidate_name}* with "
                 f"{interviewer_names} on "
-                f"*{slot.start_time.strftime('%b %d at %I:%M %p')}* "
+                f"*{local_start.strftime('%b %d at %I:%M %p (GMT+7)')}* "
                 f"({int((slot.end_time - slot.start_time).total_seconds() / 60)} min)"
             ),
         }

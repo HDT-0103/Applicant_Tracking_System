@@ -15,12 +15,14 @@ import type { EnrichedProfile } from "../types";
 export function EnrichedAnalytics({
   data,
   userRole,
+  userId,
   candidateUuid,
   reviewStatus,
   onRefreshReview,
 }: {
   data: EnrichedProfile | null;
   userRole: string;
+  userId?: string;
   candidateUuid: string;
   reviewStatus: ReviewStatus | null;
   onRefreshReview: () => void;
@@ -257,6 +259,7 @@ export function EnrichedAnalytics({
         <ReviewPanel
           candidateUuid={candidateUuid}
           userRole={userRole}
+          userId={userId}
           reviewStatus={reviewStatus}
           onRefresh={onRefreshReview}
         />
@@ -299,12 +302,13 @@ export function EnrichedAnalytics({
                 borderRadius: 5,
               }}
             >
-              {reviewStatus?.overall_status === "waiting"
-                ? "⏳ Waiting for both reviewers to approve before scheduling"
-                : reviewStatus?.overall_status === "rejected"
+              {reviewStatus?.overall_status === "waiting_for_tls"
+                ? "⏳ Waiting for the Tech Lead panel to approve before scheduling"
+                : reviewStatus?.overall_status === "rejected_by_tls" ||
+                    reviewStatus?.overall_status === "rejected_by_hr"
                   ? "❌ Candidate rejected — scheduling unavailable"
-                  : reviewStatus?.overall_status === "conflict"
-                    ? "⚠️ Resolve the split decision before scheduling"
+                  : reviewStatus?.overall_status === "waiting_for_hr"
+                    ? "⚠️ Submit your final HR decision above"
                     : "Submit your review above"}
             </div>
           )

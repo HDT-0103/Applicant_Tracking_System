@@ -1,14 +1,19 @@
+﻿import uuid
 import structlog
+from typing import Optional
 
-from modules.review.domain.models import CvReview, ReviewDecision, ReviewStatus
+from modules.review.domain.models import CvReview, ReviewDecision, ReviewStatus, TLReviewSummary
 from modules.review.domain.repo_interface import IReviewRepo
 
 logger = structlog.get_logger(__name__)
 
 
 class ReviewService:
-    def __init__(self, repo: IReviewRepo) -> None:
+    def __init__(self, repo: IReviewRepo):
         self._repo = repo
+
+    async def get_status(self, candidate_uuid: str) -> ReviewStatus:
+        return await self._aggregate_status(candidate_uuid)
 
     async def submit_review(
         self,
@@ -18,77 +23,96 @@ class ReviewService:
         decision: ReviewDecision,
         review_text: str = "",
     ) -> ReviewStatus:
-        if reviewer_role == "hr":
-            reviews = self._repo.get_by_candidate(candidate_uuid)
-            tl_submitted = any(
-                r for r in reviews
-                if r.reviewer_role == "tech_lead" and r.decision != "pending"
+        reviews = await self._repo.get_reviews(candidate_uuid)
+        
+        # Check if already reviewed
+        existing = next((r for r in reviews if r.reviewer_id == reviewer_id), None)
+        
+        if existing:
+            existing.decision = decision
+            existing.review_text = review_text
+            await self._repo.save_review(existing)
+        else:
+            new_rev = CvReview(
+                id=str(uuid.uuid4()),
+                candidate_uuid=candidate_uuid,
+                reviewer_id=reviewer_id,
+                reviewer_role=reviewer_role,  # "hr" or "tech_lead"
+                decision=decision,
+                review_text=review_text,
             )
-            if not tl_submitted:
-                raise ValueError("Tech Lead must submit their review first")
+            await self._repo.save_review(new_rev)
 
-        review = CvReview(
-            id="",
-            candidate_uuid=candidate_uuid,
-            reviewer_id=reviewer_id,
-            reviewer_role=reviewer_role,
-            decision=decision,
-            review_text=review_text,
-        )
-        self._repo.save(review)
-        return await self._compute_status(candidate_uuid)
-
-    async def get_status(self, candidate_uuid: str) -> ReviewStatus:
-        return await self._compute_status(candidate_uuid)
+        return await self._aggregate_status(candidate_uuid)
 
     async def resolve_conflict(
         self, candidate_uuid: str, hr_final_decision: ReviewDecision
     ) -> ReviewStatus:
-        reviews = self._repo.get_by_candidate(candidate_uuid)
-        hr_reviews = [r for r in reviews if r.reviewer_role == "hr"]
-        if hr_reviews and hr_final_decision == "rejected":
-            self._send_rejection_email(candidate_uuid)
-        return await self._compute_status(candidate_uuid)
+        # Not needed anymore since HR is the final decision maker anyway,
+        # but keep it if API expects it. Actually, HR just submits their own review.
+        return await self.get_status(candidate_uuid)
 
-    async def _compute_status(self, candidate_uuid: str) -> ReviewStatus:
-        reviews = self._repo.get_by_candidate(candidate_uuid)
-        hr = None
-        tl = None
-        for r in reviews:
-            if r.reviewer_role == "hr":
-                hr = r
-            elif r.reviewer_role == "tech_lead":
-                tl = r
-
+    async def _aggregate_status(self, candidate_uuid: str) -> ReviewStatus:
+        reviews = await self._repo.get_reviews(candidate_uuid)
+        total_tls = await self._repo.get_total_tech_leads()
+        
+        hr = next((r for r in reviews if r.reviewer_role == "hr"), None)
+        tl_reviews = [r for r in reviews if r.reviewer_role == "tech_lead"]
+        
         hr_dec = hr.decision if hr else "pending"
-        tl_dec = tl.decision if tl else "pending"
         hr_text = hr.review_text if hr else ""
-        tl_text = tl.review_text if tl else ""
+        
+        approved_tls = sum(1 for r in tl_reviews if r.decision == "approved")
+        rejected_tls = sum(1 for r in tl_reviews if r.decision == "rejected")
+        
+        tl_summaries = [
+            TLReviewSummary(
+                reviewer_id=r.reviewer_id,
+                decision=r.decision,
+                review_text=r.review_text
+            ) for r in tl_reviews
+        ]
 
         status = ReviewStatus(
             candidate_uuid=candidate_uuid,
             hr_decision=hr_dec,
-            tl_decision=tl_dec,
             hr_review_text=hr_text,
-            tl_review_text=tl_text,
-            overall_status="waiting",
+            tl_reviews=tl_summaries,
+            total_tls=total_tls,
+            approved_tls=approved_tls,
+            rejected_tls=rejected_tls,
+            overall_status="waiting_for_tls",
         )
 
-        if hr_dec == "pending" or tl_dec == "pending":
-            status.overall_status = "waiting"
-        elif hr_dec == "approved" and tl_dec == "approved":
-            status.overall_status = "ready_to_schedule"
-        elif hr_dec == "rejected" and tl_dec == "rejected":
-            self._send_rejection_email(candidate_uuid)
-            status.overall_status = "rejected"
+        # Multi-TL Rule:
+        if rejected_tls / total_tls > 0.2:
+            status.overall_status = "rejected_by_tls"
+            self._update_candidate_status(candidate_uuid, "REJECTED")
+        elif approved_tls / total_tls >= 0.8:
+            # TLs passed, now HR decides
+            if hr_dec == "pending":
+                status.overall_status = "waiting_for_hr"
+            elif hr_dec == "rejected":
+                status.overall_status = "rejected_by_hr"
+                self._update_candidate_status(candidate_uuid, "REJECTED")
+            elif hr_dec == "approved":
+                status.overall_status = "ready_to_schedule"
         else:
-            status.overall_status = "conflict"
+            status.overall_status = "waiting_for_tls"
 
         return status
 
-    def _send_rejection_email(self, candidate_uuid: str) -> None:
+    def _update_candidate_status(self, candidate_uuid: str, status: str) -> None:
+        # We need to update applications table. But ReviewService doesn't have a direct repo for applications.
+        # We can use supabase client here, but it's cleaner to inject. Since it's a mock method earlier:
         logger.info(
-            "review.rejection_email.mock",
+            "review.update_candidate_status",
             candidate_uuid=candidate_uuid,
-            message="Your application has been rejected. (Mock — email not sent)",
+            status=status,
         )
+        try:
+            # We assume repo is SupabaseReviewRepo which has _client
+            if hasattr(self._repo, '_client'):
+                self._repo._client.table('applications').update({"status": status}).eq('candidate_id', candidate_uuid).execute()
+        except Exception as e:
+            logger.error("review.update_status_failed", error=str(e))

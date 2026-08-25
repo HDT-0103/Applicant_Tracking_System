@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="info", alias="LOG_LEVEL")
     cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+    app_timezone: str = Field(default="Asia/Ho_Chi_Minh", alias="APP_TIMEZONE")
 
     # Đọc tự động hoàn toàn từ môi trường hệ thống qua biến alias hoặc lấy mặc định rỗng
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")

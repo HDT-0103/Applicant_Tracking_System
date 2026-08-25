@@ -391,6 +391,7 @@ export default function EnrichedCandidateProfilePage() {
           <EnrichedAnalytics
             data={data}
             userRole={user?.role ?? "tech_lead"}
+            userId={user?.id}
             candidateUuid={candidateUuid || ""}
             reviewStatus={reviewStatus}
             onRefreshReview={fetchReviewStatus}

@@ -57,7 +57,7 @@ class CalendarEventService:
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(EVENTS_URL, json=payload, headers=headers)
+                resp = await client.post(EVENTS_URL, json=payload, headers=headers, params={"sendUpdates": "all"})
                 resp.raise_for_status()
                 data = resp.json()
                 event_id = data.get("id")

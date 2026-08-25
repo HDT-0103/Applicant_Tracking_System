@@ -2,34 +2,43 @@
 
 import React, { useState } from "react";
 import { D, SectionLabel } from "@/lib/shared";
-import { submitReview, resolveConflict, type ReviewStatus, type ReviewDecision } from "@/services/reviewService";
+import { submitReview, type ReviewStatus, type ReviewDecision } from "@/services/reviewService";
+
+/** Ngưỡng duyệt của hội đồng Tech Lead — phải khớp với review_service._aggregate_status. */
+const TL_APPROVAL_RATIO = 0.8;
 
 // ─── Review Panel ──────────────────────────────────────────────────────────────
 export function ReviewPanel({
   candidateUuid,
   userRole,
+  userId,
   reviewStatus,
   onRefresh,
 }: {
   candidateUuid: string;
   userRole: string;
+  /** Dùng để biết CHÍNH tech lead này đã chấm chưa — mỗi TL là một phiếu riêng. */
+  userId?: string;
   reviewStatus: ReviewStatus | null;
   onRefresh: () => void;
 }) {
   const [decision, setDecision] = useState<ReviewDecision | null>(null);
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [resolveDec, setResolveDec] = useState<ReviewDecision | null>(null);
 
-  const myDecision =
-    userRole === "hr" ? reviewStatus?.hr_decision : reviewStatus?.tl_decision;
-  const otherLabel = userRole === "hr" ? "Tech Lead" : "HR";
-  const otherDecision =
-    userRole === "hr" ? reviewStatus?.tl_decision : reviewStatus?.hr_decision;
-  const otherText =
-    userRole === "hr"
-      ? reviewStatus?.tl_review_text
-      : reviewStatus?.hr_review_text;
+  const isHr = userRole === "hr";
+  const status = reviewStatus?.overall_status || "waiting_for_tls";
+
+  // Phiếu của chính người đang xem. HR chỉ có một phiếu; tech_lead thì phải dò
+  // trong danh sách vì hội đồng có nhiều người.
+  const myDecision: ReviewDecision = isHr
+    ? (reviewStatus?.hr_decision ?? "pending")
+    : (reviewStatus?.tl_reviews.find((r) => r.reviewer_id === userId)?.decision ?? "pending");
+
+  // HR chỉ được chốt SAU khi hội đồng TL đã qua ngưỡng — nếu không thì quyết
+  // định của HR sẽ đi trước dữ liệu kỹ thuật mà nó phải dựa vào.
+  const hrBlocked = isHr && status === "waiting_for_tls";
+  const canSubmit = myDecision === "pending" && !hrBlocked;
 
   const handleSubmit = async () => {
     if (!decision) return;
@@ -43,19 +52,19 @@ export function ReviewPanel({
     setSubmitting(false);
   };
 
-  const handleResolve = async () => {
-    if (!resolveDec) return;
-    setSubmitting(true);
-    try {
-      await resolveConflict(candidateUuid, resolveDec);
-      onRefresh();
-    } catch {
-      /* ignore */
-    }
-    setSubmitting(false);
+  const box: React.CSSProperties = {
+    marginTop: 8,
+    padding: "8px 10px",
+    borderRadius: 5,
+    border: `1px solid ${D.line}`,
+    background: D.surface,
   };
 
-  const status = reviewStatus?.overall_status || "waiting";
+  const alert = (color: string, label: string) => (
+    <div style={{ marginTop: 8, fontSize: 10, color, fontWeight: 600, textAlign: "center" }}>
+      {label}
+    </div>
+  );
 
   return (
     <div
@@ -70,54 +79,23 @@ export function ReviewPanel({
       <SectionLabel>CV Review</SectionLabel>
 
       {!reviewStatus ? (
-        <div
-          style={{
-            marginTop: 8,
-            padding: "8px 10px",
-            borderRadius: 5,
-            border: `1px solid ${D.line}`,
-            background: D.surface,
-          }}
-        >
+        <div style={box}>
           <div style={{ fontSize: 10, color: D.muted, textAlign: "center" }}>
             ⏳ Loading review status…
           </div>
         </div>
-      ) : myDecision === "pending" &&
-        userRole === "hr" &&
-        reviewStatus.tl_decision === "pending" ? (
-        <div
-          style={{
-            marginTop: 8,
-            padding: "8px 10px",
-            borderRadius: 5,
-            border: `1px solid ${D.amber}30`,
-            background: `${D.amber}08`,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              color: D.amber,
-              textAlign: "center",
-            }}
-          >
-            ⏳ Tech Lead must submit their review first
+      ) : hrBlocked ? (
+        <div style={{ ...box, border: `1px solid ${D.amber}30`, background: `${D.amber}08` }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: D.amber, textAlign: "center" }}>
+            ⏳ Tech Lead panel must reach {Math.round(TL_APPROVAL_RATIO * 100)}% approval first
           </div>
         </div>
       ) : (
-        myDecision === "pending" && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              marginTop: 8,
-            }}
-          >
+        canSubmit && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
             <div style={{ display: "flex", gap: 6 }}>
               <button
+                type="button"
                 onClick={() => setDecision("approved")}
                 style={{
                   flex: 1,
@@ -134,6 +112,7 @@ export function ReviewPanel({
                 ✓ Approve
               </button>
               <button
+                type="button"
                 onClick={() => setDecision("rejected")}
                 style={{
                   flex: 1,
@@ -166,6 +145,7 @@ export function ReviewPanel({
               }}
             />
             <button
+              type="button"
               onClick={handleSubmit}
               disabled={!decision || submitting}
               style={{
@@ -186,59 +166,74 @@ export function ReviewPanel({
         )
       )}
 
-      {/* Status display */}
-      <div
-        style={{
-          marginTop: 10,
-          fontSize: 10.5,
-          display: "flex",
-          flexDirection: "column",
-          gap: 4,
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: D.muted }}>Your decision:</span>
-          <span
-            style={{
-              fontWeight: 600,
-              color:
-                myDecision === "approved"
-                  ? D.mint
-                  : myDecision === "rejected"
-                    ? D.red
-                    : D.dim,
-            }}
-          >
-            {myDecision === "pending"
-              ? "Not submitted"
-              : myDecision === "approved"
-                ? "Approved"
-                : "Rejected"}
-          </span>
+      {/* Tiến độ hội đồng + phiếu của HR */}
+      {reviewStatus && (
+        <div style={{ marginTop: 10, fontSize: 10.5, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: D.muted }}>Your decision:</span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: myDecision === "approved" ? D.mint : myDecision === "rejected" ? D.red : D.dim,
+              }}
+            >
+              {myDecision === "pending" ? "Not submitted" : myDecision === "approved" ? "Approved" : "Rejected"}
+            </span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: D.muted }}>Tech Lead panel:</span>
+            <span style={{ fontWeight: 600, color: D.sub, fontFamily: D.mono }}>
+              {reviewStatus.approved_tls}/{reviewStatus.total_tls} approved
+              {reviewStatus.rejected_tls > 0 && ` · ${reviewStatus.rejected_tls} rejected`}
+            </span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: D.muted }}>HR:</span>
+            <span
+              style={{
+                fontWeight: 600,
+                color:
+                  reviewStatus.hr_decision === "approved"
+                    ? D.mint
+                    : reviewStatus.hr_decision === "rejected"
+                      ? D.red
+                      : D.dim,
+              }}
+            >
+              {reviewStatus.hr_decision === "pending"
+                ? "Waiting…"
+                : reviewStatus.hr_decision === "approved"
+                  ? "Approved"
+                  : "Rejected"}
+            </span>
+          </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: D.muted }}>{otherLabel}:</span>
-          <span
-            style={{
-              fontWeight: 600,
-              color:
-                otherDecision === "approved"
-                  ? D.mint
-                  : otherDecision === "rejected"
-                    ? D.red
-                    : D.dim,
-            }}
-          >
-            {otherDecision === "pending"
-              ? "Waiting…"
-              : otherDecision === "approved"
-                ? "Approved"
-                : "Rejected"}
-          </span>
-        </div>
-      </div>
+      )}
 
-      {otherText && otherDecision !== "pending" && (
+      {/* Ghi chú từng Tech Lead — HR cần đọc lý do trước khi chốt. */}
+      {reviewStatus?.tl_reviews
+        .filter((r) => r.review_text)
+        .map((r) => (
+          <div
+            key={r.reviewer_id}
+            style={{
+              marginTop: 6,
+              fontSize: 10,
+              color: D.muted,
+              padding: "5px 8px",
+              background: D.canvas,
+              borderRadius: 4,
+              border: `1px solid ${D.line}`,
+            }}
+          >
+            <strong style={{ color: r.decision === "approved" ? D.mint : D.red }}>
+              {r.decision === "approved" ? "✓" : "✗"} Tech Lead
+            </strong>{" "}
+            {r.review_text}
+          </div>
+        ))}
+
+      {reviewStatus?.hr_review_text && reviewStatus.hr_decision !== "pending" && (
         <div
           style={{
             marginTop: 6,
@@ -250,131 +245,15 @@ export function ReviewPanel({
             border: `1px solid ${D.line}`,
           }}
         >
-          <strong>{otherLabel}&apos;s notes:</strong> {otherText}
+          <strong>HR&apos;s notes:</strong> {reviewStatus.hr_review_text}
         </div>
       )}
 
-      {/* Status alerts */}
-      {status === "waiting" && (
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: 10,
-            color: D.amber,
-            fontWeight: 600,
-            textAlign: "center",
-          }}
-        >
-          ⏳ Waiting for both reviewers to submit…
-        </div>
-      )}
-      {status === "ready_to_schedule" && (
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: 10,
-            color: D.mint,
-            fontWeight: 600,
-            textAlign: "center",
-          }}
-        >
-          ✅ Both approved — ready to schedule
-        </div>
-      )}
-      {status === "rejected" && (
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: 10,
-            color: D.red,
-            fontWeight: 600,
-            textAlign: "center",
-          }}
-        >
-          ❌ Both rejected — notification sent
-        </div>
-      )}
-
-      {status === "conflict" && (
-        <div
-          style={{
-            marginTop: 10,
-            padding: "8px 10px",
-            borderRadius: 5,
-            border: `1px solid ${D.amber}30`,
-            background: `${D.amber}08`,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              color: D.amber,
-              marginBottom: 6,
-            }}
-          >
-            ⚠️ Split decision —{" "}
-            {userRole === "hr" ? "you make the final call" : "waiting for HR"}
-          </div>
-          {userRole === "hr" && (
-            <div style={{ display: "flex", gap: 6 }}>
-              <button
-                onClick={() => setResolveDec("approved")}
-                style={{
-                  flex: 1,
-                  padding: "5px 0",
-                  border: `1px solid ${resolveDec === "approved" ? D.mint : D.line}`,
-                  borderRadius: 4,
-                  background: resolveDec === "approved" ? D.mintSoft : D.canvas,
-                  fontSize: 10.5,
-                  fontWeight: 600,
-                  color: resolveDec === "approved" ? D.mint : D.sub,
-                  cursor: "pointer",
-                }}
-              >
-                Override Accept
-              </button>
-              <button
-                onClick={() => setResolveDec("rejected")}
-                style={{
-                  flex: 1,
-                  padding: "5px 0",
-                  border: `1px solid ${resolveDec === "rejected" ? D.red : D.line}`,
-                  borderRadius: 4,
-                  background: resolveDec === "rejected" ? "#FEE2E2" : D.canvas,
-                  fontSize: 10.5,
-                  fontWeight: 600,
-                  color: resolveDec === "rejected" ? D.red : D.sub,
-                  cursor: "pointer",
-                }}
-              >
-                Reject
-              </button>
-            </div>
-          )}
-          {userRole === "hr" && resolveDec && (
-            <button
-              onClick={handleResolve}
-              disabled={submitting}
-              style={{
-                marginTop: 6,
-                width: "100%",
-                padding: "5px 0",
-                border: "none",
-                borderRadius: 4,
-                background: D.blue,
-                color: "#fff",
-                fontSize: 10.5,
-                fontWeight: 600,
-                cursor: submitting ? "default" : "pointer",
-                opacity: submitting ? 0.5 : 1,
-              }}
-            >
-              {submitting ? "Submitting…" : "Confirm Final Decision"}
-            </button>
-          )}
-        </div>
-      )}
+      {status === "waiting_for_tls" && alert(D.amber, "⏳ Waiting for the Tech Lead panel…")}
+      {status === "waiting_for_hr" && alert(D.amber, "⚠️ Tech Leads approved — waiting for HR")}
+      {status === "ready_to_schedule" && alert(D.mint, "✅ Approved — ready to schedule")}
+      {status === "rejected_by_tls" && alert(D.red, "❌ Rejected by the Tech Lead panel")}
+      {status === "rejected_by_hr" && alert(D.red, "❌ Rejected by HR — notification sent")}
     </div>
   );
 }
