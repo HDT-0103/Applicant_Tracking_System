@@ -11,10 +11,11 @@ import {
   candidateContext,
 } from "../lib/candidateSummary";
 import { guarded, supabase } from "../lib/db";
-import { BarChart3, CalendarDays, Loader2, Send } from "lucide-react";
+import { BarChart3, CalendarDays, Loader2, Send, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { getReviewStatus, ReviewStatus } from "../services/reviewService";
+import { getReviewStatuses, ReviewStatus } from "../services/reviewService";
 import { sendInterviewDetails } from "../services/schedulingService";
+import { SendDetailsModal } from "../components/SendDetailsModal";
 
 interface ExtendedCandidate {
   uuid: string;
@@ -39,7 +40,11 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [candidates, setCandidates] = useState<ExtendedCandidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [detailsFor, setDetailsFor] = useState<ExtendedCandidate | null>(null);
+  /** Băng thông báo sau khi gửi. `alert()` chặn cả tab và không khớp với phần còn lại của app. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -86,8 +91,13 @@ export default function Dashboard() {
 
       const slots = sData || [];
 
-      // 3. Map candidates and fetch their review status
-      const mapped = await Promise.all(cData.map(async (c: any) => {
+      // 3. Trạng thái review của CẢ danh sách trong một request. Hỏi từng
+      // ứng viên một là 30 vòng khứ hồi trước khi bảng kịp hiện ra.
+      const reviewByUuid = await getReviewStatuses(
+        cData.map((c: any) => c.uuid),
+      ).catch(() => ({} as Record<string, ReviewStatus>));
+
+      const mapped = cData.map((c: any) => {
         const app = firstOf<any>(c.applications);
         const ep = firstOf<any>(c.enrichment_profiles);
         const gh = firstOf<any>(c.github_profiles);
@@ -104,13 +114,6 @@ export default function Dashboard() {
         const now = new Date().toISOString();
         const futureSlot = slots.find((s: any) => s.candidate_uuid === c.uuid && s.start_time > now);
         
-        let reviewStatus: ReviewStatus | null = null;
-        try {
-           reviewStatus = await getReviewStatus(c.uuid);
-        } catch {
-           // ignore if not reviewed
-        }
-
         return {
           uuid: c.uuid,
           name: c.full_name || "Unknown Candidate",
@@ -119,13 +122,13 @@ export default function Dashboard() {
           score: ep?.match_confidence_score ?? null,
           time,
           scheduledSlot: futureSlot || null,
-          reviewStatus,
+          reviewStatus: reviewByUuid[c.uuid] ?? null,
           context: candidateContext(c.current_company, c.current_location),
           languages: topLanguages(gh?.top_languages),
           repoCount: gh?.public_repos_count ?? null,
           mustHave: readMustHave(ep?.skill_matrix),
         };
-      }));
+      });
 
       if (mounted) {
         setCandidates(mapped);
@@ -138,21 +141,27 @@ export default function Dashboard() {
     };
   }, []);
 
-  const handleSendEmail = async (e: React.MouseEvent, c: ExtendedCandidate) => {
+  const openSendDetails = (e: React.MouseEvent, c: ExtendedCandidate) => {
     e.stopPropagation();
     if (!c.scheduledSlot?.id) return;
-    setSendingEmailId(c.scheduledSlot.id);
+    setSendError(null);
+    setNotice(null);
+    setDetailsFor(c);
+  };
+
+  const handleSendDetails = async (room: string, address: string) => {
+    const c = detailsFor;
+    if (!c?.scheduledSlot?.id) return;
+    setSending(true);
+    setSendError(null);
     try {
-      await sendInterviewDetails(
-        c.scheduledSlot.id,
-        "Conference Room A - 3rd Floor",
-        "SmartATS HQ, 123 Tech Blvd"
-      );
-      alert(`Interview room & location details sent to ${c.name} successfully!`);
-    } catch (err: any) {
-      alert("Failed to send email: " + (err?.message || "Unknown error"));
+      await sendInterviewDetails(c.scheduledSlot.id, room, address);
+      setDetailsFor(null);
+      setNotice(`Interview details sent to ${c.name}.`);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Could not send the email.");
     } finally {
-      setSendingEmailId(null);
+      setSending(false);
     }
   };
 
@@ -258,20 +267,15 @@ export default function Dashboard() {
            </div>
            {user?.role === "hr" && (
              <button
-               onClick={(e) => handleSendEmail(e, c)}
-               disabled={sendingEmailId === c.scheduledSlot.id}
+               type="button"
+               onClick={(e) => openSendDetails(e, c)}
                style={{
                  padding: "6px 12px", borderRadius: 6, background: D.blue, color: "#fff",
                  fontSize: 12, fontWeight: 500, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-                 opacity: sendingEmailId === c.scheduledSlot.id ? 0.7 : 1,
                  transition: "background 0.15s ease",
                }}
              >
-                {sendingEmailId === c.scheduledSlot.id ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Send size={14} />
-                )}
+                <Send size={14} />
                 Send Details
              </button>
            )}
@@ -300,6 +304,49 @@ export default function Dashboard() {
 
   return (
     <AppShell>
+      <SendDetailsModal
+        open={detailsFor !== null}
+        candidateName={detailsFor?.name ?? ""}
+        slotTime={
+          detailsFor?.scheduledSlot
+            ? new Date(detailsFor.scheduledSlot.start_time).toLocaleString("en-US")
+            : ""
+        }
+        sending={sending}
+        error={sendError}
+        onCancel={() => setDetailsFor(null)}
+        onSend={handleSendDetails}
+      />
+
+      {notice && (
+        <div
+          role="status"
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: `1px solid ${D.mint}40`,
+            background: `${D.mint}10`,
+            color: D.mint,
+            fontSize: 12.5,
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="Dismiss"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0 }}
+          >
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
             <div style={{ marginBottom: 32 }}>
               <h1 style={{ fontSize: 28, fontWeight: 700, color: D.ink, marginBottom: 8 }}>
                 Dashboard Overview

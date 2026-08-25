@@ -39,6 +39,16 @@ class EmailNotifier:
         self._from_email = from_email or smtp_username
         self._app_timezone = app_timezone
 
+    @property
+    def timezone(self) -> str:
+        """Múi giờ dùng cho mọi mốc thời gian trong thư.
+
+        Là property vì `SchedulingService` cũng phải định dạng giờ theo đúng
+        múi này; đọc `_app_timezone` từ bên ngoài thì cấu hình bị buộc chặt vào
+        một chi tiết riêng tư của notifier.
+        """
+        return self._app_timezone
+
     async def notify_interviewers(
         self,
         slot: ConfirmedSlot,

@@ -1,11 +1,12 @@
 """HTTP contract for /api/review.
 
-Runs with no database: `get_current_user` is overridden, and the review module
-already builds itself on an in-memory repository.
+Runs with no database: `get_current_user` and `get_review_repo` are both
+overridden, so nothing here touches Supabase and nothing is left behind
+between tests.
 
-Most of what matters at this layer is the permission matrix. The rule the code
-encodes is subtle enough to be worth pinning down: `hr` and `tech_lead` both
-review a candidate, but only `hr` may break the tie when they disagree.
+Most of what matters at this layer is the permission matrix, plus one rule
+subtle enough to be worth pinning down: the Tech Lead panel must reach the
+approval threshold before HR may record a decision at all.
 """
 from __future__ import annotations
 
@@ -16,7 +17,48 @@ from fastapi.testclient import TestClient
 
 from apps.main import app
 from modules.auth.domain.models import AuthUser
+from modules.review.adapters.routes import get_review_repo
+from modules.review.domain.models import CvReview
+from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.auth_dependencies import get_current_user
+
+
+class FakeReviewRepo(IReviewRepo):
+    """In-process stand-in for `cv_reviews`.
+
+    `panel_size` is a plain attribute so a test can state the panel it means to
+    exercise; the 80% rule reads very differently on a panel of one than on a
+    panel of five.
+    """
+
+    def __init__(self, panel_size: int = 1) -> None:
+        self.reviews: dict[str, list[CvReview]] = {}
+        self.panel_size = panel_size
+        self.application_status: dict[str, str] = {}
+
+    async def get_reviews(self, candidate_uuid):
+        return list(self.reviews.get(candidate_uuid, []))
+
+    async def get_reviews_for_candidates(self, candidate_uuids):
+        return {
+            uuid_: list(self.reviews[uuid_])
+            for uuid_ in candidate_uuids
+            if uuid_ in self.reviews
+        }
+
+    async def save_review(self, review):
+        bucket = self.reviews.setdefault(review.candidate_uuid, [])
+        for i, existing in enumerate(bucket):
+            if existing.reviewer_id == review.reviewer_id:
+                bucket[i] = review
+                return
+        bucket.append(review)
+
+    async def get_panel_size(self, candidate_uuid):
+        return self.panel_size
+
+    async def set_application_status(self, candidate_uuid, status):
+        self.application_status[candidate_uuid] = status
 
 
 def _user(role: str) -> AuthUser:
@@ -29,28 +71,39 @@ def _user(role: str) -> AuthUser:
 
 
 @pytest.fixture(autouse=True)
-def isolated_review_store(tmp_path, monkeypatch):
-    """Point the review store at a throwaway file.
+def repo() -> FakeReviewRepo:
+    """Give every test its own empty store.
 
-    Despite the name, `InMemoryReviewRepo` persists to
-    `src/backend/stored_data/reviews.json` — a file that is tracked in git.
-    Without this fixture the tests would read whatever decisions happen to be
-    committed, and would write candidate review data back into the repository.
-
-    It also makes the tests order-independent: shared state meant a test that
+    Shared state used to make these tests order-dependent: a test that
     submitted a Tech Lead review changed the outcome of a later HR test.
     """
-    from modules.review.infra import impl_inmemory
-
-    monkeypatch.setattr(
-        impl_inmemory, "STORAGE_PATH", str(tmp_path / "reviews.json")
-    )
-    monkeypatch.setattr(impl_inmemory, "STORAGE_DIR", str(tmp_path))
+    fake = FakeReviewRepo()
+    app.dependency_overrides[get_review_repo] = lambda: fake
+    yield fake
+    app.dependency_overrides.pop(get_review_repo, None)
 
 
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
+
+
+@pytest.fixture
+def approving_panel(repo):
+    """Put the panel past its approval threshold, so HR's turn has come."""
+
+    def _apply() -> None:
+        repo.reviews[CANDIDATE] = [
+            CvReview(
+                id="tl-1",
+                candidate_uuid=CANDIDATE,
+                reviewer_id="tl-1",
+                reviewer_role="tech_lead",
+                decision="approved",
+            )
+        ]
+
+    return _apply
 
 
 @pytest.fixture
@@ -79,10 +132,8 @@ class TestAuthentication:
     def test_read_requires_a_token(self, client):
         assert client.get(f"/api/review/{CANDIDATE}").status_code == 401
 
-    def test_resolve_requires_a_token(self, client):
-        r = client.post(
-            f"/api/review/{CANDIDATE}/resolve", json={"final_decision": "approved"}
-        )
+    def test_batch_requires_a_token(self, client):
+        r = client.post("/api/review/batch", json={"candidate_uuids": [CANDIDATE]})
         assert r.status_code == 401
 
 
@@ -111,27 +162,9 @@ class TestPermissions:
         as_role(role)
         assert client.get(f"/api/review/{CANDIDATE}").status_code == 200
 
-    def test_only_hr_may_resolve_a_conflict(self, client, as_role):
-        """Breaking a tie between HR and Tech Lead is HR's call alone.
-
-        Letting tech_lead resolve would let one side of a disagreement declare
-        itself the winner.
-        """
-        as_role("hr")
-        assert (
-            client.post(
-                f"/api/review/{CANDIDATE}/resolve", json={"final_decision": "approved"}
-            ).status_code
-            == 200
-        )
-
-        as_role("tech_lead")
-        assert (
-            client.post(
-                f"/api/review/{CANDIDATE}/resolve", json={"final_decision": "approved"}
-            ).status_code
-            == 403
-        )
+    def test_admin_may_not_read_status(self, client, as_role):
+        as_role("admin")
+        assert client.get(f"/api/review/{CANDIDATE}").status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -139,14 +172,15 @@ class TestPermissions:
 # ---------------------------------------------------------------------------
 
 class TestReviewOrdering:
-    """Tech Lead reviews first; HR cannot pre-empt the technical assessment.
+    """Tech Lead panel first; HR cannot pre-empt the technical assessment.
 
-    The ordering is the point of having two reviewers: if HR could record a
+    The ordering is the point of having two review stages: if HR could record a
     decision first, the technical review becomes a rubber stamp on a call that
-    has already been made.
+    has already been made. The rule lives in the service, not the UI — hiding
+    the button would still leave the endpoint open.
     """
 
-    def test_hr_cannot_review_before_tech_lead(self, client, as_role):
+    def test_hr_cannot_review_before_the_panel(self, client, as_role):
         as_role("hr")
         r = client.post(f"/api/review/{CANDIDATE}", json={"decision": "approved"})
         assert r.status_code == 400
@@ -160,6 +194,25 @@ class TestReviewOrdering:
             f"/api/review/{CANDIDATE}", json={"decision": "approved"}
         ).json()["detail"]
         assert "first" in detail.lower()
+
+    def test_hr_may_review_once_the_panel_has_approved(
+        self, client, as_role, approving_panel
+    ):
+        approving_panel()
+        as_role("hr")
+        r = client.post(f"/api/review/{CANDIDATE}", json={"decision": "approved"})
+        assert r.status_code == 200, r.text
+        assert r.json()["overall_status"] == "ready_to_schedule"
+
+    def test_a_read_never_changes_the_application_status(
+        self, client, as_role, repo, approving_panel
+    ):
+        # GET is on the dashboard's hot path; it used to write to
+        # `applications` as a side effect of aggregating.
+        approving_panel()
+        as_role("hr")
+        client.get(f"/api/review/{CANDIDATE}")
+        assert repo.application_status == {}
 
 
 # ---------------------------------------------------------------------------
@@ -197,3 +250,122 @@ class TestResponseShape:
         # resource — the UI renders an empty review panel from it.
         as_role("hr")
         assert client.get(f"/api/review/{_uuid.uuid4()}").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# The panel rule
+# ---------------------------------------------------------------------------
+
+class TestPanelThreshold:
+    """The 80% rule is the backend's to state, and the response has to carry it.
+
+    The frontend used to hold its own copy of `0.8`. Two copies of a rule drift,
+    and when they do the screen tells the reviewer something the server will not
+    honour — so the numbers ship with the status.
+    """
+
+    def test_status_reports_how_many_approvals_are_needed(
+        self, client, as_role, repo
+    ):
+        repo.panel_size = 5
+        as_role("hr")
+        body = client.get(f"/api/review/{CANDIDATE}").json()
+        assert body["total_tls"] == 5
+        assert body["required_tl_approvals"] == 4  # ceil(5 * 0.8)
+        assert "4/5" in body["panel_rule"]
+
+    def test_a_partial_panel_still_waits(self, client, as_role, repo):
+        repo.panel_size = 5
+        as_role("tech_lead")
+        body = client.post(
+            f"/api/review/{CANDIDATE}", json={"decision": "approved"}
+        ).json()
+        assert body["overall_status"] == "waiting_for_tls"
+
+    def test_enough_rejections_end_it_without_waiting_for_the_rest(
+        self, client, as_role, repo
+    ):
+        # On a panel of 5, two rejections put 4 approvals out of reach. Making
+        # the other three vote anyway only delays a decision already made.
+        repo.panel_size = 5
+        repo.reviews[CANDIDATE] = [
+            CvReview(
+                id=f"tl-{i}",
+                candidate_uuid=CANDIDATE,
+                reviewer_id=f"tl-{i}",
+                reviewer_role="tech_lead",
+                decision="rejected",
+            )
+            for i in range(2)
+        ]
+        as_role("hr")
+        body = client.get(f"/api/review/{CANDIDATE}").json()
+        assert body["overall_status"] == "rejected_by_tls"
+
+    def test_the_panel_is_never_smaller_than_the_votes_cast(
+        self, client, as_role, repo
+    ):
+        # A tech lead deactivated after voting used to shrink the denominator,
+        # pushing the approval ratio past 100% and passing the candidate.
+        repo.panel_size = 1
+        repo.reviews[CANDIDATE] = [
+            CvReview(
+                id=f"tl-{i}",
+                candidate_uuid=CANDIDATE,
+                reviewer_id=f"tl-{i}",
+                reviewer_role="tech_lead",
+                decision="approved" if i == 0 else "rejected",
+            )
+            for i in range(3)
+        ]
+        as_role("hr")
+        body = client.get(f"/api/review/{CANDIDATE}").json()
+        assert body["total_tls"] == 3
+        assert body["overall_status"] != "ready_to_schedule"
+
+
+# ---------------------------------------------------------------------------
+# Batch status
+# ---------------------------------------------------------------------------
+
+class TestBatchStatus:
+    """One request for a screenful of candidates instead of one per row."""
+
+    def test_returns_a_status_for_every_candidate_asked_for(
+        self, client, as_role, repo
+    ):
+        other = str(_uuid.uuid4())
+        repo.reviews[CANDIDATE] = [
+            CvReview(
+                id="tl-1",
+                candidate_uuid=CANDIDATE,
+                reviewer_id="tl-1",
+                reviewer_role="tech_lead",
+                decision="approved",
+            )
+        ]
+        as_role("hr")
+        body = client.post(
+            "/api/review/batch", json={"candidate_uuids": [CANDIDATE, other]}
+        ).json()
+
+        assert set(body) == {CANDIDATE, other}
+        assert body[CANDIDATE]["overall_status"] == "waiting_for_hr"
+        # Nobody has reviewed `other`; that is a state, not a missing resource.
+        assert body[other]["overall_status"] == "waiting_for_tls"
+
+    def test_batch_is_not_read_as_a_candidate_uuid(self, client, as_role):
+        # `/batch` and `/{candidate_uuid}` are the same shape; registration
+        # order is what keeps them apart.
+        as_role("hr")
+        r = client.post("/api/review/batch", json={"candidate_uuids": [CANDIDATE]})
+        assert r.status_code == 200
+        assert "batch" not in r.json()
+
+    def test_an_oversized_batch_is_refused(self, client, as_role):
+        as_role("hr")
+        r = client.post(
+            "/api/review/batch",
+            json={"candidate_uuids": [str(_uuid.uuid4()) for _ in range(101)]},
+        )
+        assert r.status_code == 422

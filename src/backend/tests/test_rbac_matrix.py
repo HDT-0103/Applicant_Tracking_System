@@ -143,12 +143,18 @@ def test_hr_and_tech_lead_reach_the_same_endpoints(client, method, path, role):
         app.dependency_overrides.pop(get_current_user, None)
 
 
-def test_resolve_conflict_is_hr_only(client):
-    """Chốt final call khi HR và Tech Lead bất đồng là đặc quyền của HR."""
+def test_send_interview_details_is_hr_only(client):
+    """Gửi thư mời phỏng vấn cho ứng viên là việc của HR.
+
+    Thay cho test cũ về /resolve: hội đồng nhiều Tech Lead không còn khái niệm
+    "bất đồng cần HR phá thế bí" — HR chốt bằng chính lá phiếu của mình, và
+    thứ tự đó đã được `tests/test_review_routes.py` giữ.
+    """
     app.dependency_overrides[get_current_user] = lambda: _as("tech_lead")
     try:
         response = client.post(
-            "/api/review/some-uuid/resolve", json={"final_decision": "approved"}
+            "/api/scheduling/some-slot/send-details",
+            json={"room": "Room A", "address": "HQ"},
         )
         assert response.status_code == 403
     finally:

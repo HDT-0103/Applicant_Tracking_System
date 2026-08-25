@@ -4,9 +4,6 @@ import React, { useState } from "react";
 import { D, SectionLabel } from "@/lib/shared";
 import { submitReview, type ReviewStatus, type ReviewDecision } from "@/services/reviewService";
 
-/** Ngưỡng duyệt của hội đồng Tech Lead — phải khớp với review_service._aggregate_status. */
-const TL_APPROVAL_RATIO = 0.8;
-
 // ─── Review Panel ──────────────────────────────────────────────────────────────
 export function ReviewPanel({
   candidateUuid,
@@ -25,6 +22,7 @@ export function ReviewPanel({
   const [decision, setDecision] = useState<ReviewDecision | null>(null);
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isHr = userRole === "hr";
   const status = reviewStatus?.overall_status || "waiting_for_tls";
@@ -43,11 +41,14 @@ export function ReviewPanel({
   const handleSubmit = async () => {
     if (!decision) return;
     setSubmitting(true);
+    setError(null);
     try {
       await submitReview(candidateUuid, decision, text);
       onRefresh();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // Backend từ chối có lý do (sai thứ tự duyệt, hết phiên…). Nuốt lỗi thì
+      // người duyệt bấm mãi mà không hiểu vì sao phiếu không được ghi.
+      setError(err instanceof Error ? err.message : "Could not submit the review.");
     }
     setSubmitting(false);
   };
@@ -87,7 +88,8 @@ export function ReviewPanel({
       ) : hrBlocked ? (
         <div style={{ ...box, border: `1px solid ${D.amber}30`, background: `${D.amber}08` }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: D.amber, textAlign: "center" }}>
-            ⏳ Tech Lead panel must reach {Math.round(TL_APPROVAL_RATIO * 100)}% approval first
+            ⏳ Waiting for the Tech Lead panel — {reviewStatus?.required_tl_approvals} of{" "}
+            {reviewStatus?.total_tls} must approve
           </div>
         </div>
       ) : (
@@ -144,6 +146,21 @@ export function ReviewPanel({
                 resize: "vertical",
               }}
             />
+            {error && (
+              <div
+                role="alert"
+                style={{
+                  fontSize: 10.5,
+                  color: D.red,
+                  background: `${D.red}0D`,
+                  border: `1px solid ${D.red}28`,
+                  borderRadius: 4,
+                  padding: "6px 8px",
+                }}
+              >
+                {error}
+              </div>
+            )}
             <button
               type="button"
               onClick={handleSubmit}
@@ -182,8 +199,18 @@ export function ReviewPanel({
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span style={{ color: D.muted }}>Tech Lead panel:</span>
-            <span style={{ fontWeight: 600, color: D.sub, fontFamily: D.mono }}>
-              {reviewStatus.approved_tls}/{reviewStatus.total_tls} approved
+            <span
+              title={reviewStatus.panel_rule}
+              style={{
+                fontWeight: 600,
+                fontFamily: D.mono,
+                color:
+                  reviewStatus.approved_tls >= reviewStatus.required_tl_approvals
+                    ? D.mint
+                    : D.sub,
+              }}
+            >
+              {reviewStatus.approved_tls}/{reviewStatus.required_tl_approvals} approved
               {reviewStatus.rejected_tls > 0 && ` · ${reviewStatus.rejected_tls} rejected`}
             </span>
           </div>
@@ -246,6 +273,12 @@ export function ReviewPanel({
           }}
         >
           <strong>HR&apos;s notes:</strong> {reviewStatus.hr_review_text}
+        </div>
+      )}
+
+      {reviewStatus?.panel_rule && (
+        <div style={{ marginTop: 8, fontSize: 9.5, color: D.dim, textAlign: "center" }}>
+          {reviewStatus.panel_rule}
         </div>
       )}
 
