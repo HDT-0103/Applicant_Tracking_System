@@ -23,4 +23,8 @@ COPY . .
 EXPOSE 8000
 
 # Bước 8: Lệnh mặc định để khởi chạy FastAPI bằng Uvicorn khi container bật lên
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Entrypoint là `apps.main:app` với --app-dir src/backend. Trước đây ghi
+# `app.main:app` — module đó KHÔNG tồn tại, container build xong là chết ngay.
+# Bỏ --reload: đó là cờ dành cho lúc dev, chạy production sẽ tự restart âm thầm
+# và ăn thêm RAM cho tiến trình theo dõi file.
+CMD ["uvicorn", "apps.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src/backend"]

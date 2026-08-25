@@ -134,7 +134,28 @@ class AuthService:
         elif not db_user.get("is_approved", True):
             self._reject_unapproved(email)
 
-        role = db_user.get("role") if db_user else (role_from_supabase or self.resolve_role(email))
+        # Normalise before building AuthUser. `AuthUser.role` is a Literal of the
+        # three canonical roles, so handing it a legacy value straight from the
+        # table raises a pydantic ValidationError — which surfaces as a 500 on
+        # sign-in rather than anything a user can act on.
+        #
+        # The `users` table still holds pre-V005 vocabulary ('recruiter',
+        # 'hr_manager', 'interviewer'). `resolve_role_from_supabase` above
+        # already converts it, but its result was discarded whenever the row
+        # existed, so the raw value went through untouched.
+        raw_role = db_user.get("role") if db_user else None
+        role = (
+            normalise_role(raw_role)
+            or role_from_supabase
+            or self.resolve_role(email)
+        )
+        if role is None:
+            # 'candidate', or anything unrecognised: not a user of this system.
+            logger.warning(
+                "auth.google.rejected_unknown_role", email=email, raw_role=raw_role
+            )
+            raise ValueError("Authentication failed. Invalid credentials or user not allowed.")
+
         user_id = str(db_user.get("id")) if db_user else profile["id"]
 
         user = AuthUser(
@@ -179,11 +200,26 @@ class AuthService:
         if not db_user.get("is_approved", True):
             self._reject_unapproved(email)
 
+        # Bảng `users` của Supabase cũ còn lẫn từ vựng rác ('recruiter',
+        # 'interviewer', 'candidate'). Đẩy thẳng vào AuthUser.role — vốn là
+        # Literal 3 giá trị — sẽ ném ValidationError và thành 500, thay vì một
+        # lượt từ chối đăng nhập bình thường. Quy đổi trước:
+        #   recruiter / hr_manager -> hr, interviewer -> tech_lead
+        #   candidate / giá trị lạ -> None, tức không phải người dùng của app này.
+        role = normalise_role(db_user.get("role"))
+        if role is None:
+            logger.warning(
+                "auth.login.rejected_unknown_role",
+                email=email,
+                raw_role=db_user.get("role"),
+            )
+            raise ValueError("Invalid email or password")
+
         user = AuthUser(
             id=str(db_user["id"]),
             email=db_user["email"],
             name=db_user["name"],
-            role=db_user["role"],
+            role=role,
         )
 
         jti = str(uuid.uuid4())
@@ -228,7 +264,11 @@ class AuthService:
             id=str(db_user["id"]),
             email=db_user["email"],
             name=db_user["name"],
-            role=db_user["role"],
+            # Normalised for the same reason as the other two sign-in paths.
+            # The insert above sets PUBLIC_SIGNUP_ROLE explicitly, so this is
+            # defence rather than a fix — but a database trigger or default
+            # rewriting the value would otherwise turn signup into a 500.
+            role=normalise_role(db_user["role"]) or PUBLIC_SIGNUP_ROLE,
         )
 
         jti = str(uuid.uuid4())

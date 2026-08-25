@@ -15,20 +15,29 @@ from modules.scheduling.infra.google_calendar_service import GoogleCalendarServi
 from modules.scheduling.infra.calendar_event_service import CalendarEventService
 from modules.scheduling.infra.email_notifier import EmailNotifier
 from modules.scheduling.infra.slack_notifier import SlackNotifier
-from modules.scheduling.infra.impl_inmemory import InMemorySchedulingRepo
+from modules.scheduling.infra.impl_supabase import SupabaseSchedulingRepo
 from modules.scheduling.application.sweep_line_service import SweepLineService
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles
 from modules.auth.domain.models import AuthUser
 from modules.shared.infrastructure.config import Settings, get_settings
+from modules.shared.infrastructure.supabase_client import get_supabase_client
+from modules.scheduling.infra.google_oauth_service import GoogleOAuthService
 
 router = APIRouter(prefix="/api/scheduling", tags=["scheduling"])
 logger = structlog.get_logger(__name__)
+
+def _build_oauth_service(settings: Settings = Depends(get_settings)) -> GoogleOAuthService:
+    return GoogleOAuthService(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        redirect_uri=settings.google_redirect_uri
+    )
 
 
 def _build_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SchedulingService:
-    repo = InMemorySchedulingRepo()
+    repo = SupabaseSchedulingRepo(get_supabase_client(settings, use_admin=True))
     calendar = GoogleCalendarService()
     sweepline = SweepLineService()
     slack = SlackNotifier()
@@ -56,6 +65,7 @@ ServiceDep = Annotated[SchedulingService, Depends(_build_service)]
 
 class UpdateKeyRequest(BaseModel):
     api_key: str
+    refresh_token: str | None = None
 
 
 class SlotsQueryRequest(BaseModel):
@@ -96,7 +106,7 @@ async def update_calendar_key(
     service: ServiceDep,
     _user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> Interviewer:
-    result = await service.update_calendar_key(interviewer_id, body.api_key)
+    result = await service.update_calendar_key(interviewer_id, body.api_key, body.refresh_token)
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -104,12 +114,37 @@ async def update_calendar_key(
         )
     return result
 
+@router.get("/auth/google/url")
+async def get_google_auth_url(
+    oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
+    _user: AuthUser = Depends(require_operational_roles()),
+):
+    """Lấy URL để Frontend mở cửa sổ đăng nhập Google"""
+    return {"url": oauth_service.get_authorization_url()}
+
+@router.get("/auth/google/callback")
+async def google_auth_callback(
+    code: str = Query(...),
+    oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
+    scheduling_service: SchedulingService = Depends(_build_service),
+    user: AuthUser = Depends(require_operational_roles()),
+):
+    """Nhận code từ Frontend, lấy token và lưu vào Database cho user hiện tại"""
+    access_token, refresh_token = await oauth_service.exchange_code(code)
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Failed to exchange the authorization code for a token")
+    
+    # Lưu vào database cho HR đang đăng nhập (đã chuẩn hoá để nhận cả refresh_token)
+    await scheduling_service.update_calendar_key(user.id, access_token, refresh_token)
+    return {"status": "success", "message": "Liên kết Google Calendar thành công"}
+
 
 @router.post("/slots", response_model=list[TimeSlot])
 async def query_slots(
     body: SlotsQueryRequest,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_operational_roles())],
+    user: AuthUser = Depends(require_operational_roles()),
+    oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
 ) -> list[TimeSlot]:
     try:
         date_from = datetime.fromisoformat(body.date_from)
@@ -137,20 +172,39 @@ async def query_slots(
             detail="At least one interviewer_id is required",
         )
 
-    slots = await service.query_slots(
-        interviewer_ids=body.interviewer_ids,
-        date_from=date_from,
-        date_to=date_to,
-        api_key=body.api_key,
-    )
-    return slots
+    interviewer = service._repo.get_interviewer(user.id)
+    api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else body.api_key
+    refresh_token = interviewer.calendar_refresh_token if interviewer else None
+
+    try:
+        slots = await service.query_slots(
+            interviewer_ids=body.interviewer_ids,
+            date_from=date_from,
+            date_to=date_to,
+            api_key=api_key,
+        )
+        return slots
+    except Exception as e:
+        if "401" in str(e) and refresh_token:
+            new_access_token = await oauth_service.refresh_access_token(refresh_token)
+            if new_access_token:
+                await service.update_calendar_key(user.id, new_access_token, refresh_token)
+                slots = await service.query_slots(
+                    interviewer_ids=body.interviewer_ids,
+                    date_from=date_from,
+                    date_to=date_to,
+                    api_key=new_access_token,
+                )
+                return slots
+        raise e
 
 
 @router.post("/confirm", response_model=ConfirmedSlot)
 async def confirm_slot(
     body: ConfirmSlotRequest,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_operational_roles())],
+    user: AuthUser = Depends(require_operational_roles()),
+    oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
 ) -> ConfirmedSlot:
     try:
         start_time = datetime.fromisoformat(body.start_time)
@@ -178,12 +232,32 @@ async def confirm_slot(
             detail="At least one interviewer_id is required",
         )
 
-    slot = await service.confirm_slot(
-        candidate_id=body.candidate_id,
-        candidate_name=body.candidate_name,
-        start_time=start_time,
-        end_time=end_time,
-        interviewer_ids=body.interviewer_ids,
-        api_key=body.api_key,
-    )
-    return slot
+    interviewer = service._repo.get_interviewer(user.id)
+    api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else body.api_key
+    refresh_token = interviewer.calendar_refresh_token if interviewer else None
+
+    try:
+        slot = await service.confirm_slot(
+            candidate_id=body.candidate_id,
+            candidate_name=body.candidate_name,
+            start_time=start_time,
+            end_time=end_time,
+            interviewer_ids=body.interviewer_ids,
+            api_key=api_key,
+        )
+        return slot
+    except Exception as e:
+        if "401" in str(e) and refresh_token:
+            new_access_token = await oauth_service.refresh_access_token(refresh_token)
+            if new_access_token:
+                await service.update_calendar_key(user.id, new_access_token, refresh_token)
+                slot = await service.confirm_slot(
+                    candidate_id=body.candidate_id,
+                    candidate_name=body.candidate_name,
+                    start_time=start_time,
+                    end_time=end_time,
+                    interviewer_ids=body.interviewer_ids,
+                    api_key=new_access_token,
+                )
+                return slot
+        raise e

@@ -12,6 +12,7 @@ class Interviewer(BaseModel):
     color: str
     cal_connected: bool = False
     calendar_api_key: Optional[str] = None
+    calendar_refresh_token: Optional[str] = None
     calendar_id: str = "primary"
 
 
@@ -44,7 +45,7 @@ class ConfirmedSlot(BaseModel):
 
 
 class SchedulingConfig(BaseModel):
-    work_start: str = "07:30"
-    work_end: str = "17:00"
+    work_start: str = "01:00"
+    work_end: str = "10:00"
     min_slot_minutes: int = 45
     default_range_days: int = 14

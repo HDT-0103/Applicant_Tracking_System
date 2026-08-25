@@ -170,11 +170,100 @@ class CVProcessingPipeline:
             overall_score=overall_score,
         )
 
+        # -------------------------------------------------------------
+        # Step 7: Ghi kết quả phân tích ngược lại Enrichment Profile
+        # -------------------------------------------------------------
+        # Bốn cột dưới đây đã tồn tại trong schema và giao diện đã dựng sẵn chỗ
+        # hiển thị (EnrichedRadar, MatchConfidence), nhưng trước đây không ai
+        # truyền giá trị — nên mọi panel phân tích đều hiện rỗng. Điểm số vốn
+        # chỉ được ghi vào `applications`, tức là gắn với MỘT tin tuyển dụng;
+        # bản thân hồ sơ ứng viên thì không giữ lại gì.
+        skill_matrix = self._build_skill_matrix(
+            analysis.skills,
+            getattr(job_posting, "must_have_skills", None),
+            getattr(job_posting, "nice_to_have_skills", None),
+        )
+
+        try:
+            await self.enrichment_repo.update_profile(
+                candidate_uuid=candidate_uuid,
+                # Đưa về thang 0–100 cho dễ đọc; cosine similarity nằm trong [0,1].
+                match_confidence_score=round(overall_score * 100, 2),
+                skill_matrix=skill_matrix,
+                # Kỹ năng LLM rút ra + điểm mạnh, dùng làm nhãn tìm kiếm nhanh.
+                semantic_tags=sorted({*analysis.skills, *analysis.strengths}),
+                # Enrich đóng góp thêm bao nhiêu so với chỉ đọc phần tóm tắt.
+                # Đây là con số biện minh cho chi phí gọi LLM.
+                score_increase=(
+                    round((overall_score - summary_score) * 100, 2)
+                    if summary_score is not None
+                    else None
+                ),
+            )
+        except Exception:
+            # Hồ sơ và điểm số đã lưu xong; phần này chỉ là dữ liệu hiển thị.
+            # Để nó làm hỏng cả lượt xử lý CV thì thiệt hơn nhiều.
+            logger.exception(
+                "Không ghi được dữ liệu phân tích cho candidate %s", candidate_uuid
+            )
+
         logger.info(
             f"Successfully processed CV for candidate {candidate_uuid}. "
             f"Updated overall_score={overall_score:.4f}"
         )
         return updated_app
+
+    @staticmethod
+    def _normalise_skill(skill: str) -> str:
+        """Đưa tên kỹ năng về dạng so khớp được.
+
+        CV viết "Node.js", JD viết "NodeJS", cùng một thứ. So chuỗi thô sẽ báo
+        thiếu kỹ năng mà thực tế ứng viên có — kiểu âm tính giả tệ nhất, vì nó
+        loại oan người phù hợp.
+        """
+        return "".join(ch for ch in skill.lower() if ch.isalnum())
+
+    @classmethod
+    def _build_skill_matrix(
+        cls,
+        candidate_skills: list[str],
+        must_have: list[str] | None,
+        nice_to_have: list[str] | None,
+    ) -> dict[str, Any]:
+        """Đối chiếu kỹ năng ứng viên với yêu cầu của tin tuyển dụng.
+
+        Trả về cấu trúc để UI vẽ chip xanh/xám và để giải thích điểm số. Điểm
+        trần trụi không kèm lý do thì người tuyển dụng không có cơ sở tin hay
+        phản bác — đây chính là phần "vì sao".
+        """
+        must_have = must_have or []
+        nice_to_have = nice_to_have or []
+
+        owned = {cls._normalise_skill(s): s for s in candidate_skills if s}
+
+        def split(required: list[str]) -> tuple[list[str], list[str]]:
+            matched = [r for r in required if cls._normalise_skill(r) in owned]
+            missing = [r for r in required if cls._normalise_skill(r) not in owned]
+            return matched, missing
+
+        must_matched, must_missing = split(must_have)
+        nice_matched, nice_missing = split(nice_to_have)
+
+        # Chỉ tính theo kỹ năng BẮT BUỘC. Gộp cả nice-to-have vào mẫu số sẽ làm
+        # loãng: thiếu một kỹ năng bắt buộc nghiêm trọng hơn thiếu năm kỹ năng
+        # "có thì tốt".
+        coverage = len(must_matched) / len(must_have) if must_have else None
+
+        return {
+            "must_have": {"matched": must_matched, "missing": must_missing},
+            "nice_to_have": {"matched": nice_matched, "missing": nice_missing},
+            "must_have_coverage": coverage,
+            "extra_skills": [
+                original
+                for key, original in owned.items()
+                if key not in {cls._normalise_skill(s) for s in must_have + nice_to_have}
+            ],
+        }
 
     def _calculate_similarity(
         self,

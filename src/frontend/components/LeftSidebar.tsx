@@ -17,9 +17,17 @@ import {
   PlayCircle,
   Pencil,
   ExternalLink,
-  Copy
+  Copy,
+  Pin
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { db } from "../lib/db";
+
+/** Bề rộng rail khi thu gọn — vừa đủ cho vùng bấm 36px và lề hai bên. */
+const RAIL_WIDTH = 56;
+/** Bề rộng khi bung. Giữ đúng 280 như cũ để nội dung bên trong không phải sửa. */
+const PANEL_WIDTH = 280;
+/** Ghi nhớ lựa chọn ghim giữa các lần mở lại trang. */
+const PIN_STORAGE_KEY = "smartats.sidebar.pinned";
 
 interface JobPosting {
   id: string;
@@ -35,6 +43,19 @@ export const LeftSidebar: React.FC = () => {
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [hoveredJobId, setHoveredJobId] = useState<string | null>(null);
   const [openMenuJobId, setOpenMenuJobId] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+
+  // Đọc trạng thái ghim sau khi mount, không đọc lúc khởi tạo state:
+  // localStorage không tồn tại khi Next render phía server, và nếu server dựng
+  // ra "thu gọn" còn client dựng ra "đã ghim" thì React báo lỗi hydration.
+  useEffect(() => {
+    setPinned(window.localStorage.getItem(PIN_STORAGE_KEY) === "true");
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(PIN_STORAGE_KEY, String(pinned));
+  }, [pinned]);
 
   const workspaceItems = [
     {
@@ -60,14 +81,14 @@ export const LeftSidebar: React.FC = () => {
   useEffect(() => {
     const loadJobPostings = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await db()
           .from('jobs_posting')
           .select('id, job_title, status')
           .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        const { data: appCounts, error: appError } = await supabase
+        const { data: appCounts, error: appError } = await db()
           .from('applications')
           .select('job_posting_id')
           .not('job_posting_id', 'is', null);
@@ -107,7 +128,7 @@ export const LeftSidebar: React.FC = () => {
     e.stopPropagation();
     const newStatus = job.status === 'PUBLISHED' ? 'CLOSED' : 'PUBLISHED';
     try {
-      const { error } = await supabase
+      const { error } = await db()
         .from('jobs_posting')
         .update({ status: newStatus })
         .eq('id', job.id);
@@ -127,7 +148,7 @@ export const LeftSidebar: React.FC = () => {
   const handleDuplicateJob = async (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
     try {
-      const { data: original, error: fetchErr } = await supabase
+      const { data: original, error: fetchErr } = await db()
         .from('jobs_posting')
         .select('*')
         .eq('id', job.id)
@@ -144,7 +165,7 @@ export const LeftSidebar: React.FC = () => {
         last_saved_at: new Date().toISOString(),
       };
 
-      const { data: inserted, error: insertErr } = await supabase
+      const { data: inserted, error: insertErr } = await db()
         .from('jobs_posting')
         .insert(copyPayload)
         .select('id, job_title, status')
@@ -169,7 +190,7 @@ export const LeftSidebar: React.FC = () => {
       return;
     }
     try {
-      const { error } = await supabase
+      const { error } = await db()
         .from('jobs_posting')
         .delete()
         .eq('id', job.id);
@@ -184,17 +205,101 @@ export const LeftSidebar: React.FC = () => {
     }
   };
 
+  // Panel bung ra ĐÈ LÊN nội dung thay vì đẩy nó sang phải: rail 56px luôn giữ
+  // chỗ trong luồng layout, nên trang không nhảy mỗi lần chuột lướt qua.
+  const expanded = isOpen || pinned;
+
   return (
-    <div style={{ 
-      display: "flex", 
-      flexDirection: "column", 
-      height: "100%", 
-      overflow: "hidden", 
+    <div
+      style={{
+        width: RAIL_WIDTH,
+        flexShrink: 0,
+        height: "100%",
+        position: "relative",
+        zIndex: 40,
+      }}
+    >
+    <div
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+      // focus-within: người dùng bàn phím không có "hover". Không có nhánh này
+      // thì tab vào sidebar sẽ đi qua các mục vô hình.
+      onFocus={() => setIsOpen(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsOpen(false);
+      }}
+      style={{
+      display: "flex",
+      flexDirection: "column",
+      height: "100%",
+      overflow: "hidden",
       background: D.canvas,
       borderRight: `1px solid ${D.line}`,
-      width: 280,
+      width: expanded ? PANEL_WIDTH : RAIL_WIDTH,
+      position: "absolute",
+      insetBlock: 0,
+      insetInlineStart: 0,
+      boxShadow: expanded && !pinned ? D.sh3 : "none",
+      transition: `width 180ms ${D.ease}, box-shadow 180ms ${D.ease}`,
       flexShrink: 0
     }}>
+      {/* Rail thu gọn — chỉ icon. Bấm ghim để khoá mở, dành cho người dùng
+          bàn phím và màn hình cảm ứng (nơi không tồn tại khái niệm hover). */}
+      {!expanded && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "16px 0", alignItems: "center" }}>
+          {workspaceItems.map((item, index) => (
+            <button
+              type="button"
+              key={index}
+              onClick={() => router.push(item.path)}
+              aria-label={item.label}
+              title={item.label}
+              style={{
+                width: 36, height: 36, display: "grid", placeItems: "center",
+                borderRadius: D.r1, border: "none", background: "transparent",
+                color: D.sub, transition: `background 140ms ${D.ease}`,
+              }}
+            >
+              {item.icon}
+            </button>
+          ))}
+          <div style={{ width: 20, height: 1, background: D.lineSoft, margin: "6px 0" }} />
+          <button
+            type="button"
+            onClick={() => router.push("/job-postings/create")}
+            aria-label="Job postings"
+            title="Job postings"
+            style={{
+              width: 36, height: 36, display: "grid", placeItems: "center",
+              borderRadius: D.r1, border: "none", background: "transparent", color: D.sub,
+            }}
+          >
+            <Briefcase size={15} strokeWidth={1.8} />
+          </button>
+        </div>
+      )}
+
+      {/* Nội dung đầy đủ — chỉ dựng khi mở, để rail thu gọn không có phần tử
+          nào nhận được tab focus trong lúc bị ẩn. */}
+      {expanded && (
+      <>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 8px 0" }}>
+        <button
+          type="button"
+          onClick={() => setPinned((v) => !v)}
+          aria-label={pinned ? "Unpin sidebar" : "Keep sidebar open"}
+          aria-pressed={pinned}
+          title={pinned ? "Unpin" : "Keep open"}
+          style={{
+            display: "grid", placeItems: "center", width: 26, height: 26,
+            borderRadius: D.r1, border: "none",
+            background: pinned ? D.blueSoft : "transparent",
+            color: pinned ? D.blue : D.dim,
+          }}
+        >
+          <Pin size={13} strokeWidth={2} />
+        </button>
+      </div>
       {/* Scrollable content */}
       <div style={{ 
         flex: 1, 
@@ -379,9 +484,17 @@ export const LeftSidebar: React.FC = () => {
                         justifyContent: "center",
                         flexShrink: 0
                       }}
+                      // `title` shows a tooltip on hover but is NOT a reliable
+                      // accessible name — a screen reader may ignore it, and a
+                      // touch user never hovers. aria-label is what actually
+                      // names the control; aria-expanded tells assistive tech
+                      // whether the menu is currently open.
                       title="Job options"
+                      aria-label={`Options for ${job.title}`}
+                      aria-haspopup="menu"
+                      aria-expanded={openMenuJobId === job.id}
                     >
-                      <MoreVertical size={14} />
+                      <MoreVertical size={14} aria-hidden="true" />
                     </button>
                   )}
 
@@ -569,6 +682,7 @@ export const LeftSidebar: React.FC = () => {
         background: D.canvas
       }}>
         <button
+          type="button"
           onClick={() => router.push('/job-postings/create')}
           style={{
             width: "100%",
@@ -601,6 +715,9 @@ export const LeftSidebar: React.FC = () => {
           <span>Create Job Posting</span>
         </button>
       </div>
+      </>
+      )}
+    </div>
     </div>
   );
 };

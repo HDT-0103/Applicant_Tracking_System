@@ -64,11 +64,26 @@ class Settings(BaseSettings):
 
     github_api_token: str = Field(default="", alias="GITHUB_API_TOKEN")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    # Tên model bị hardcode "gemini-2.0-flash" ở 3 chỗ trong code, trong khi
+    # GEMINI_MODEL trong .env bị `extra="ignore"` nuốt mất — đổi trong .env
+    # không có tác dụng gì. Google đã gỡ 2.0-flash, nên mọi lượt phân tích CV
+    # đều trả 404 và ứng viên được tạo ra rỗng không.
+    # Ghim phiên bản cụ thể thay vì dùng alias `-latest`: alias có thể đổi hành
+    # vi ngay giữa chừng mà không ai deploy gì.
+    gemini_model: str = Field(default="gemini-3.6-flash", alias="GEMINI_MODEL")
     apify_api_token: str = Field(default="", alias="APIFY_API_TOKEN")
 
     # Embedding cho job posting (modules/scoring). "local-e5" = sentence-transformers
     # intfloat/multilingual-e5-base chạy local; thêm provider khác thì đổi giá trị này.
     embedding_provider: str = Field(default="local-e5", alias="EMBEDDING_PROVIDER")
+
+    # Email (SMTP)
+    smtp_host: str = Field(default="", alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_username: str = Field(default="", alias="SMTP_USERNAME")
+    smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field(default="", alias="SMTP_FROM_EMAIL")
+    slack_webhook_url: str = Field(default="", alias="SLACK_WEBHOOK_URL")
 
     # Azure Cloud Services
     azure_storage_connection_string: str = Field(

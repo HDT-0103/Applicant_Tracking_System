@@ -18,6 +18,9 @@ from modules.scheduling.application.sweep_line_service import SweepLineService
 
 logger = structlog.get_logger(__name__)
 
+#: How many slot suggestions the panel search returns at most.
+MAX_SUGGESTED_SLOTS = 5
+
 
 class SchedulingService:
     def __init__(
@@ -42,9 +45,9 @@ class SchedulingService:
         return self._repo.get_interviewers()
 
     async def update_calendar_key(
-        self, interviewer_id: str, api_key: str
+        self, interviewer_id: str, api_key: str, refresh_token: Optional[str] = None
     ) -> Optional[Interviewer]:
-        return self._repo.update_calendar_key(interviewer_id, api_key)
+        return self._repo.update_calendar_key(interviewer_id, api_key, refresh_token)
 
     async def query_slots(
         self,
@@ -97,6 +100,12 @@ class SchedulingService:
         slots = self._sweepline.find_slots(
             interviewer_freebusy=freebusy_map,
             min_slot_minutes=config.min_slot_minutes,
+            # Passed explicitly so the cap is visible here rather than hidden in
+            # a default. `limit` used to be ignored entirely, so a free working
+            # day returned every 45-minute block in it — the UI header reads
+            # "Available Slots (N)", and N in the dozens is noise, not choice.
+            # Raise this if recruiters ask for more options.
+            limit=MAX_SUGGESTED_SLOTS,
         )
 
         return slots
@@ -126,6 +135,9 @@ class SchedulingService:
             if p.id in interviewer_ids
         ]
 
+        # Lấy email của ứng viên từ DB để gửi thông báo
+        candidate_email = self._repo.get_candidate_email(candidate_id)
+
         slack_notified = await self._slack.notify(
             slot=slot,
             candidate_name=candidate_name,
@@ -134,13 +146,17 @@ class SchedulingService:
         )
         slot.slack_notified = slack_notified
 
+        attendee_emails = [p.email for p in interviewers if p.email]
+        if candidate_email:
+            attendee_emails.append(candidate_email)
+
         event_id = await self._calendar_event.create_event(
             api_key=api_key,
             summary=f"Interview: {candidate_name}",
             description=f"Scheduled interview with {candidate_name}",
             start_time=start_time,
             end_time=end_time,
-            attendee_emails=[p.email for p in interviewers if p.email],
+            attendee_emails=attendee_emails,
         )
         slot.calendar_event_id = event_id
 
@@ -148,6 +164,7 @@ class SchedulingService:
             slot=slot,
             candidate_name=candidate_name,
             interviewers=interviewers,
+            candidate_email=candidate_email,
         )
         slot.email_notified = email_sent
 

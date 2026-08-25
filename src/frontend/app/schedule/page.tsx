@@ -12,6 +12,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { AppHeader } from "../../components/AppHeader";
 import {
   fetchInterviewers, querySlots, confirmSlot,
+  getGoogleAuthUrl, completeGoogleAuth,
   type Interviewer, type TimeSlot, type ConfirmedSlot,
 } from "../../services/schedulingService";
 
@@ -124,15 +125,34 @@ function WorkHoursBar({ slots }: { slots: TimeSlot[] }) {
   );
 }
 
-function ApiKeyModal({ open, storedKey, onSave, onClose }: { open: boolean; storedKey: string; onSave: (key: string) => void; onClose: () => void }) {
-  const [value, setValue] = React.useState(storedKey);
-  const [show, setShow] = React.useState(false);
-
-  React.useEffect(() => {
-    if (open) setValue(storedKey);
-  }, [open, storedKey]);
+function ConnectCalendarModal({
+  open,
+  connected,
+  onClose,
+  cancellable = true,
+}: {
+  open: boolean;
+  connected: boolean;
+  onClose: () => void;
+  cancellable?: boolean;
+}) {
+  const [connecting, setConnecting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   if (!open) return null;
+
+  const connect = async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      // Full-page navigation rather than a popup: popup blockers stop windows
+      // opened from an async callback, and the user would see nothing happen.
+      window.location.href = await getGoogleAuthUrl();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not start Google sign-in.");
+      setConnecting(false);
+    }
+  };
 
   return (
     <div style={{
@@ -150,50 +170,65 @@ function ApiKeyModal({ open, storedKey, onSave, onClose }: { open: boolean; stor
           padding: "14px 18px", borderBottom: `1px solid ${D.line}`,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Key size={14} strokeWidth={1.8} color={D.blue} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: D.ink }}>Google Calendar API Key</span>
+            <Calendar size={14} strokeWidth={1.8} color={D.blue} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: D.ink }}>
+              {connected ? "Google Calendar connected" : "Connect Google Calendar"}
+            </span>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: D.muted }}>
-            <X size={16} strokeWidth={2} />
-          </button>
+          {cancellable && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: D.muted }}
+            >
+              <X size={16} strokeWidth={2} />
+            </button>
+          )}
         </div>
-        <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 11, color: D.sub, lineHeight: 1.5 }}>
-            This key is used to check interviewer calendar availability. It is stored for the session.
-          </div>
-          <input
-            type={show ? "text" : "password"}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="Paste your Google Calendar API key"
-            style={{
-              width: "100%", fontSize: 11.5, fontFamily: D.mono, padding: "8px 10px",
-              border: `1px solid ${D.line}`, borderRadius: 5, background: D.surface,
-              color: D.ink, outline: "none",
-            }}
-          />
-          <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: D.muted, cursor: "pointer" }}>
-            <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} style={{ accentColor: D.blue }} />
-            Show key
-          </label>
+
+        <div style={{ padding: "18px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ fontSize: 12, color: D.sub, lineHeight: 1.6, margin: 0 }}>
+            {connected
+              ? "Your calendar is linked. Reconnect only if the link stopped working or you want to use a different Google account."
+              : "SmartATS reads your free/busy times to suggest interview slots, and adds the confirmed slot to your calendar. You'll be asked to approve this on Google's own sign-in page."}
+          </p>
+
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: D.muted, lineHeight: 1.8 }}>
+            <li>See when you are busy — not the contents of your events</li>
+            <li>Create the interview event once a slot is confirmed</li>
+          </ul>
+
+          {error && (
+            <div role="alert" style={{
+              fontSize: 11.5, color: D.red, background: `${D.red}0D`,
+              border: `1px solid ${D.red}28`, borderRadius: 5, padding: "8px 10px",
+            }}>
+              {error}
+            </div>
+          )}
         </div>
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 18px", borderTop: `1px solid ${D.line}` }}>
-          <button onClick={onClose} style={{
-            padding: "7px 14px", border: `1px solid ${D.line}`, borderRadius: 5,
-            background: D.canvas, cursor: "pointer", fontSize: 11, color: D.sub,
-          }}>
-            Cancel
-          </button>
+          {cancellable && (
+            <button type="button" onClick={onClose} style={{
+              padding: "7px 14px", border: `1px solid ${D.line}`, borderRadius: 5,
+              background: D.canvas, cursor: "pointer", fontSize: 11, color: D.sub,
+            }}>
+              Cancel
+            </button>
+          )}
           <button
-            onClick={() => { onSave(value); onClose(); }}
-            disabled={!value.trim()}
+            type="button"
+            onClick={connect}
+            disabled={connecting}
             style={{
-              padding: "7px 14px", border: "none", borderRadius: 5,
-              background: value.trim() ? D.blue : D.muted, color: "#fff",
-              cursor: value.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 600,
+              padding: "7px 16px", border: "none", borderRadius: 5,
+              background: D.blue, color: "#fff", cursor: connecting ? "default" : "pointer",
+              fontSize: 11.5, fontWeight: 600, opacity: connecting ? 0.7 : 1,
             }}
           >
-            Save Key
+            {connecting ? "Redirecting…" : connected ? "Reconnect" : "Continue with Google"}
           </button>
         </div>
       </div>
@@ -205,11 +240,11 @@ export default function SchedulePage() {
   const searchParams = useSearchParams();
   const { user, hasRole } = useAuth();
 
+  const candidateUuid = searchParams.get("uuid") || "00000000-0000-0000-0000-000000000000";
   const candidateName = searchParams.get("name") || "Candidate";
   const prefillUuids = searchParams.get("interviewers")?.split(",").filter(Boolean) || [];
 
   const [interviewers, setInterviewers] = useState<Interviewer[]>([]);
-  const [selectedUuids, setSelectedUuids] = useState<Set<string>>(new Set(prefillUuids));
   const [dateFrom, setDateFrom] = useState(daysFromNow(1));
   const [dateTo, setDateTo] = useState(daysFromNow(7));
   const [slots, setSlots] = useState<TimeSlot[]>([]);
@@ -220,21 +255,23 @@ export default function SchedulePage() {
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [refreshToken, setRefreshToken] = useState("");
   const [showApiModal, setShowApiModal] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState(45);
   const router = useRouter();
 
   useEffect(() => {
-    // hr và tech_lead dùng chung mọi màn hình nghiệp vụ; admin đã bị AuthGuard
-    // đẩy về /admin trước khi tới đây.
     if (user && !hasRole("hr", "tech_lead")) {
       router.replace("/");
     }
   }, [user, hasRole, router]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("smartats_calendar_api_key");
-    if (saved) setApiKey(saved);
+    const savedKey = localStorage.getItem("smartats_calendar_api_key");
+    const savedRefresh = localStorage.getItem("smartats_calendar_refresh_token");
+    if (savedKey) setApiKey(savedKey);
+    if (savedRefresh) setRefreshToken(savedRefresh);
+    
     fetchInterviewers()
       .then(setInterviewers)
       .catch((err) => setError(err.message))
@@ -244,20 +281,66 @@ export default function SchedulePage() {
   useEffect(() => {
     if (apiKey) localStorage.setItem("smartats_calendar_api_key", apiKey);
     else localStorage.removeItem("smartats_calendar_api_key");
+    
+    if (refreshToken) localStorage.setItem("smartats_calendar_refresh_token", refreshToken);
+    else localStorage.removeItem("smartats_calendar_refresh_token");
+  }, [apiKey, refreshToken]);
+
+  useEffect(() => {
+    // Tự động bật Modal không cho tắt nếu chưa có API Key
+    if (!apiKey) {
+      setShowApiModal(true);
+    }
   }, [apiKey]);
 
-  const handleToggleInterviewer = useCallback((uuid: string) => {
-    setSelectedUuids((prev) => {
-      const next = new Set(prev);
-      if (next.has(uuid)) next.delete(uuid);
-      else next.add(uuid);
-      return next;
-    });
+  // Second half of the Google consent flow.
+  //
+  // Google sends the browser back here with `?code=…`. The exchange runs from
+  // the frontend rather than letting Google redirect straight to the backend,
+  // because that endpoint requires a signed-in user and a plain browser
+  // redirect carries no Authorization header — the tokens would have nobody to
+  // be stored against.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const denied = params.get("error");
+
+    // Strip the query either way: an authorisation code is single-use, and
+    // leaving it in the URL means a refresh or a shared link replays a request
+    // that can only fail the second time.
+    const clearQuery = () =>
+      window.history.replaceState({}, "", window.location.pathname);
+
+    if (denied) {
+      setError("Google access was not granted. Interview scheduling needs calendar access to suggest times.");
+      clearQuery();
+      return;
+    }
+    if (!code) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await completeGoogleAuth(code);
+        if (cancelled) return;
+        // A non-empty value is all this page uses the key for: it decides
+        // whether the connect modal blocks the screen.
+        setApiKey("connected");
+        setShowApiModal(false);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Could not finish connecting Google Calendar.");
+      } finally {
+        clearQuery();
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, []);
 
   const handleFindSlots = async () => {
-    if (selectedUuids.size === 0) {
-      setError("Select at least one interviewer");
+    if (!user?.id) {
+      setError("User session not found");
       return;
     }
     if (!apiKey.trim()) {
@@ -269,10 +352,10 @@ export default function SchedulePage() {
     setSelectedSlot(null);
     setConfirmedSlot(null);
     try {
-      const uuids = Array.from(selectedUuids);
       const result = await querySlots({
+        candidate_uuid: candidateUuid,
         candidate_name: candidateName,
-        interviewer_uuids: uuids,
+        interviewer_uuids: [user.id],
         date_from: dateFrom,
         date_to: dateTo,
         api_key: apiKey,
@@ -286,13 +369,14 @@ export default function SchedulePage() {
   };
 
   const handleConfirm = async () => {
-    if (!selectedSlot) return;
+    if (!selectedSlot || !user?.id) return;
     setConfirming(true);
     setError(null);
     try {
       const result = await confirmSlot({
+        candidate_uuid: candidateUuid,
         candidate_name: candidateName,
-        interviewer_uuids: Array.from(selectedUuids),
+        interviewer_uuids: [user.id],
         start: selectedSlot.start,
         end: selectedSlot.end,
         api_key: apiKey,
@@ -317,7 +401,12 @@ export default function SchedulePage() {
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <AppHeader candidateName={candidateName} />
 
-      <ApiKeyModal open={showApiModal} storedKey={apiKey} onSave={setApiKey} onClose={() => setShowApiModal(false)} />
+      <ConnectCalendarModal
+        open={showApiModal}
+        connected={!!apiKey}
+        onClose={() => setShowApiModal(false)}
+        cancellable={!!apiKey}
+      />
 
       {/* Sub-header */}
       <div style={{ height: 38, background: D.canvas, borderBottom: `1px solid ${D.line}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 6, flexShrink: 0 }}>
@@ -347,35 +436,6 @@ export default function SchedulePage() {
       </div>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {/* Left Panel — Interviewers */}
-        <div style={{ flex: "0 0 26%", minWidth: 0, display: "flex", flexDirection: "column", background: D.bg, borderRight: `1px solid ${D.line}` }}>
-          <div style={{
-            height: 36, background: D.canvas, borderBottom: `1px solid ${D.line}`,
-            display: "flex", alignItems: "center", padding: "0 16px", flexShrink: 0, gap: 6,
-          }}>
-            <Users size={12} strokeWidth={1.8} color={D.muted} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: D.ink }}>Interviewers</span>
-            <Badge color={D.sub} bg={D.surface}>{interviewers?.length ?? 0}</Badge>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-            {loadingInterviewers ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: 20 }}>
-                <Loader2 size={14} strokeWidth={2} color={D.blue} style={{ animation: "spin 1s linear infinite" }} />
-                <span style={{ fontSize: 11, color: D.muted }}>Loading...</span>
-              </div>
-            ) : (
-              (interviewers ?? []).map((iv) => (
-                <InterviewerCard
-                  key={iv.uuid}
-                  interviewer={iv}
-                  selected={selectedUuids.has(iv.uuid)}
-                  onToggle={() => handleToggleInterviewer(iv.uuid)}
-                />
-              ))
-            )}
-          </div>
-        </div>
-
         {/* Center Panel — Date Range + Slots */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: D.canvas }}>
           <div style={{
@@ -429,12 +489,12 @@ export default function SchedulePage() {
             <div style={{ flex: 1 }} />
             <button
               onClick={handleFindSlots}
-              disabled={loadingSlots || selectedUuids.size === 0}
+              disabled={loadingSlots || !user?.id}
               style={{
                 display: "flex", alignItems: "center", gap: 5, padding: "4px 14px",
                 border: `1px solid ${D.blue}`, borderRadius: 5, background: D.blue, color: "#fff",
-                fontSize: 10.5, fontWeight: 600, cursor: selectedUuids.size === 0 ? "default" : "pointer",
-                opacity: selectedUuids.size === 0 ? 0.5 : 1,
+                fontSize: 10.5, fontWeight: 600, cursor: (!user?.id) ? "default" : "pointer",
+                opacity: (!user?.id) ? 0.5 : 1,
               }}
             >
               {loadingSlots
@@ -504,7 +564,7 @@ export default function SchedulePage() {
                             </div>
                             <Clock size={11} strokeWidth={2} color={isSelected ? D.blue : D.muted} />
                             <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, fontFamily: D.mono }}>
-                              {slot.start.slice(11, 16)} — {slot.end.slice(11, 16)}
+                              {new Date(slot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(slot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                             <Badge color={D.blue} bg={D.blueSoft}>{slot.duration_minutes} min</Badge>
                             <div style={{ flex: 1 }} />
@@ -528,7 +588,7 @@ export default function SchedulePage() {
                 padding: "40px 20px", gap: 8,
               }}>
                 <Calendar size={28} strokeWidth={1.5} color={D.dim} />
-                <span style={{ fontSize: 12, color: D.muted }}>Select interviewers and date range, then click &quot;Find Available Slots&quot;</span>
+                <span style={{ fontSize: 12, color: D.muted }}>Select date range, then click &quot;Find Available Slots&quot;</span>
               </div>
             )}
           </div>
@@ -560,8 +620,8 @@ export default function SchedulePage() {
                 <Divider />
                 <div style={{ fontSize: 10, color: D.sub, fontFamily: D.mono, lineHeight: 1.7 }}>
                   <div><strong style={{ color: D.ink }}>Candidate:</strong> {confirmedSlot.candidate_name}</div>
-                  <div><strong style={{ color: D.ink }}>Start:</strong> {formatDate(confirmedSlot.start)} {confirmedSlot.start.slice(11, 16)}</div>
-                  <div><strong style={{ color: D.ink }}>End:</strong> {formatDate(confirmedSlot.end)} {confirmedSlot.end.slice(11, 16)}</div>
+                  <div><strong style={{ color: D.ink }}>Start:</strong> {formatDate(confirmedSlot.start)} {new Date(confirmedSlot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  <div><strong style={{ color: D.ink }}>End:</strong> {formatDate(confirmedSlot.end)} {new Date(confirmedSlot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={{
@@ -587,7 +647,7 @@ export default function SchedulePage() {
                     {confirmedSlot.notified ? <Check size={10} strokeWidth={2} color={D.mint} /> : <AlertCircle size={10} strokeWidth={2} color={D.amber} />}
                     <span>
                       {confirmedSlot.notified
-                        ? <>Email notification sent to <strong style={{ color: D.ink, fontFamily: D.mono }}>cn20378@gmail.com</strong></>
+                        ? <>Email notification sent to <strong style={{ color: D.ink, fontFamily: D.mono }}>the candidate</strong></>
                         : "Email notification not sent (configure SMTP in .env)"}
                     </span>
                   </div>
@@ -617,7 +677,7 @@ export default function SchedulePage() {
                       {formatDate(selectedSlot.start)}
                     </div>
                     <div style={{ fontSize: 12, fontFamily: D.mono, color: D.blue, marginBottom: 4 }}>
-                      {selectedSlot.start.slice(11, 16)} — {selectedSlot.end.slice(11, 16)}
+                      {new Date(selectedSlot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedSlot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                     <Badge color={D.blue} bg={D.blueSoft}>
                       <Clock size={9} strokeWidth={2} /> {selectedSlot.duration_minutes} minutes
@@ -637,11 +697,8 @@ export default function SchedulePage() {
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
                       <Users size={10} strokeWidth={2} color={D.muted} style={{ marginTop: 2 }} />
                       <div>
-                        <strong style={{ color: D.ink }}>Interviewers:</strong>
-                        {Array.from(selectedUuids).map((uuid) => {
-                            const iv = (interviewers ?? []).find((i) => i.uuid === uuid);
-                          return iv ? <div key={uuid} style={{ fontSize: 10, color: D.sub, fontFamily: D.mono, marginLeft: 10 }}>— {iv.name}</div> : null;
-                        })}
+                        <strong style={{ color: D.ink }}>Interviewer:</strong>
+                        <div style={{ fontSize: 10, color: D.sub, fontFamily: D.mono, marginLeft: 10 }}>— {user?.name || "HR / Logged in User"}</div>
                       </div>
                     </div>
                   </div>

@@ -9,6 +9,8 @@ Chốt lại hai quy tắc mà cả hệ thống dựa vào:
 Test chạy không cần DB: dependency `get_current_user` được override.
 """
 
+from contextlib import contextmanager
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,6 +22,7 @@ from modules.shared.domain.roles import (
     is_operational,
     normalise_role,
 )
+from modules.shared.infrastructure import abac
 from modules.shared.infrastructure.abac import apply_abac
 from modules.shared.infrastructure.auth_dependencies import get_current_user
 
@@ -254,61 +257,265 @@ def test_unknown_role_is_masked_like_tech_lead():
 
 
 # --------------------------------------------------------------------------
+# Policy động đọc từ bảng `abac_policies`
+#
+# Bảng này là DENY-LIST (`strategy='redact'`). Nó chỉ được phép che THÊM so với
+# whitelist trong code. Nếu để nó mở khoá field thì bất kỳ ai ghi được bảng đều
+# tự cấp cho mình quyền xem PII ứng viên, không qua code review.
+# --------------------------------------------------------------------------
+
+@contextmanager
+def _deny_overrides(overrides: dict[str, frozenset[str]]):
+    """Ghi đè cache deny-list, đóng băng TTL để test không chạm mạng."""
+    saved_cache, saved_time = abac._db_deny_overrides, abac._last_fetch_time
+    abac._db_deny_overrides = overrides
+    abac._last_fetch_time = float("inf")  # coi như vừa nạp xong
+    try:
+        yield
+    finally:
+        abac._db_deny_overrides, abac._last_fetch_time = saved_cache, saved_time
+
+
+# --------------------------------------------------------------------------
+# Nhân khẩu học EEO — che với MỌI role, kể cả `hr` và `admin`
+#
+# Đây là ngoại lệ duy nhất đứng trên policy theo role. `hr` là role đi sàng lọc
+# nên cũng là nơi thiên kiến gây hại nhất; che `tech_lead` mà để hở `hr` thì
+# gần như không bảo vệ được gì.
+# --------------------------------------------------------------------------
+
+EEO_SAMPLE = {
+    "full_name": "Nguyen Van A",
+    "race": "Asian",
+    "gender_identity": "Female",
+    "disability_status": "None",
+    "military_status": "Veteran",
+    "age_group": "25-34",
+    "pronouns": "she/her",
+    "skills": ["Go", "Python"],
+}
+
+
+@pytest.mark.parametrize("role", ["hr", "admin", "tech_lead", "someone_else"])
+def test_eeo_fields_are_masked_for_every_role(role):
+    masked = apply_abac(EEO_SAMPLE, role)
+    for field in abac.ALWAYS_REDACTED_FIELDS & EEO_SAMPLE.keys():
+        assert masked[field] == "***", f"{field} lọt ra với role {role}"
+
+
+def test_hr_still_sees_non_eeo_data():
+    """Che EEO không được làm hỏng công việc thật của HR."""
+    masked = apply_abac(EEO_SAMPLE, "hr")
+    assert masked["full_name"] == "Nguyen Van A"
+    assert masked["skills"] == ["Go", "Python"]
+
+
+def test_eeo_masking_reaches_nested_records():
+    """Dữ liệu ứng viên hay lồng nhau; che nông thì tầng dưới vẫn lọt."""
+    payload = {"candidate": {"profile": {"race": "Asian", "headline": "Backend"}}}
+    masked = apply_abac(payload, "hr")
+    assert masked["candidate"]["profile"]["race"] == "***"
+    assert masked["candidate"]["profile"]["headline"] == "Backend"
+
+
+def test_eeo_wins_even_if_added_to_visible_whitelist():
+    """Ai đó lỡ thêm `race` vào whitelist thì EEO vẫn phải thắng."""
+    with _deny_overrides({}):
+        polluted = abac.TECH_LEAD_VISIBLE_FIELDS | {"race"}
+        assert not (polluted - abac.ALWAYS_REDACTED_FIELDS) & {"race"}
+
+
+def test_db_policy_can_hide_more_fields():
+    """DB che thêm được field mà whitelist vốn cho qua."""
+    with _deny_overrides({"tech_lead": frozenset({"public_repos_count"})}):
+        masked = apply_abac(SAMPLE_PROFILE, "tech_lead")["enriched_profile"]
+        assert masked["github"]["public_repos_count"] == 0  # giữ kiểu int
+        assert masked["linkedin"]["headline"] == "Backend Engineer"  # field khác không đổi
+
+
+def test_db_policy_cannot_unhide_pii():
+    """Chốt chặn leo thang đặc quyền: DB không mở khoá được field đã bị che.
+
+    Kể cả khi bảng ghi hẳn `email` vào diện cho qua, whitelist trong code vẫn
+    thắng — vì policy hiệu lực là PHÉP TRỪ, không phải phép hợp.
+    """
+    with _deny_overrides({"tech_lead": frozenset({"email", "full_name"})}):
+        masked = apply_abac(SAMPLE_PROFILE, "tech_lead")["enriched_profile"]
+        assert masked["email"] == "***"
+        assert masked["full_name"] == "***"
+
+
+def test_db_policy_never_widens_beyond_hardcoded_whitelist():
+    for role in ("tech_lead", "interviewer", "someone_else"):
+        assert abac._get_dynamic_policy(role) <= abac.TECH_LEAD_VISIBLE_FIELDS, role
+
+
+def test_legacy_role_vocabulary_in_db_is_normalised():
+    """Policy ghi bằng từ vựng trước V005 (`interviewer`) vẫn phải có hiệu lực."""
+    with _deny_overrides({"tech_lead": frozenset({"headline"})}):
+        masked = apply_abac(SAMPLE_PROFILE, "interviewer")["enriched_profile"]
+        assert masked["linkedin"]["headline"] == "***"
+
+
+def test_dotted_field_path_matches_by_leaf_name():
+    """`_filter` khớp theo tên field, nên 'resume.email' phải quy về 'email'."""
+    assert abac._leaf_field_name({"field_path": "resume.email"}) == "email"
+    assert abac._leaf_field_name({"field_path": "email"}) == "email"
+    assert abac._leaf_field_name({"field_name": "phone", "field_path": "r.phone"}) == "phone"
+    assert abac._leaf_field_name({"field_path": None, "field_name": None}) is None
+
+
+def test_passthrough_rows_are_ignored_when_loading():
+    """Dòng `passthrough` không được biến thành quyền xem."""
+    rows = [
+        {"role": "tech_lead", "field_path": "email", "strategy": "redact", "is_masked": True},
+        {"role": "interviewer", "field_path": "resume.phone", "strategy": "passthrough", "is_masked": True},
+        {"role": "tech_lead", "field_path": "address", "strategy": "passthrough", "is_masked": False},
+    ]
+    parsed = abac._parse_policy_rows(rows)
+    # `phone` vẫn vào deny-list vì is_masked=True; `address` bị loại vì cả hai
+    # điều kiện đều nói "đừng che".
+    assert parsed == {"tech_lead": frozenset({"email", "phone"})}
+
+
+def test_policy_load_failure_backs_off_instead_of_retrying_every_request(monkeypatch):
+    """A slow Supabase must not turn into a slow application.
+
+    `apply_abac` runs on every masked response. Without a back-off, a failing
+    policy load re-hits the network on each call — one round trip (~200ms here)
+    added to every request, serialised behind the cache lock.
+    """
+    calls = {"n": 0}
+
+    def _failing_fetch():
+        calls["n"] += 1
+        raise RuntimeError("supabase down")
+
+    monkeypatch.setattr(abac, "_fetch_deny_overrides", _failing_fetch)
+    monkeypatch.setattr(abac, "_last_fetch_time", 0.0)
+
+    for _ in range(50):
+        apply_abac(SAMPLE_PROFILE, "tech_lead")
+
+    assert calls["n"] == 1, (
+        f"tried the network {calls['n']} times across 50 requests; "
+        "the back-off after a failed load is not working"
+    )
+
+
+def test_masking_still_works_while_the_policy_load_is_failing():
+    """Degraded policy loading must not degrade protection."""
+    with _deny_overrides({}):
+        masked = apply_abac(SAMPLE_PROFILE, "tech_lead")["enriched_profile"]
+        assert masked["email"] == "***"
+        assert masked["full_name"] == "***"
+
+
+def test_db_failure_does_not_widen_access(monkeypatch):
+    """Supabase lỗi thì giữ cache cũ, tuyệt đối không nới quyền."""
+    def _boom():
+        raise RuntimeError("supabase down")
+
+    monkeypatch.setattr(abac, "_fetch_deny_overrides", _boom)
+    with _deny_overrides({"tech_lead": frozenset({"public_repos_count"})}):
+        abac._last_fetch_time = 0.0  # ép hết hạn để kích hoạt refresh
+        masked = apply_abac(SAMPLE_PROFILE, "tech_lead")["enriched_profile"]
+        assert masked["email"] == "***"
+        assert masked["github"]["public_repos_count"] == 0  # cache cũ còn hiệu lực
+
+
+# --------------------------------------------------------------------------
 # Khoá tài khoản (is_approved) — nút "suspend" trong Admin Panel
 # --------------------------------------------------------------------------
 
-class _FakeUser:
-    """Bản ghi users tối thiểu để chạy login mà không cần DB thật."""
+def _fake_user_row(is_approved: bool) -> dict:
+    """Bản ghi bảng `users` tối thiểu để chạy login mà không cần DB thật.
 
-    def __init__(self, is_approved: bool):
-        import uuid as _uuid
+    Supabase SDK trả về dict chứ không phải object ORM, nên đây là dict — đọc
+    bằng .get() y như code thật.
+    """
+    import uuid as _uuid
 
-        from backend.app.models.enums import RoleType
+    from modules.auth.infra.password_service import PasswordService
 
-        self.id = _uuid.uuid4()
-        self.name = "Someone"
-        self.email = "someone@example.com"
-        self.role = RoleType.HR
-        self.password_hash = None
-        self.is_approved = is_approved
+    return {
+        "id": str(_uuid.uuid4()),
+        "name": "Someone",
+        "email": "someone@example.com",
+        "role": "hr",
+        "password_hash": PasswordService.hash_password("Secret123"),
+        "is_approved": is_approved,
+    }
 
 
-def _auth_service_with(db_user):
-    """AuthService với DB giả trả về đúng một user."""
-    from unittest.mock import AsyncMock, MagicMock
+def _auth_service_with(user_row: dict):
+    """AuthService với Supabase client giả trả về đúng một user."""
+    from unittest.mock import MagicMock
 
     from modules.auth.application.auth_service import AuthService
     from modules.auth.infra.jwt_service import JwtService
-    from modules.auth.infra.password_service import PasswordService
     from modules.shared.infrastructure.config import get_settings
 
     settings = get_settings()
-    db_user.password_hash = PasswordService.hash_password("Secret123")
 
-    db = MagicMock()
-    db.scalar = AsyncMock(return_value=db_user)
-    db.add = MagicMock()
-    db.commit = AsyncMock()
+    lookup_result = MagicMock()
+    lookup_result.data = [user_row] if user_row else []
+
+    client = MagicMock()
+    # Chuỗi .table("users").select("*").eq("email", ...).limit(1).execute()
+    client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = (
+        lookup_result
+    )
+    # Các lệnh ghi phụ (user_sessions, audit_logs) cứ để MagicMock nuốt — chúng
+    # đã được bọc try/except trong AuthService nên không ảnh hưởng kết quả login.
 
     return AuthService(
         settings=settings,
         google_verifier=MagicMock(),
         jwt_service=JwtService(settings),
-        db=db,
+        client=client,
     )
 
 
 @pytest.mark.asyncio
 async def test_suspended_account_cannot_log_in():
     """is_approved=False phải chặn đăng nhập — trước đây cột này không ai đọc."""
-    service = _auth_service_with(_FakeUser(is_approved=False))
+    service = _auth_service_with(_fake_user_row(is_approved=False))
     with pytest.raises(ValueError, match="approval|suspended"):
         await service.login_with_email_password("someone@example.com", "Secret123")
 
 
 @pytest.mark.asyncio
+async def test_candidate_row_cannot_log_in():
+    """`candidate` là rác của DB cũ — không phải người dùng của SmartATS.
+
+    Phải bị từ chối như sai mật khẩu, KHÔNG được để pydantic ném ValidationError
+    thành 500 (rò rỉ chi tiết nội bộ và làm client hiểu nhầm là lỗi server).
+    """
+    row = _fake_user_row(is_approved=True)
+    row["role"] = "candidate"
+    service = _auth_service_with(row)
+    with pytest.raises(ValueError, match="Invalid email or password"):
+        await service.login_with_email_password("someone@example.com", "Secret123")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_role", "expected"),
+    [("recruiter", "hr"), ("hr_manager", "hr"), ("interviewer", "tech_lead")],
+)
+async def test_legacy_role_row_logs_in_as_converted_role(raw_role, expected):
+    """Tài khoản cũ vẫn đăng nhập được, với role đã quy đổi về từ vựng mới."""
+    row = _fake_user_row(is_approved=True)
+    row["role"] = raw_role
+    service = _auth_service_with(row)
+    result = await service.login_with_email_password("someone@example.com", "Secret123")
+    assert result.user.role == expected
+
+
+@pytest.mark.asyncio
 async def test_approved_account_can_log_in():
-    service = _auth_service_with(_FakeUser(is_approved=True))
+    service = _auth_service_with(_fake_user_row(is_approved=True))
     result = await service.login_with_email_password("someone@example.com", "Secret123")
     assert result.user.role == "hr"
     assert result.accessToken

@@ -7,10 +7,14 @@
     "build": "env-cmd -f .env --silent next build src/frontend",
     "start": "env-cmd -f .env --silent next start src/frontend",
     "lint": "next lint src/frontend",
-    "backend:dev": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --reload --host 0.0.0.0 --port 8000 --app-dir src/backend",
-    "backend:start": "env-cmd -f .env src/backend/.venv/Scripts/python.exe -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend",
-    "test": "vitest run src/frontend",
-    "test:watch": "vitest src/frontend"
+    "typecheck": "tsc --noEmit -p src/frontend/tsconfig.json",
+    "backend:dev": "env-cmd -f .env python -m uvicorn apps.main:app --reload --host 0.0.0.0 --port 8000 --app-dir src/backend",
+    "backend:start": "env-cmd -f .env python -m uvicorn apps.main:app --host 0.0.0.0 --port 8000 --app-dir src/backend",
+    "backend:dev:win": "env-cmd -f .env python src/backend/run.py",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:py": "pytest",
+    "test:all": "npm run test && npm run test:py"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
@@ -22,12 +26,16 @@
     "recharts": "^2.15.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20.17.9",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.1.0",
     "env-cmd": "^10.1.0",
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.20",
+    "jsdom": "^29.1.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2",

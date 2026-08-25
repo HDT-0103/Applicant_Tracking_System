@@ -4,9 +4,9 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Fix for Windows asyncio subprocess (for Playwright)
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# NOTE: Event loop policy is now handled by run.py (winloop).
+# Do NOT call asyncio.set_event_loop_policy() here — it is deprecated
+# in Python 3.14 and conflicts with winloop.
 
 from modules.auth.adapters.routes import router as auth_router
 from modules.ingestion.adapters.routes import router as ingestion_router
@@ -43,7 +43,7 @@ cors_kwargs = {
 }
 
 if settings.app_env.lower() == "development":
-    cors_kwargs["allow_origin_regex"] = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+    cors_kwargs["allow_origin_regex"] = r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+)(:\d+)?"
 
 app.add_middleware(
     CORSMiddleware,

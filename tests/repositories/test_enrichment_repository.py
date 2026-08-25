@@ -42,7 +42,7 @@ async def test_create_profile_get_profile_and_update_status(service_role_client)
         stored = (
             service_role_client.table("enrichment_profiles")
             .select(
-                "id, candidate_uuid, skills, summary, experience, github, linkedin, enrichment_status"
+                "id, candidate_uuid, skills, summary, experience, enrichment_status"
             )
             .eq("candidate_uuid", candidate_uuid)
             .limit(1)
@@ -54,9 +54,19 @@ async def test_create_profile_get_profile_and_update_status(service_role_client)
         assert row["skills"] == ["Python", "FastAPI"]
         assert row["summary"] == "Backend engineer"
         assert row["experience"] == "5 years in APIs"
-        assert row["github"] == "https://github.com/example"
-        assert row["linkedin"] == "https://linkedin.com/in/example"
         assert row["enrichment_status"] == EnrichmentStatus.IN_PROGRESS.value
+
+        # 3b. Link GitHub/LinkedIn phải nằm trên `candidates`, không phải
+        # `enrichment_profiles` — hai cột đó đã bị bỏ khi schema chuẩn hoá.
+        candidate_row = (
+            service_role_client.table("candidates")
+            .select("github_url, linkedin_url")
+            .eq("uuid", candidate_uuid)
+            .limit(1)
+            .execute()
+        ).data[0]
+        assert candidate_row["github_url"] == "https://github.com/example"
+        assert candidate_row["linkedin_url"] == "https://linkedin.com/in/example"
 
         # 4. Fetch qua Repository
         fetched = await repository.get_profile(candidate_uuid)
@@ -66,8 +76,6 @@ async def test_create_profile_get_profile_and_update_status(service_role_client)
         assert fetched.skills == ["Python", "FastAPI"]
         assert fetched.summary == "Backend engineer"
         assert fetched.experience == "5 years in APIs"
-        assert fetched.github == "https://github.com/example"
-        assert fetched.linkedin == "https://linkedin.com/in/example"
         assert fetched.enrichment_status == EnrichmentStatus.IN_PROGRESS.value
 
         # 5. Update status sang ENRICHED

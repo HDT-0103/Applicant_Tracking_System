@@ -120,7 +120,7 @@ async def parse_cv_with_gemini(resume_text: str, settings: Settings) -> dict | N
     try:
         genai.configure(api_key=settings.gemini_api_key)
         model = genai.GenerativeModel(
-            "gemini-2.0-flash",
+            settings.gemini_model,
             generation_config={
                 "response_mime_type": "application/json",
                 "temperature": 0.1,

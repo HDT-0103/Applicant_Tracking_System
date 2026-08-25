@@ -51,10 +51,16 @@ async def test_search_similar_embeddings(service_role_client):
 
         query_vector = generate_vector(1.0, 0.0)
 
+        # Vector search chạy trên TOÀN BỘ bảng `embeddings`, mà Supabase dùng
+        # chung đã có sẵn hồ sơ thật. Không gắn nhãn được như skill dạng chuỗi,
+        # nên khoanh vùng bằng chính tham số `candidate_ids` của RPC — nhờ vậy
+        # mới đếm chính xác được và test không phụ thuộc dữ liệu có sẵn.
+        scope = {"candidate_ids": uuids}
+
         # --- TEST 1: Happy path ---
         res1 = service_role_client.rpc(
-            "search_similar_embeddings", 
-            {"query_embedding": query_vector, "top_k": 10}
+            "search_similar_embeddings",
+            {"query_embedding": query_vector, "top_k": 10, **scope}
         ).execute()
         assert len(res1.data) > 0
         assert res1.data[0]["candidate_uuid"] == cand_1
@@ -62,11 +68,12 @@ async def test_search_similar_embeddings(service_role_client):
 
         # --- TEST 2: Filter theo source_types ---
         res2 = service_role_client.rpc(
-            "search_similar_embeddings", 
+            "search_similar_embeddings",
             {
-                "query_embedding": query_vector, 
+                "query_embedding": query_vector,
                 "top_k": 10,
-                "source_types": ["experience"]
+                "source_types": ["experience"],
+                **scope,
             }
         ).execute()
         assert len(res2.data) == 1
@@ -74,11 +81,12 @@ async def test_search_similar_embeddings(service_role_client):
 
         # --- TEST 3: minimum_similarity ---
         res3 = service_role_client.rpc(
-            "search_similar_embeddings", 
+            "search_similar_embeddings",
             {
-                "query_embedding": query_vector, 
+                "query_embedding": query_vector,
                 "top_k": 10,
-                "minimum_similarity": 0.5
+                "minimum_similarity": 0.5,
+                **scope,
             }
         ).execute()
         assert len(res3.data) == 1
@@ -112,8 +120,8 @@ async def test_search_similar_embeddings(service_role_client):
         # Hiện tại prof_1_id có 4 embeddings (summary + 3 cái vừa thêm)
         # Truy vấn với top_k = 2
         res5 = service_role_client.rpc(
-            "search_similar_embeddings", 
-            {"query_embedding": query_vector, "top_k": 2}
+            "search_similar_embeddings",
+            {"query_embedding": query_vector, "top_k": 2, **scope}
         ).execute()
         assert len(res5.data) == 2 # Đáng lẽ khớp 4, nhưng bị limit còn 2
 

@@ -8,7 +8,7 @@ from modules.auth.domain.models import AuthUser, UserRole
 from modules.auth.infra.jwt_service import JwtService
 from modules.shared.domain.roles import ADMIN_ROLE, OPERATIONAL_ROLES
 from modules.shared.infrastructure.config import Settings, get_settings
-from src.backend.app.dependencies import get_supabase_client
+from modules.shared.infrastructure.supabase_client import get_supabase_client_dep as get_supabase_client
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 

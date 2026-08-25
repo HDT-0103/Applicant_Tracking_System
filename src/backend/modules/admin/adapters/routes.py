@@ -6,7 +6,7 @@ from supabase import Client
 from modules.admin.application.admin_service import AdminService
 from modules.auth.domain.models import AuthUser
 from modules.shared.infrastructure.auth_dependencies import require_roles
-from src.backend.app.dependencies import get_supabase_admin_client
+from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
 
 router = APIRouter(
     prefix="/api/admin",

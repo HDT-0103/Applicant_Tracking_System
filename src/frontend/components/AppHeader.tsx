@@ -129,6 +129,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
         {/* Admin Dashboard link if user is Admin */}
         {user?.role === "admin" && (
           <button
+            type="button"
             onClick={() => router.push("/admin")}
             style={{
               padding: "6px 14px",
@@ -149,6 +150,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
         {/* Run Sync button */}
         {showRunSync && (
           <button
+            type="button"
             onClick={handleRunSync}
             disabled={!canClickRunSync || syncing}
             style={{
@@ -181,21 +183,32 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
  
         <div style={{ width: 1, height: 16, background: D.line }} />
  
-        <button style={{
-          position: "relative", background: "none", border: "none", cursor: "pointer",
-          display: "flex", alignItems: "center", width: 28, height: 28,
-          justifyContent: "center", borderRadius: 6,
-        }}>
-          <Bell size={14} color={D.sub} strokeWidth={1.8} />
-          <span style={{
-            position: "absolute", top: 5, right: 5, width: 5, height: 5,
-            borderRadius: "50%", background: D.red, border: `1.5px solid ${D.canvas}`,
-          }} />
-        </button>
+        {/* Icon-only, so the accessible name has to come from aria-label —
+            otherwise a screen reader announces it as just "button". The red
+            dot is decoration and is hidden rather than described twice. */}
+        <button
+          type="button"
+          aria-label="Notifications (unread)"
+          title="Notifications"
+          style={{
+            position: "relative", background: "none", border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", width: 28, height: 28,
+            justifyContent: "center", borderRadius: 6,
+          }}
+        >
+          <Bell size={14} color={D.sub} strokeWidth={1.8} aria-hidden="true" />
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute", top: 5, right: 5, width: 5, height: 5,
+              borderRadius: "50%", background: D.red, border: `1.5px solid ${D.canvas}`,
+            }}
+          /></button>
  
         <div style={{ width: 1, height: 16, background: D.line }} />
  
         <button
+          type="button"
           onClick={logout}
           style={{
             padding: "6px 14px",

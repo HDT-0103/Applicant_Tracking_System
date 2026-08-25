@@ -20,8 +20,13 @@ export default {
           DEFAULT: "var(--card)",
           foreground: "var(--card-foreground)",
         },
+        // Dạng `rgb(var(--x) / <alpha-value>)` để `bg-primary/10` hoạt động.
+        // Nếu để `var(--primary)` (hex) thì class không độ mờ vẫn chạy, còn
+        // class có độ mờ hỏng lặng lẽ — sinh ra CSS không hợp lệ, trình duyệt
+        // bỏ qua, và phần tử mất nền mà không có lỗi nào.
         primary: {
-          DEFAULT: "var(--primary)",
+          DEFAULT: "rgb(var(--primary-rgb) / <alpha-value>)",
+          hover: "rgb(var(--primary-hover-rgb) / <alpha-value>)",
           foreground: "var(--primary-foreground)",
         },
         accent: {

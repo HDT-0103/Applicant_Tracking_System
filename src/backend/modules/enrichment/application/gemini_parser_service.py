@@ -46,7 +46,7 @@ class GeminiParserService:
         else:
             genai.configure(api_key=settings.gemini_api_key)
             self.model = genai.GenerativeModel(
-                "gemini-2.0-flash",
+                settings.gemini_model,
                 system_instruction=SYSTEM_PROMPT,
             )
 
@@ -60,7 +60,7 @@ class GeminiParserService:
 
             if self.client:
                 response = await self.client.aio.generate_content(
-                    model="gemini-2.0-flash",
+                    model=self.settings.gemini_model,
                     contents=markdown_text,
                     config={
                         "response_mime_type": "application/json",

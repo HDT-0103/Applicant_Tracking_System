@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { D } from "@/lib/tokens";
 import type { CandidateAnalytics } from "@/contexts/WorkspaceContext";
 
 /* ------------------------------------------------------------------ */
@@ -168,7 +169,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
         <polygon
           points={toPoints(dataPoints)}
           fill="rgba(79,70,229,0.15)"
-          stroke="#4f46e5"
+          stroke={D.blue}
           strokeWidth="2"
         />
 
@@ -179,7 +180,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
             cx={pt.x}
             cy={pt.y}
             r={3}
-            fill="#4f46e5"
+            fill={D.blue}
           />
         ))}
 

@@ -1,27 +1,11 @@
 import React from "react";
 
 // --- Design Tokens ------------------------------------------------------------
-export const D = {
-  bg: "#F4F5F7",
-  canvas: "#FFFFFF",
-  surface: "#FAFBFC",
-  ink: "#0D1117",
-  sub: "#3D4451",
-  muted: "#6B7280",
-  dim: "#9CA3AF",
-  line: "#E2E4E9",
-  lineSoft: "#ECEEF2",
-  blue: "#1B62F0",
-  blueSoft: "rgba(27,98,240,0.09)",
-  blueMid: "rgba(27,98,240,0.18)",
-  mint: "#0D9E6F",
-  mintSoft: "rgba(13,158,111,0.10)",
-  purple: "#7C3AED",
-  amber: "#D97706",
-  red: "#DC2626",
-  font: "'Inter', system-ui, -apple-system, sans-serif",
-  mono: "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace",
-};
+// Token đã chuyển sang ./tokens. Vừa import để dùng trong file này, vừa
+// re-export để 995 chỗ đang `import { D } from ".../lib/shared"` không phải sửa.
+import { D } from "./tokens";
+
+export { D };
 
 // --- Shared Data --------------------------------------------------------------
 
@@ -159,10 +143,11 @@ export function Divider() {
 
 // --- Global Styles ------------------------------------------------------------
 
+// Không còn `@import` Google Fonts ở đây. `@import` trong CSS chặn render cho
+// tới khi tải xong, và nó nằm trong chuỗi JS nên trình duyệt chỉ thấy được sau
+// khi bundle chạy — chậm nhất trong mọi cách nạp font. Inter nay do next/font
+// lo (tự host, không gọi ra ngoài lúc chạy), xem app/layout.tsx.
 export const globalStyles = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
-
 body {
   margin: 0;
   font-family: ${D.font};

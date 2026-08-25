@@ -16,7 +16,7 @@ from modules.auth.domain.models import (
 from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
 from modules.shared.infrastructure.config import Settings, get_settings
-from src.backend.app.dependencies import get_supabase_admin_client
+from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
 
 logger = structlog.get_logger(__name__)
 

@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from 'next/navigation';
-import { AppHeader } from "../../components/AppHeader";
-import { LeftSidebar } from "../../components/LeftSidebar";
+import { AppShell } from "../../components/AppShell";
 import { D } from "../../lib/shared";
-import { supabase } from "../../lib/supabase";
+import { db } from "../../lib/db";
 import {
   BarChart3,
   TrendingUp,
@@ -71,21 +70,21 @@ export default function AnalyticsPage() {
         setLoading(true);
 
         // 1. Query real jobs_posting from Supabase
-        const { data: jobData, error: jobErr } = await supabase
+        const { data: jobData, error: jobErr } = await db()
           .from('jobs_posting')
           .select('id, job_title, department, status, must_have_skills, nice_to_have_skills, created_at');
 
         if (jobErr) console.error("Error fetching jobs:", jobErr);
 
         // 2. Query real applications from Supabase
-        const { data: appData, error: appErr } = await supabase
+        const { data: appData, error: appErr } = await db()
           .from('applications')
           .select('id, job_posting_id, referral_source, experience_bucket, work_mode_pref, skill_ratings, created_at');
 
         if (appErr) console.error("Error fetching applications:", appErr);
 
         // 3. Query real candidates from Supabase
-        const { data: candidateData, error: candErr } = await supabase
+        const { data: candidateData, error: candErr } = await db()
           .from('candidates')
           .select('uuid, full_name, email, current_location, github_username, linkedin_url, created_at');
 
@@ -212,20 +211,14 @@ export default function AnalyticsPage() {
     : jobs.filter(j => j.id === selectedJob);
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: D.bg }}>
-      <AppHeader />
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        <LeftSidebar />
-
-        {/* Main Content Area */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "28px 36px" }}>
+    <AppShell>
           
           {/* Header Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <div className="w-8 h-8 rounded-lg bg-[#4f46e5]/10 flex items-center justify-center">
-                  <BarChart3 className="w-4 h-4 text-[#4f46e5]" />
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <BarChart3 className="w-4 h-4 text-primary" />
                 </div>
                 <h1 className="text-xl font-bold text-foreground tracking-tight">
                   Recruitment & AI Intelligence Analytics
@@ -272,7 +265,7 @@ export default function AnalyticsPage() {
               <button
                 type="button"
                 onClick={handlePrintReport}
-                className="h-9 px-3.5 rounded-lg bg-[#4f46e5] hover:bg-[#4338ca] text-white text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm shadow-[#4f46e5]/20"
+                className="h-9 px-3.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm shadow-primary/20"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Export Report</span>
@@ -332,7 +325,7 @@ export default function AnalyticsPage() {
               onClick={() => setActiveTab("pipeline")}
               className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
                 activeTab === "pipeline"
-                  ? "bg-[#4f46e5] text-white shadow-sm shadow-[#4f46e5]/20"
+                  ? "bg-primary text-white shadow-sm shadow-primary/20"
                   : "bg-white text-muted-foreground hover:text-foreground border border-border"
               }`}
             >
@@ -345,7 +338,7 @@ export default function AnalyticsPage() {
               onClick={() => setActiveTab("ai")}
               className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
                 activeTab === "ai"
-                  ? "bg-[#4f46e5] text-white shadow-sm shadow-[#4f46e5]/20"
+                  ? "bg-primary text-white shadow-sm shadow-primary/20"
                   : "bg-white text-muted-foreground hover:text-foreground border border-border"
               }`}
             >
@@ -358,7 +351,7 @@ export default function AnalyticsPage() {
               onClick={() => setActiveTab("sourcing")}
               className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
                 activeTab === "sourcing"
-                  ? "bg-[#4f46e5] text-white shadow-sm shadow-[#4f46e5]/20"
+                  ? "bg-primary text-white shadow-sm shadow-primary/20"
                   : "bg-white text-muted-foreground hover:text-foreground border border-border"
               }`}
             >
@@ -397,7 +390,7 @@ export default function AnalyticsPage() {
                     const interviewScheduled = Math.round(total * 0.12);
 
                     const stages = [
-                      { stage: "1. Applications Received", count: total, fraction: `${total}/${total}`, pct: 100, color: "#4f46e5", days: "0d", note: "Total Ingested" },
+                      { stage: "1. Applications Received", count: total, fraction: `${total}/${total}`, pct: 100, color: D.blue, days: "0d", note: "Total Ingested" },
                       { stage: "2. AI Analyzed", count: analyzed, fraction: `${analyzed}/${total}`, pct: Math.round((analyzed / total) * 100), color: "#10b981", days: "0.2d", note: `${unanalyzed}/${total} Unanalyzed` },
                       { stage: "3. Passed AI Match (>75%)", count: passedMatch, fraction: `${passedMatch}/${total}`, pct: Math.round((passedMatch / total) * 100), color: "#8b5cf6", days: "1.5d", note: "Top Tier Candidates" },
                       { stage: "4. CV Reviewed & Approved", count: cvApproved, fraction: `${cvApproved}/${total}`, pct: Math.round((cvApproved / total) * 100), color: "#ec4899", days: "3.2d", note: "Recruiter Approved" },
@@ -415,7 +408,7 @@ export default function AnalyticsPage() {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-muted-foreground font-mono text-[11px]">{item.days} avg</span>
-                            <span className="font-mono font-bold text-[#4f46e5] text-xs bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                            <span className="font-mono font-bold text-primary text-xs bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                               {item.fraction} Candidates
                             </span>
                             <span className="text-[11px] font-bold text-muted-foreground w-10 text-right">{item.pct}%</span>
@@ -439,7 +432,7 @@ export default function AnalyticsPage() {
                   <button
                     type="button"
                     onClick={() => router.push('/job-postings/create')}
-                    className="text-xs text-[#4f46e5] font-semibold hover:underline flex items-center gap-1"
+                    className="text-xs text-primary font-semibold hover:underline flex items-center gap-1"
                   >
                     <span>Create New Position</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />
@@ -514,7 +507,7 @@ export default function AnalyticsPage() {
 
                       const scoreItems = [
                         { label: "Top Match (85 - 100%)", count: topCount, color: "#10b981" },
-                        { label: "Strong Match (70 - 84%)", count: strongCount, color: "#4f46e5" },
+                        { label: "Strong Match (70 - 84%)", count: strongCount, color: D.blue },
                         { label: "Moderate Match (50 - 69%)", count: modCount, color: "#f59e0b" },
                         { label: "Low Match (< 50%)", count: lowCount, color: "#ef4444" },
                       ];
@@ -555,7 +548,7 @@ export default function AnalyticsPage() {
                   </div>
 
                   <div className="my-6 text-center">
-                    <span className="text-4xl font-extrabold text-[#4f46e5]">87.5%</span>
+                    <span className="text-4xl font-extrabold text-primary">87.5%</span>
                     <p className="text-xs font-semibold text-emerald-600 mt-1">High Recruiter Trust & Alignment</p>
                   </div>
 
@@ -612,7 +605,7 @@ export default function AnalyticsPage() {
                             </span>
                           </div>
                           <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-[#4f46e5] rounded-full transition-all duration-300" style={{ width: `${s.demandPct}%` }} />
+                            <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${s.demandPct}%` }} />
                           </div>
 
                           <div className="flex justify-between text-[11px] mt-1">
@@ -655,12 +648,12 @@ export default function AnalyticsPage() {
                       <div key={idx} className="p-4 rounded-lg border border-border bg-[#fafafa] flex flex-col gap-2">
                         <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                           <span>{ch.label}</span>
-                          <span className="font-mono text-xs text-[#4f46e5] font-bold">
+                          <span className="font-mono text-xs text-primary font-bold">
                             {ch.count}/{total} Candidates ({pct.toFixed(0)}%)
                           </span>
                         </div>
                         <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full bg-[#4f46e5]" style={{ width: `${pct}%` }} />
+                          <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
                     );
@@ -703,8 +696,6 @@ export default function AnalyticsPage() {
             </div>
           )}
 
-        </div>
-      </div>
-    </div>
+    </AppShell>
   );
 }

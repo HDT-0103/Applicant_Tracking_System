@@ -32,8 +32,10 @@ class EnrichmentProfile(Base):
     skills: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     experience: Mapped[str | None] = mapped_column(Text, nullable=True)
-    github: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    linkedin: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # `github` / `linkedin` từng nằm ở đây nhưng đã chuyển sang
+    # `candidates.github_url` / `candidates.linkedin_url` khi schema được chuẩn
+    # hoá — link là thuộc tính của ứng viên, không phải của một lượt enrich.
+    # Giữ lại ở đây khiến mọi lượt ghi có link đều lỗi PGRST204.
     semantic_tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     skill_matrix: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     match_confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -11,7 +11,8 @@ from modules.enrichment.application.enrichment_service import (
     check_existing_enrichment,
     enrichment_worker,
     active_websockets,
-    get_candidate_social_links
+    get_candidate_social_links,
+    load_enrichment_from_db,
 )
 from modules.enrichment.domain.models import CandidateEnrichment, EnrichmentStatus
 from modules.shared.infrastructure.abac import apply_abac
@@ -116,14 +117,22 @@ async def sync_candidate_profile(
 @router.get("/{candidate_uuid}", response_model=CandidateEnrichment)
 async def get_enrichment_status(
     candidate_uuid: str,
-    current_user: Annotated[AuthUser, Depends(require_operational_roles())]
+    current_user: Annotated[AuthUser, Depends(require_operational_roles())],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> CandidateEnrichment:
-    if candidate_uuid not in candidate_enrichments:
-        return CandidateEnrichment(
-            candidate_uuid=candidate_uuid,
-            enrichment_status=EnrichmentStatus.QUEUED
-        )
-    enrichment = candidate_enrichments[candidate_uuid]
+    enrichment = candidate_enrichments.get(candidate_uuid)
+
+    if enrichment is None:
+        # Memory is only a cache. It is empty after every restart, and each
+        # worker process has its own, so a miss says nothing about whether the
+        # work was done — the database does.
+        enrichment = load_enrichment_from_db(candidate_uuid, settings)
+        if enrichment is None:
+            return CandidateEnrichment(
+                candidate_uuid=candidate_uuid,
+                enrichment_status=EnrichmentStatus.QUEUED,
+            )
+        candidate_enrichments[candidate_uuid] = enrichment
     if not enrichment.enriched_profile:
         return enrichment
     # Che trên BẢN SAO. Trước đây đoạn này gán ngược bản đã che vào

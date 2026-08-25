@@ -17,6 +17,33 @@ class EnrichmentRepository(BaseRepository):
             return None
         return EnrichmentProfile(**row)
 
+    def _persist_candidate_links(
+        self,
+        candidate_uuid: str,
+        github: str | None,
+        linkedin: str | None,
+    ) -> None:
+        """Ghi link GitHub/LinkedIn về đúng bảng của nó: `candidates`.
+
+        Hai cột này không còn nằm trên `enrichment_profiles` (xem ghi chú trong
+        EnrichmentProfile). Caller vẫn truyền `github=`/`linkedin=` như cũ để
+        không phải sửa pipeline, nhưng đích đến thì đã đổi.
+        """
+        links = {}
+        if github is not None:
+            links["github_url"] = github
+        if linkedin is not None:
+            links["linkedin_url"] = linkedin
+        if not links:
+            return
+
+        (
+            self.client.table("candidates")
+            .update(links)
+            .eq("uuid", candidate_uuid)
+            .execute()
+        )
+
     async def create_profile(
     self,
     candidate_uuid: str,
@@ -41,8 +68,6 @@ class EnrichmentRepository(BaseRepository):
             "skills": skills,
             "summary": summary,
             "experience": experience,
-            "github": github,
-            "linkedin": linkedin,
             "semantic_tags": semantic_tags,
             "skill_matrix": skill_matrix,
             "match_confidence_score": match_confidence_score,
@@ -62,6 +87,7 @@ class EnrichmentRepository(BaseRepository):
         row = response.data[0] if response.data else None
         if row is None:
             raise ValueError("Failed to create enrichment profile.")
+        self._persist_candidate_links(candidate_uuid, github, linkedin)
         return EnrichmentProfile(**row)
 
     async def update_profile(
@@ -108,10 +134,6 @@ class EnrichmentRepository(BaseRepository):
             updates["summary"] = summary
         if experience is not None:
             updates["experience"] = experience
-        if github is not None:
-            updates["github"] = github
-        if linkedin is not None:
-            updates["linkedin"] = linkedin
         if semantic_tags is not None:
             updates["semantic_tags"] = semantic_tags
         if skill_matrix is not None:
@@ -122,6 +144,18 @@ class EnrichmentRepository(BaseRepository):
             updates["score_increase"] = score_increase
         if enrichment_status is not None:
             updates["enrichment_status"] = enrichment_status.value
+
+        self._persist_candidate_links(candidate_uuid, github, linkedin)
+
+        # Chỉ truyền mỗi link thì không còn gì để ghi lên enrichment_profiles.
+        # Gọi .update({}) sẽ là một lượt ghi rỗng, nên trả thẳng bản ghi hiện có.
+        if not updates:
+            existing = await self.get_profile(candidate_uuid)
+            if existing is None:
+                raise ValueError(
+                    f"EnrichmentProfile for candidate '{candidate_uuid}' not found."
+                )
+            return existing
 
         response = (
             self.client.table("enrichment_profiles")
