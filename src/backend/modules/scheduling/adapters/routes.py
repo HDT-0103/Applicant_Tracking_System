@@ -134,7 +134,7 @@ async def calendar_status(
     user: AuthUser = Depends(require_operational_roles()),
 ):
     """Check if the current user has a valid calendar connection"""
-    interviewer = service._repo.get_interviewer(user.id)
+    interviewer = await service.get_interviewer(user.id)
     connected = bool(
         interviewer
         and (interviewer.calendar_api_key or interviewer.calendar_refresh_token)
@@ -274,7 +274,7 @@ async def confirm_slot(
             detail="A valid candidate must be selected for scheduling. Please select a candidate from the dashboard.",
         )
 
-    interviewer = service._repo.get_interviewer(user.id)
+    interviewer = await service.get_interviewer(user.id)
     api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else ""
     refresh_token = interviewer.calendar_refresh_token if interviewer else None
 
