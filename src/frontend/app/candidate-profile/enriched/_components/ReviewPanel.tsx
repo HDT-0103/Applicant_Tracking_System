@@ -61,7 +61,11 @@ export function ReviewPanel({
     background: D.surface,
   };
 
-  const alert = (color: string, label: string) => (
+  /** Dòng trạng thái tổng hợp ở cuối panel.
+   *
+   *  Tên cũ là `alert`, che mất `window.alert` trong cả component — đọc code
+   *  ở đây thì tưởng đang gọi hộp thoại trình duyệt. */
+  const statusLine = (color: string, label: string) => (
     <div style={{ marginTop: 8, fontSize: 10, color, fontWeight: 600, textAlign: "center" }}>
       {label}
     </div>
@@ -282,11 +286,11 @@ export function ReviewPanel({
         </div>
       )}
 
-      {status === "waiting_for_tls" && alert(D.amber, "⏳ Waiting for the Tech Lead panel…")}
-      {status === "waiting_for_hr" && alert(D.amber, "⚠️ Tech Leads approved — waiting for HR")}
-      {status === "ready_to_schedule" && alert(D.mint, "✅ Approved — ready to schedule")}
-      {status === "rejected_by_tls" && alert(D.red, "❌ Rejected by the Tech Lead panel")}
-      {status === "rejected_by_hr" && alert(D.red, "❌ Rejected by HR — notification sent")}
+      {status === "waiting_for_tls" && statusLine(D.amber, "⏳ Waiting for the Tech Lead panel…")}
+      {status === "waiting_for_hr" && statusLine(D.amber, "⚠️ Tech Leads approved — waiting for HR")}
+      {status === "ready_to_schedule" && statusLine(D.mint, "✅ Approved — ready to schedule")}
+      {status === "rejected_by_tls" && statusLine(D.red, "❌ Rejected by the Tech Lead panel")}
+      {status === "rejected_by_hr" && statusLine(D.red, "❌ Rejected by HR — notification sent")}
     </div>
   );
 }

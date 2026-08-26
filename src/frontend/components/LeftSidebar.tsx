@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { D, Badge } from "../lib/shared";
 import { 
   Layers, 
-  FileText, 
   BarChart3, 
   Sparkles, 
   Calendar,
@@ -21,6 +20,7 @@ import {
   Pin
 } from "lucide-react";
 import { db } from "../lib/db";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 /** Bề rộng rail khi thu gọn — vừa đủ cho vùng bấm 36px và lề hai bên. */
 const RAIL_WIDTH = 56;
@@ -38,11 +38,16 @@ interface JobPosting {
 
 export const LeftSidebar: React.FC = () => {
   const router = useRouter();
+  const pathname = usePathname();
   const [activeJobId, setActiveJobId] = useState<string>("");
   const [jobPostings, setJobPostings] = useState<JobPosting[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [hoveredJobId, setHoveredJobId] = useState<string | null>(null);
   const [openMenuJobId, setOpenMenuJobId] = useState<string | null>(null);
+  /** Tin tuyển dụng đang chờ xác nhận xoá. `null` = hộp thoại đóng. */
+  const [deletingJob, setDeletingJob] = useState<JobPosting | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
 
@@ -57,6 +62,10 @@ export const LeftSidebar: React.FC = () => {
     window.localStorage.setItem(PIN_STORAGE_KEY, String(pinned));
   }, [pinned]);
 
+  // "CV Ingestion & Screening" đã được gỡ: nó trỏ về "/" — đúng chỗ mà
+  // "Dashboard Overview" ngay trên đó dẫn tới. Hai mục dẫn về cùng một trang
+  // thì người dùng phải bấm cả hai mới biết, và mục thứ hai hứa một màn hình
+  // không tồn tại. Việc nạp CV thực tế do ứng viên làm qua trang /careers.
   const workspaceItems = [
     {
       icon: <Layers size={15} />,
@@ -70,13 +79,15 @@ export const LeftSidebar: React.FC = () => {
       badge: "AI Live",
       path: "/analytics",
     },
-    {
-      icon: <FileText size={15} />,
-      label: "CV Ingestion & Screening",
-      badge: null,
-      path: "/",
-    },
   ];
+
+  /** Mục đang mở, xét theo URL thật.
+   *
+   *  Trước đây phần tô sáng so khớp nhãn với chuỗi "CV Analysis" — một nhãn
+   *  không còn mục nào mang, nên KHÔNG BAO GIỜ có mục nào sáng lên và người
+   *  dùng không đọc được mình đang ở đâu. */
+  const isCurrent = (path: string) =>
+    path === "/" ? pathname === "/" : pathname?.startsWith(path) ?? false;
 
   useEffect(() => {
     const loadJobPostings = async () => {
@@ -184,11 +195,18 @@ export const LeftSidebar: React.FC = () => {
     }
   };
 
-  const handleDeleteJob = async (e: React.MouseEvent, job: JobPosting) => {
+  const askDeleteJob = (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
-    if (!window.confirm(`Are you sure you want to delete the job posting "${job.title}"?`)) {
-      return;
-    }
+    setJobError(null);
+    setDeletingJob(job);
+    setOpenMenuJobId(null);
+  };
+
+  const handleDeleteJob = async () => {
+    const job = deletingJob;
+    if (!job) return;
+    setDeleting(true);
+    setJobError(null);
     try {
       const { error } = await db()
         .from('jobs_posting')
@@ -198,10 +216,15 @@ export const LeftSidebar: React.FC = () => {
       if (error) throw error;
 
       setJobPostings((prev) => prev.filter((j) => j.id !== job.id));
+      setDeletingJob(null);
     } catch (err) {
-      console.error('Failed to delete job posting:', err);
+      // Trước đây chỉ console.error: tin tuyển dụng vẫn nằm nguyên trong danh
+      // sách và người dùng không có cách nào biết lệnh xoá đã hỏng.
+      setJobError(
+        err instanceof Error ? err.message : 'Could not delete this job posting.',
+      );
     } finally {
-      setOpenMenuJobId(null);
+      setDeleting(false);
     }
   };
 
@@ -210,6 +233,22 @@ export const LeftSidebar: React.FC = () => {
   const expanded = isOpen || pinned;
 
   return (
+    <>
+    <ConfirmDialog
+      open={deletingJob !== null}
+      title="Delete this job posting?"
+      message={
+        <>
+          <strong style={{ color: D.ink }}>{deletingJob?.title}</strong> will be removed
+          permanently. Applications already submitted to it are not deleted, but they
+          will no longer point at a posting.
+        </>
+      }
+      confirmLabel="Delete posting"
+      busy={deleting}
+      onCancel={() => setDeletingJob(null)}
+      onConfirm={handleDeleteJob}
+    />
     <div
       style={{
         width: RAIL_WIDTH,
@@ -253,11 +292,14 @@ export const LeftSidebar: React.FC = () => {
               key={index}
               onClick={() => router.push(item.path)}
               aria-label={item.label}
+              aria-current={isCurrent(item.path) ? "page" : undefined}
               title={item.label}
               style={{
                 width: 36, height: 36, display: "grid", placeItems: "center",
-                borderRadius: D.r1, border: "none", background: "transparent",
-                color: D.sub, transition: `background 140ms ${D.ease}`,
+                borderRadius: D.r1, border: "none",
+                background: isCurrent(item.path) ? D.blueSoft : "transparent",
+                color: isCurrent(item.path) ? D.blue : D.sub,
+                transition: `background 140ms ${D.ease}`,
               }}
             >
               {item.icon}
@@ -328,6 +370,7 @@ export const LeftSidebar: React.FC = () => {
               <div
                 key={index}
                 onClick={() => router.push(item.path)}
+                aria-current={isCurrent(item.path) ? "page" : undefined}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -336,28 +379,28 @@ export const LeftSidebar: React.FC = () => {
                   borderRadius: 6,
                   cursor: "pointer",
                   transition: "all 0.15s ease",
-                  background: item.label.includes("Analytics") ? `${D.purple}08` : "transparent",
-                  border: item.label.includes("Analytics") ? `1px solid ${D.purple}20` : "1px solid transparent"
+                  background: isCurrent(item.path) ? D.blueSoft : "transparent",
+                  border: `1px solid ${isCurrent(item.path) ? `${D.blue}20` : "transparent"}`,
                 }}
               >
-                <div style={{ 
-                  width: 28, 
-                  height: 28, 
-                  borderRadius: 6, 
-                  background: item.label === "CV Analysis" ? D.blue : D.surface,
-                  display: "flex", 
-                  alignItems: "center", 
+                <div style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  background: isCurrent(item.path) ? D.blue : D.surface,
+                  display: "flex",
+                  alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0
                 }}>
-                  <div style={{ color: item.label === "CV Analysis" ? "#fff" : D.sub }}>
+                  <div style={{ color: isCurrent(item.path) ? "#fff" : D.sub }}>
                     {item.icon}
                   </div>
                 </div>
-                <span style={{ 
-                  fontSize: 12.5, 
-                  fontWeight: 500, 
-                  color: item.label === "CV Analysis" ? D.blue : D.sub,
+                <span style={{
+                  fontSize: 12.5,
+                  fontWeight: isCurrent(item.path) ? 600 : 500,
+                  color: isCurrent(item.path) ? D.blue : D.sub,
                   flex: 1
                 }}>
                   {item.label}
@@ -388,6 +431,23 @@ export const LeftSidebar: React.FC = () => {
           }}>
             JOB POSTINGS
           </div>
+          {jobError && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: 8,
+                padding: "7px 9px",
+                borderRadius: 5,
+                background: `${D.red}0D`,
+                border: `1px solid ${D.red}28`,
+                color: D.red,
+                fontSize: 11,
+                lineHeight: 1.5,
+              }}
+            >
+              {jobError}
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {jobPostings.map((job) => {
               const isHovered = hoveredJobId === job.id;
@@ -644,7 +704,7 @@ export const LeftSidebar: React.FC = () => {
                       {/* Option 5: Delete Job Posting */}
                       <button
                         type="button"
-                        onClick={(e) => handleDeleteJob(e, job)}
+                        onClick={(e) => askDeleteJob(e, job)}
                         style={{
                           display: "flex",
                           alignItems: "center",
@@ -719,5 +779,6 @@ export const LeftSidebar: React.FC = () => {
       )}
     </div>
     </div>
+    </>
   );
 };

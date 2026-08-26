@@ -86,3 +86,7 @@ context.md
 # Build artifact của TypeScript. Trước đây bị commit nên mỗi lần merge lại đẻ ra
 # một conflict vô nghĩa (nội dung là cache biên dịch, không ai đọc được).
 *.tsbuildinfo
+
+# Supabase CLI ghi trạng thái liên kết dự án vào đây (project ref, org id).
+# Là trạng thái cục bộ của từng máy, không phải cấu hình dùng chung.
+supabase/.temp/

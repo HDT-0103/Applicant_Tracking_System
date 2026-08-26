@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "../../components/AppHeader";
 import { api } from "../../services/httpClient";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAuth } from "../../contexts/AuthContext";
 import { ALL_ROLES, ROLE_LABELS, type UserRole } from "../../lib/rbac";
 import { D } from "../../lib/shared";
@@ -169,6 +170,9 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("users");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Phiên đang chờ xác nhận thu hồi. `null` = hộp thoại đóng. */
+  const [revokingJti, setRevokingJti] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState(false);
 
   const [users, setUsers] = useState<UserRow[]>([]);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
@@ -239,7 +243,7 @@ export default function AdminDashboard() {
         return next;
       });
     } catch (err) {
-      alert("Failed to update user: " + (err instanceof Error ? err.message : "Error"));
+      setError("Failed to update user: " + (err instanceof Error ? err.message : "Error"));
     } finally {
       setSavingId(null);
     }
@@ -250,17 +254,23 @@ export default function AdminDashboard() {
       const updated = await api.put<Policy>(`/api/admin/abac/policies/${policy.id}`, { is_masked: !policy.is_masked });
       setPolicies((prev) => prev.map((p) => (p.id === policy.id ? updated : p)));
     } catch (err) {
-      alert("Failed to toggle policy: " + (err instanceof Error ? err.message : "Error"));
+      setError("Failed to toggle policy: " + (err instanceof Error ? err.message : "Error"));
     }
   };
 
-  const handleRevokeSession = async (jti: string) => {
-    if (!window.confirm("Revoke this session? The user will be logged out immediately.")) return;
+  const handleRevokeSession = async () => {
+    const jti = revokingJti;
+    if (!jti) return;
+    setRevoking(true);
+    setError(null);
     try {
       await api.post(`/api/admin/sessions/${jti}/revoke`);
       setSessions((prev) => prev.map((s) => (s.jti === jti ? { ...s, is_revoked: true } : s)));
+      setRevokingJti(null);
     } catch (err) {
-      alert("Failed to revoke session: " + (err instanceof Error ? err.message : "Error"));
+      setError("Failed to revoke session: " + (err instanceof Error ? err.message : "Error"));
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -321,6 +331,16 @@ export default function AdminDashboard() {
 
         {/* Content */}
         <main style={{ flex: 1, overflowY: "auto", padding: "32px 36px", background: D.bg }}>
+          <ConfirmDialog
+            open={revokingJti !== null}
+            title="Revoke this session?"
+            message="The user will be signed out immediately and will have to log in again. Any work they have not saved is lost."
+            confirmLabel="Revoke session"
+            busy={revoking}
+            onCancel={() => setRevokingJti(null)}
+            onConfirm={handleRevokeSession}
+          />
+
           {error && (
             <div style={{ background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, padding: "12px 16px", color: D.red, fontSize: 13.5, marginBottom: 22 }}>
               {error}
@@ -478,7 +498,7 @@ export default function AdminDashboard() {
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
                               {!s.is_revoked && (
-                                <button onClick={() => handleRevokeSession(s.jti)} style={{ padding: "4px 10px", background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, color: D.red, cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>Kill Token</button>
+                                <button type="button" onClick={() => setRevokingJti(s.jti)} style={{ padding: "4px 10px", background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, color: D.red, cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>Kill Token</button>
                               )}
                             </td>
                           </tr>

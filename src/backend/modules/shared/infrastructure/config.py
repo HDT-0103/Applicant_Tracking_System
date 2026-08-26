@@ -23,19 +23,28 @@ if ENV_PATH.exists():
 
 
 class Settings(BaseSettings):
+    # MỘT khai báo duy nhất. Trước đây lớp này gán `model_config` hai lần và
+    # lần sau ghi đè lần đầu, nên `populate_by_name=True` bị mất im lặng —
+    # `Settings.model_config["populate_by_name"]` trả về None. Hiện chưa gây
+    # lỗi vì mọi field trùng tên đều trỏ về cùng biến môi trường, nhưng field
+    # tiếp theo dựa vào việc gán được bằng tên Python sẽ hỏng mà không báo.
     model_config = SettingsConfigDict(
+        env_file=".env",
         extra="ignore",
         populate_by_name=True,
     )
-    
+
+    # Bốn biến BẮT BUỘC — thiếu là app không khởi động được, đúng như mong đợi.
+    # Chúng dùng tên viết hoa vì đó cũng chính là tên biến môi trường; các
+    # field bên dưới dùng tên Python thường kèm `alias`. Hai lối đặt tên trong
+    # cùng một lớp là nợ kỹ thuật, nhưng gộp lại phải sửa cả nơi gọi nên để
+    # riêng một lượt.
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    
     app_name: str = Field(default="SmartATS", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
     app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
