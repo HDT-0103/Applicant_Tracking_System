@@ -3,13 +3,16 @@ from typing import Annotated, Optional
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
 from modules.ingestion.application.azure_ingestion_service import AzureIngestionService
 from modules.ingestion.domain.models import IngestionResponse
 from modules.ingestion.infra.azure_blob_service import BLOB_CONTAINER_NAME, AzureBlobService
 from modules.ingestion.infra.azure_service_bus_service import AzureServiceBusService
 from modules.enrichment.application.enrichment_service import enrichment_worker
+from modules.auth.domain.models import AuthUser
+from modules.shared.infrastructure.auth_dependencies import require_operational_roles
+from modules.shared.infrastructure.rate_limit import ingest_rate_limit
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 
@@ -86,14 +89,33 @@ def _assert_job_accepts_applications(job_id: str, settings: Settings) -> None:
 def get_azure_ingestion_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AzureIngestionService:
-    blob_service = AzureBlobService(settings)
-    service_bus_service = AzureServiceBusService(settings)
-    return AzureIngestionService(
-        blob_service=blob_service, service_bus_service=service_bus_service, settings=settings
-    )
+    """Dựng đường nạp CV. Thiếu cấu hình Azure thì báo 503, không phải 500.
+
+    `AzureServiceBusService.__init__` ném ValueError khi thiếu connection
+    string. Trước đây lỗi đó lọt thẳng ra ngoài thành 500 "unexpected error" —
+    ứng viên đang nộp hồ sơ đọc được đúng một câu vô nghĩa, còn người vận hành
+    thì phải mở log mới biết chỉ là thiếu một biến môi trường.
+    """
+    try:
+        return AzureIngestionService(
+            blob_service=AzureBlobService(settings),
+            service_bus_service=AzureServiceBusService(settings),
+            settings=settings,
+        )
+    except ValueError as exc:
+        logger.error("ingestion.azure_not_configured", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="CV submission is temporarily unavailable. Please try again later.",
+        ) from exc
 
 
-@router.post("/ingest", response_model=IngestionResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/ingest",
+    response_model=IngestionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(ingest_rate_limit)],
+)
 async def ingest_cv(
     file: Annotated[UploadFile, File(...)],
     background_tasks: BackgroundTasks,
@@ -194,53 +216,105 @@ async def ingest_cv(
         ) from exc
 
 
-@router.get("/candidates/{candidate_uuid}/cv")
+class CandidateCvLink(BaseModel):
+    """Đường dẫn tạm để xem CV."""
+
+    url: str
+    #: Giây còn lại trước khi link hết hạn, hoặc None nếu link không có hạn.
+    expires_in_seconds: Optional[int] = None
+
+
+#: Link SAS sống bấy nhiêu lâu. Đủ để đọc xong một CV, không đủ để phát tán.
+CV_LINK_TTL = timedelta(minutes=15)
+
+
+@router.get("/candidates/{candidate_uuid}/cv", response_model=CandidateCvLink)
 async def get_candidate_cv(
     candidate_uuid: str,
-    settings: Settings = Depends(get_settings),
-):
-    """
-    Safely generate a temporary 60-minute SAS Token or retrieve CV URL for candidate.
-    Prevents 403 Forbidden errors when viewing/downloading CVs.
+    settings: Annotated[Settings, Depends(get_settings)],
+    _user: Annotated[AuthUser, Depends(require_operational_roles())],
+) -> CandidateCvLink:
+    """Cấp một đường dẫn tạm để xem CV của ứng viên.
+
+    Hai thay đổi so với bản trước, và cả hai đều cần thiết:
+
+    1. **Có xác thực.** Endpoint này từng mở hoàn toàn — biết `candidate_uuid`
+       là tải được CV, không cần tài khoản. Nó mở vì nút bấm ở giao diện dùng
+       `window.open`, mà điều hướng của trình duyệt thì không gắn được header
+       `Authorization`.
+    2. **Trả JSON thay vì 302.** Đó chính là cách gỡ mâu thuẫn trên: frontend
+       gọi endpoint này bằng `fetch` có token, nhận link, rồi mới mở link. Một
+       redirect thì buộc phải đi bằng điều hướng, tức là buộc phải để ngỏ.
+
+    Hạn link cũng rút từ 1 giờ xuống 15 phút: SAS URL không kiểm tra danh tính
+    người mở, nên thời gian sống của nó chính là cửa sổ để nó bị chuyển tiếp.
     """
     client = get_supabase_client(settings)
-    cv_url = None
+    stored_path = None
     if client:
         try:
-            res = client.table("candidates").select("cv_file_path").eq("uuid", candidate_uuid).limit(1).execute()
+            res = (
+                client.table("candidates")
+                .select("cv_file_path")
+                .eq("uuid", candidate_uuid)
+                .limit(1)
+                .execute()
+            )
             if res.data and res.data[0].get("cv_file_path"):
-                cv_url = res.data[0]["cv_file_path"]
+                stored_path = res.data[0]["cv_file_path"]
         except Exception as exc:
-            logger.warning("cv.supabase_lookup_failed", candidate_uuid=candidate_uuid, error=str(exc))
+            logger.warning(
+                "cv.supabase_lookup_failed", candidate_uuid=candidate_uuid, error=str(exc)
+            )
 
-    conn_str = getattr(settings, "azure_storage_connection_string", "")
-    if conn_str:
-        try:
-            from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
-            
-            blob_service_client = BlobServiceClient.from_connection_string(conn_str)
-            account_name = blob_service_client.account_name
-            account_key = getattr(blob_service_client.credential, "account_key", None)
+    sas_url = _build_sas_url(candidate_uuid, settings)
+    if sas_url:
+        return CandidateCvLink(
+            url=sas_url, expires_in_seconds=int(CV_LINK_TTL.total_seconds())
+        )
 
-            if account_name and account_key:
-                sas_token = generate_blob_sas(
-                    account_name=account_name,
-                    container_name=BLOB_CONTAINER_NAME,
-                    blob_name=f"{candidate_uuid}.pdf",
-                    account_key=account_key,
-                    permission=BlobSasPermissions(read=True),
-                    expiry=datetime.now(timezone.utc) + timedelta(hours=1)
-                )
-                sas_url = f"https://{account_name}.blob.core.windows.net/{BLOB_CONTAINER_NAME}/{candidate_uuid}.pdf?{sas_token}"
-                return RedirectResponse(url=sas_url)
-        except Exception as exc:
-            logger.warning("cv.azure_sas_failed", candidate_uuid=candidate_uuid, error=str(exc))
-
-    if cv_url:
-        return RedirectResponse(url=cv_url)
+    if stored_path:
+        return CandidateCvLink(url=stored_path)
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail="CV file for this candidate was not found."
+        detail="CV file for this candidate was not found.",
     )
 
+
+def _build_sas_url(candidate_uuid: str, settings: Settings) -> Optional[str]:
+    """Ký một SAS URL chỉ-đọc cho blob CV. `None` nếu không ký được."""
+    conn_str = getattr(settings, "azure_storage_connection_string", "")
+    if not conn_str:
+        return None
+
+    try:
+        from azure.storage.blob import (
+            BlobSasPermissions,
+            BlobServiceClient,
+            generate_blob_sas,
+        )
+
+        blob_service_client = BlobServiceClient.from_connection_string(conn_str)
+        account_name = blob_service_client.account_name
+        account_key = getattr(blob_service_client.credential, "account_key", None)
+        if not (account_name and account_key):
+            return None
+
+        sas_token = generate_blob_sas(
+            account_name=account_name,
+            container_name=BLOB_CONTAINER_NAME,
+            blob_name=f"{candidate_uuid}.pdf",
+            account_key=account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + CV_LINK_TTL,
+        )
+        return (
+            f"https://{account_name}.blob.core.windows.net/"
+            f"{BLOB_CONTAINER_NAME}/{candidate_uuid}.pdf?{sas_token}"
+        )
+    except Exception as exc:
+        logger.warning(
+            "cv.azure_sas_failed", candidate_uuid=candidate_uuid, error=str(exc)
+        )
+        return None

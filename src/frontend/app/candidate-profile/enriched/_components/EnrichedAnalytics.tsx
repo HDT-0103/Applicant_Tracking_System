@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Shield, GitBranch, Cpu, Globe, Calendar, FileText } from "lucide-react";
 import { D, Dot, SectionLabel, Divider } from "@/lib/shared";
 import { api } from "@/services/httpClient";
+import { openCandidateCv } from "@/services/candidateCvService";
 import { type ReviewStatus } from "@/services/reviewService";
 import { MatchConfidence } from "./MatchConfidence";
 import { SkillMatchPanel } from "@/components/SkillMatchPanel";
@@ -28,6 +29,7 @@ export function EnrichedAnalytics({
   onRefreshReview: () => void;
 }) {
   const router = useRouter();
+  const [cvError, setCvError] = React.useState<string | null>(null);
   const repoCount = data?.github?.public_repos_count ?? 0;
   const skillsCount = data?.analytics?.semantic_tags?.length ?? 0;
   const roleCount = data?.linkedin?.experiences?.length ?? 0;
@@ -86,9 +88,15 @@ export function EnrichedAnalytics({
           {candidateUuid && (
             <button
               type="button"
-              onClick={() => {
-                const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-                window.open(`${apiBase}/api/v1/candidates/${candidateUuid}/cv`, '_blank');
+              onClick={async () => {
+                setCvError(null);
+                try {
+                  await openCandidateCv(candidateUuid);
+                } catch (err) {
+                  setCvError(
+                    err instanceof Error ? err.message : "Could not open this CV.",
+                  );
+                }
               }}
               style={{
                 display: "flex",
@@ -108,6 +116,11 @@ export function EnrichedAnalytics({
               <FileText size={12} strokeWidth={2} color={D.blue} />
               <span>View Original CV</span>
             </button>
+          )}
+          {cvError && (
+            <span role="alert" style={{ fontSize: 10, color: D.red, maxWidth: 180 }}>
+              {cvError}
+            </span>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Dot color={D.mint} pulse />

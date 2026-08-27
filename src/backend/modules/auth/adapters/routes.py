@@ -16,6 +16,10 @@ from modules.auth.domain.models import (
 from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
 from modules.shared.infrastructure.config import Settings, get_settings
+from modules.shared.infrastructure.rate_limit import (
+    login_rate_limit,
+    register_rate_limit,
+)
 from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
 
 logger = structlog.get_logger(__name__)
@@ -55,7 +59,11 @@ async def google_login(
         ) from exc
 
 
-@router.post("/login", response_model=AuthTokenResponse)
+@router.post(
+    "/login",
+    response_model=AuthTokenResponse,
+    dependencies=[Depends(login_rate_limit)],
+)
 async def email_password_login(
     payload: LoginRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
@@ -75,7 +83,11 @@ async def email_password_login(
         ) from exc
 
 
-@router.post("/register", response_model=AuthTokenResponse)
+@router.post(
+    "/register",
+    response_model=AuthTokenResponse,
+    dependencies=[Depends(register_rate_limit)],
+)
 async def email_password_register(
     payload: RegisterRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, KeyboardEvent } from "react";
 import { useRouter, useParams } from 'next/navigation';
+import Link from "next/link";
 import { D } from "../../../lib/shared";
 // Deliberately the RAW client, not `lib/db`.
 //
@@ -1176,14 +1177,14 @@ export default function CareersPortalPage() {
               <StatusPanel tone="amber" icon={Clock} title="Applications are closed">
                 <strong style={{ color: D.ink }}>{selectedJob?.job_title}</strong> is no longer
                 accepting applications. Browse our other open roles at{" "}
-                <a href="/careers" className="font-medium" style={{ color: D.blue }}>/careers</a>.
+                <Link href="/careers" className="font-medium" style={{ color: D.blue }}>/careers</Link>.
               </StatusPanel>
             )}
 
             {resolution === "notfound" && (
               <StatusPanel tone="muted" icon={Search} title="Position not found">
                 This link may be outdated or the posting was removed. See our{" "}
-                <a href="/careers" className="font-medium" style={{ color: D.blue }}>open positions</a>.
+                <Link href="/careers" className="font-medium" style={{ color: D.blue }}>open positions</Link>.
               </StatusPanel>
             )}
 

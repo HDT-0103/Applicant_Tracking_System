@@ -44,7 +44,10 @@ scikit-learn>=1.6,<2.0
 sentence-transformers>=3.3,<4.0
 
 # Resume parsing and document processing
-pypdf>=5.1,<6.0
+# Trần <6.0 đã được nới: pypdf 5.x còn 4 lỗ hổng chưa vá (PYSEC-2026-1829/
+# 1830/1832/1833), mà đây chính là thư viện đọc PDF do người lạ tải lên qua
+# form ứng tuyển công khai — nơi đầu vào không đáng tin nhất trong hệ thống.
+pypdf>=6.6,<7.0
 pymupdf>=1.25,<2.0  # `import fitz` trong app/services/parser_service.py
 python-docx>=1.1,<2.0
 markdownify>=0.13.0,<1.0
@@ -61,6 +64,17 @@ apify-client>=1.7,<3.0  # LinkedIn scraping (modules/enrichment). Được impor
 google-api-python-client>=2.159,<3.0
 google-auth>=2.37,<3.0
 google-auth-oauthlib>=1.2,<2.0
+
+# Sàn bảo mật cho phụ thuộc BẮC CẦU.
+#
+# Ba gói dưới đây không được import trực tiếp ở đâu cả — chúng đi kèm httpx,
+# supabase và các thư viện Google. Nhưng pip-audit báo lỗ hổng đã có bản vá ở
+# chính chúng, mà không có ràng buộc nào ở đây thì một máy cài mới vẫn kéo về
+# bản cũ. Ghim SÀN chứ không ghim cứng: mục đích là chặn bản đã biết lỗi, chứ
+# không phải giữ cả cây phụ thuộc đứng yên.
+aiohttp>=3.14.3        # PYSEC-2026-3545/3546/3547
+cryptography>=50.0.0   # PYSEC-2026-3552
+h2>=4.4.1              # PYSEC-2026-3628
 
 # Observability and testing
 structlog>=24.4,<25.0

@@ -20,10 +20,16 @@ client_secret.json
 client_secrets.json
 auth_token.json
 
-# Local test & scratch scripts
-test_*.py
-test_token.py
-test_query.py
+# Local test & scratch scripts.
+#
+# Neo vào GỐC repo bằng dấu "/" đứng đầu. Không có nó, "test_*.py" khớp ở MỌI
+# độ sâu — kể cả src/backend/tests/ — nên mỗi file test mới viết ra đều bị git
+# lặng lẽ bỏ qua. Bộ test hiện tại chỉ nằm trong repo vì nó có trước luật này;
+# mọi file thêm sau đều biến mất, và người viết chỉ phát hiện khi CI chạy ít
+# test hơn máy mình.
+/test_*.py
+/test_token.py
+/test_query.py
 scratch/
 
 # Python
