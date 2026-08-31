@@ -40,6 +40,16 @@ class EmailNotifier:
         self._app_timezone = app_timezone
 
     @property
+    def enabled(self) -> bool:
+        """Có gửi thư thật được không.
+
+        Thiếu SMTP thì mọi hàm gửi vẫn chạy hết phần soạn nội dung và ghi log,
+        nhưng KHÔNG gửi gì — và phải nói ra điều đó. Xem ghi chú ở
+        `send_room_details`.
+        """
+        return bool(self._smtp_username and self._smtp_password)
+
+    @property
     def timezone(self) -> str:
         """Múi giờ dùng cho mọi mốc thời gian trong thư.
 
@@ -128,11 +138,14 @@ class EmailNotifier:
                     )
                     return False
             else:
-                logger.info(
-                    "scheduling.email.mock_sent",
+                # warning, không phải info: chưa cấu hình SMTP nghĩa là người
+                # phỏng vấn KHÔNG nhận được thư mời nào cả.
+                logger.warning(
+                    "scheduling.email.not_configured",
                     to=email, slot_id=slot.id,
                     body=body_text,
                 )
+                return False
 
         return True
 
@@ -180,5 +193,15 @@ class EmailNotifier:
                 logger.error("scheduling.email.room_details_failed", to=candidate_email, error=str(e))
                 return False
         else:
-            logger.info("scheduling.email.mock_room_details_sent", to=candidate_email, body=body_text)
-            return True
+            # Trả về False chứ KHÔNG phải True.
+            #
+            # Trước đây nhánh này trả True, nên route báo với HR "Interview
+            # details sent to <email>" trong khi không có thư nào rời khỏi máy
+            # chủ. HR tin rằng ứng viên đã biết phòng và địa chỉ; ứng viên thì
+            # không biết gì. Ghi log rồi báo thành công là kiểu hỏng tệ nhất —
+            # nó không phân biệt được với thành công thật.
+            logger.warning(
+                "scheduling.email.not_configured",
+                to=candidate_email, body=body_text,
+            )
+            return False

@@ -5,6 +5,7 @@ import structlog
 
 from modules.scheduling.domain.errors import (
     CandidateContactMissingError,
+    NotificationNotSentError,
     SlotNotFoundError,
 )
 from modules.scheduling.domain.models import (
@@ -76,13 +77,24 @@ class SchedulingService:
         local_start = to_local_tz(slot.start_time, self._email_notifier.timezone)
         slot_time = local_start.strftime("%A, %B %d, %Y at %I:%M %p (%Z)")
 
-        await self._email_notifier.send_room_details(
+        sent = await self._email_notifier.send_room_details(
             candidate_name=contact.full_name,
             candidate_email=contact.email,
             slot_time=slot_time,
             room=room,
             address=address,
         )
+        if not sent:
+            # KHÔNG báo thành công cho việc chưa xảy ra. HR đọc câu "đã gửi"
+            # rồi thôi không liên hệ ứng viên nữa; nếu thư không đi thì ứng
+            # viên đến sai chỗ, hoặc không đến.
+            logger.error(
+                "scheduling.details_not_sent",
+                slot_id=slot_id,
+                candidate_id=slot.candidate_id,
+            )
+            raise NotificationNotSentError(contact.email)
+
         logger.info(
             "scheduling.details_sent", slot_id=slot_id, candidate_id=slot.candidate_id
         )
