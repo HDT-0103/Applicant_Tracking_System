@@ -1,8 +1,8 @@
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence, Set
 
 from supabase import Client
 
-from modules.review.domain.models import CvReview
+from modules.review.domain.models import CvReview, PanelMember
 from modules.review.domain.repo_interface import IReviewRepo
 
 
@@ -68,21 +68,158 @@ class SupabaseReviewRepo(IReviewRepo):
             on_conflict="candidate_uuid,reviewer_id",
         ).execute()
 
+    # ── Hội đồng theo tin tuyển dụng ───────────────────────────────────
+
+    async def _get_application(self, candidate_uuid: str) -> Optional[dict]:
+        """Đơn ứng tuyển mới nhất của ứng viên: nguồn của cả job lẫn sĩ số chốt."""
+        res = (
+            self._client.table("applications")
+            .select("id, job_posting_id, review_panel_size")
+            .eq("candidate_id", candidate_uuid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return (res.data or [None])[0]
+
+    async def count_panel(self, job_posting_id: str) -> int:
+        res = (
+            self._client.table("job_posting_reviewers")
+            .select("reviewer_id", count="exact")
+            .eq("job_posting_id", job_posting_id)
+            .execute()
+        )
+        return res.count or 0
+
     async def get_panel_size(self, candidate_uuid: str) -> int:
-        # Chỉ đếm tech lead CÒN hoạt động và đã được duyệt tài khoản. Đếm cả
-        # người đã nghỉ thì mẫu số phình ra và không hồ sơ nào đủ 80%.
-        #
-        # Vẫn là hội đồng chung toàn hệ thống, chưa gắn theo tin tuyển dụng —
-        # xem ghi chú ở IReviewRepo.get_panel_size.
+        application = await self._get_application(candidate_uuid)
+        if not application:
+            # Không có đơn ứng tuyển thì không có tin tuyển dụng, không có hội
+            # đồng. Trả 0; service quy ra "chưa chấm được" chứ không tự đậu.
+            return 0
+
+        frozen = application.get("review_panel_size")
+        if frozen:
+            return frozen
+
+        job_posting_id = application.get("job_posting_id")
+        if not job_posting_id:
+            return 0
+        return await self.count_panel(job_posting_id)
+
+    async def freeze_panel_size(self, candidate_uuid: str, size: int) -> None:
+        application = await self._get_application(candidate_uuid)
+        if not application or application.get("review_panel_size"):
+            # Đã chốt rồi thì thôi. Ghi đè sẽ làm đúng cái việc mà cột này sinh
+            # ra để ngăn: đổi ngưỡng của một hồ sơ đang chấm dở.
+            return
+
+        self._client.table("applications").update(
+            {"review_panel_size": size}
+        ).eq("id", application["id"]).execute()
+
+    async def is_panel_member(self, candidate_uuid: str, reviewer_id: str) -> bool:
+        application = await self._get_application(candidate_uuid)
+        job_posting_id = application.get("job_posting_id") if application else None
+        if not job_posting_id:
+            return False
+
+        res = (
+            self._client.table("job_posting_reviewers")
+            .select("reviewer_id")
+            .eq("job_posting_id", job_posting_id)
+            .eq("reviewer_id", reviewer_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(res.data)
+
+    async def filter_accessible(
+        self, candidate_uuids: Sequence[str], reviewer_id: str
+    ) -> Set[str]:
+        if not candidate_uuids:
+            return set()
+
+        # (1) những tin tuyển dụng người này được mời chấm
+        panels = (
+            self._client.table("job_posting_reviewers")
+            .select("job_posting_id")
+            .eq("reviewer_id", reviewer_id)
+            .execute()
+        )
+        job_ids = [row["job_posting_id"] for row in panels.data or []]
+        if not job_ids:
+            return set()
+
+        # (2) trong danh sách được hỏi, ai nộp vào những tin đó
+        apps = (
+            self._client.table("applications")
+            .select("candidate_id")
+            .in_("candidate_id", list(candidate_uuids))
+            .in_("job_posting_id", job_ids)
+            .execute()
+        )
+        return {row["candidate_id"] for row in apps.data or []}
+
+    async def get_panel(self, job_posting_id: str) -> List[PanelMember]:
+        res = (
+            self._client.table("job_posting_reviewers")
+            .select("reviewer_id, invited_at, users!job_posting_reviewers_reviewer_id_fkey(name, email)")
+            .eq("job_posting_id", job_posting_id)
+            .execute()
+        )
+
+        members = []
+        for row in res.data or []:
+            user = row.get("users") or {}
+            members.append(
+                PanelMember(
+                    reviewer_id=row["reviewer_id"],
+                    name=user.get("name") or "Unknown",
+                    email=user.get("email") or "",
+                    invited_at=row["invited_at"],
+                )
+            )
+        return members
+
+    async def list_available_reviewers(self) -> List[PanelMember]:
         res = (
             self._client.table("users")
-            .select("id", count="exact")
+            .select("id, name, email")
             .eq("role", "tech_lead")
             .eq("is_active", True)
             .eq("is_approved", True)
+            .order("name")
             .execute()
         )
-        return res.count or 1
+        return [
+            PanelMember(
+                reviewer_id=row["id"],
+                name=row.get("name") or "Unknown",
+                email=row.get("email") or "",
+                invited_at="",
+            )
+            for row in res.data or []
+        ]
+
+    async def add_panel_member(
+        self, job_posting_id: str, reviewer_id: str, invited_by: str
+    ) -> None:
+        # upsert chứ không insert: mời lại người đã có trong hội đồng là thao
+        # tác vô hại, không đáng ném lỗi trùng khoá vào mặt HR.
+        self._client.table("job_posting_reviewers").upsert(
+            {
+                "job_posting_id": job_posting_id,
+                "reviewer_id": reviewer_id,
+                "invited_by": invited_by,
+            },
+            on_conflict="job_posting_id,reviewer_id",
+        ).execute()
+
+    async def remove_panel_member(self, job_posting_id: str, reviewer_id: str) -> None:
+        self._client.table("job_posting_reviewers").delete().eq(
+            "job_posting_id", job_posting_id
+        ).eq("reviewer_id", reviewer_id).execute()
 
     async def set_application_status(self, candidate_uuid: str, status: str) -> None:
         self._client.table("applications").update({"status": status}).eq(

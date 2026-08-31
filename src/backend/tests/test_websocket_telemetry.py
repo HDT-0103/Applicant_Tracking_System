@@ -30,6 +30,27 @@ from modules.enrichment.domain.models import (
 )
 
 
+class _PanelStub:
+    """Repo review tối giản cho các test WebSocket.
+
+    Kênh này trả nguyên payload enrichment, nên từ V008 nó cũng phải hỏi hội
+    đồng như phía HTTP. Những test dưới đây kiểm việc CHE dữ liệu, không kiểm
+    việc phân hội đồng — nên chúng cấp sẵn quyền và để test riêng lo phần kia.
+    """
+
+    async def is_panel_member(self, candidate_uuid, reviewer_id):
+        return True
+
+
+@pytest.fixture(autouse=True)
+def on_panel():
+    from modules.review.adapters.routes import get_review_repo
+
+    app.dependency_overrides[get_review_repo] = lambda: _PanelStub()
+    yield
+    app.dependency_overrides.pop(get_review_repo, None)
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -202,3 +223,29 @@ async def test_websocket_telemetry_broadcast_failure_payload():
         })
     finally:
         active_websockets.pop(uuid, None)
+
+
+def test_a_tech_lead_off_the_panel_is_disconnected(client):
+    """Kênh WebSocket phải theo cùng luật hội đồng như phía HTTP.
+
+    Nó phát nguyên payload enrichment, nên bỏ sót ở đây là mở lại đúng cái cửa
+    mà endpoint HTTP vừa đóng — chỉ khác đường vào.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
+    from modules.review.adapters.routes import get_review_repo
+
+    class _OffPanel:
+        async def is_panel_member(self, candidate_uuid, reviewer_id):
+            return False
+
+    app.dependency_overrides[get_review_repo] = lambda: _OffPanel()
+    try:
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(
+                "/api/enrichment/ws/v1/analysis/some-candidate"
+            ) as ws:
+                ws.send_json({"token": _token("tech_lead")})
+                ws.receive_json()
+    finally:
+        app.dependency_overrides[get_review_repo] = lambda: _PanelStub()

@@ -11,6 +11,7 @@ from modules.review.domain.models import (
     ReviewStatus,
     TLReviewSummary,
 )
+from modules.review.domain.models import PanelMember
 from modules.review.domain.repo_interface import IReviewRepo
 
 logger = structlog.get_logger(__name__)
@@ -27,6 +28,44 @@ class ReviewService:
     def __init__(self, repo: IReviewRepo):
         self._repo = repo
 
+    # ── Quyền ──────────────────────────────────────────────────────────────
+
+    async def may_access_candidate(self, candidate_uuid: str, user_id: str, role: str) -> bool:
+        """Người này có được XEM hồ sơ ứng viên này không?
+
+        `hr` thấy mọi hồ sơ — đó là công việc của họ. `tech_lead` chỉ thấy hồ
+        sơ ứng tuyển vào tin mà họ được mời chấm: hồ sơ chứa PII, và một tech
+        lead không nằm trong hội đồng thì không có lý do nghiệp vụ nào để mở nó.
+
+        Vai trò lạ trả về False. Fail-closed: thêm một role mới mà quên khai ở
+        đây thì nó KHÔNG được cấp quyền theo mặc định.
+        """
+        if role == "hr":
+            return True
+        if role != "tech_lead":
+            return False
+        return await self._repo.is_panel_member(candidate_uuid, user_id)
+
+    # ── Hội đồng ───────────────────────────────────────────────────────────
+
+    async def get_panel(self, job_posting_id: str) -> List[PanelMember]:
+        return await self._repo.get_panel(job_posting_id)
+
+    async def list_available_reviewers(self) -> List[PanelMember]:
+        return await self._repo.list_available_reviewers()
+
+    async def invite_reviewer(
+        self, job_posting_id: str, reviewer_id: str, invited_by: str
+    ) -> List[PanelMember]:
+        await self._repo.add_panel_member(job_posting_id, reviewer_id, invited_by)
+        return await self._repo.get_panel(job_posting_id)
+
+    async def remove_reviewer(
+        self, job_posting_id: str, reviewer_id: str
+    ) -> List[PanelMember]:
+        await self._repo.remove_panel_member(job_posting_id, reviewer_id)
+        return await self._repo.get_panel(job_posting_id)
+
     # ── Đọc ────────────────────────────────────────────────────────────────
     # Đường đọc TUYỆT ĐỐI không ghi. Trước đây `_aggregate_status` tiện tay
     # update bảng `applications`, nên một GET /api/review/{uuid} — thứ mà
@@ -39,10 +78,25 @@ class ReviewService:
         return self._aggregate(candidate_uuid, reviews, panel_size)
 
     async def get_statuses(
-        self, candidate_uuids: Sequence[str]
+        self, candidate_uuids: Sequence[str], user_id: str, role: str
     ) -> Dict[str, ReviewStatus]:
-        """Trạng thái của nhiều ứng viên trong một lượt, cho dashboard."""
+        """Trạng thái của nhiều ứng viên trong một lượt, cho dashboard.
+
+        Lọc theo quyền trước khi đọc: hồ sơ mà người gọi không được xem thì
+        KHÔNG có mặt trong kết quả — không phải trả về rỗng, mà là vắng hẳn.
+        Một mục "đang chờ hội đồng" cho ứng viên lạ vẫn tiết lộ rằng người đó
+        có ứng tuyển.
+        """
         unique = list(dict.fromkeys(candidate_uuids))
+        if not unique:
+            return {}
+
+        if role == "tech_lead":
+            allowed = await self._repo.filter_accessible(unique, user_id)
+            unique = [u for u in unique if u in allowed]
+        elif role != "hr":
+            return {}
+
         if not unique:
             return {}
 
@@ -68,6 +122,13 @@ class ReviewService:
         decision: ReviewDecision,
         review_text: str = "",
     ) -> ReviewStatus:
+        # Chỉ người trong hội đồng mới bỏ phiếu được. Kiểm ở đây chứ không chỉ
+        # ẩn nút: gọi thẳng API vẫn qua được nếu chỉ chặn ở giao diện.
+        if not await self.may_access_candidate(candidate_uuid, reviewer_id, reviewer_role):
+            raise PermissionError(
+                "You are not on the review panel for this candidate's job posting."
+            )
+
         reviews = await self._repo.get_reviews(candidate_uuid)
         panel_size = await self._repo.get_panel_size(candidate_uuid)
         current = self._aggregate(candidate_uuid, reviews, panel_size)
@@ -81,6 +142,12 @@ class ReviewService:
                 "The Tech Lead panel must approve first — "
                 f"{current.panel_rule}"
             )
+
+        # CHỐT sĩ số tại lá phiếu đầu tiên, trước khi ghi phiếu đó. Từ giây này
+        # trở đi, HR mời thêm hay gỡ bớt tech lead không còn đổi được ngưỡng
+        # của hồ sơ đang chấm dở.
+        if not reviews and panel_size > 0:
+            await self._repo.freeze_panel_size(candidate_uuid, panel_size)
 
         existing = next((r for r in reviews if r.reviewer_id == reviewer_id), None)
         if existing:
@@ -135,7 +202,28 @@ class ReviewService:
         # Hội đồng không bao giờ nhỏ hơn số người đã thực sự bỏ phiếu. Nếu một
         # tech lead bị vô hiệu hoá sau khi chấm, mẫu số tụt xuống và tỉ lệ vọt
         # quá 100% — hồ sơ tự đậu.
-        size = max(panel_size, len(tl_reviews), 1)
+        size = max(panel_size, len(tl_reviews))
+        if size == 0:
+            # Tin tuyển dụng chưa mời tech lead nào. KHÔNG quy về hội đồng một
+            # người: như thế thì "chưa ai được giao chấm" trông giống hệt "hội
+            # đồng nhỏ", và hồ sơ có thể đậu bằng đúng một phiếu vu vơ. Đứng im
+            # ở waiting_for_tls và nói rõ vì sao.
+            return ReviewStatus(
+                candidate_uuid=candidate_uuid,
+                hr_decision=hr.decision if hr else "pending",
+                hr_review_text=hr.review_text if hr else "",
+                tl_reviews=[],
+                total_tls=0,
+                approved_tls=0,
+                rejected_tls=0,
+                required_tl_approvals=0,
+                panel_rule=(
+                    "Tin tuyển dụng này chưa có hội đồng Tech Lead. "
+                    "HR cần mời người chấm trước khi hồ sơ đi tiếp."
+                ),
+                overall_status="waiting_for_tls",
+            )
+
         need_approve = policy.required_approvals(size)
         need_reject = policy.blocking_rejections(size)
 

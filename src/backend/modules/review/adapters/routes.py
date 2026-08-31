@@ -5,10 +5,13 @@ from pydantic import BaseModel, Field
 
 from modules.auth.domain.models import AuthUser
 from modules.review.application.review_service import ReviewService
-from modules.review.domain.models import ReviewDecision, ReviewStatus
+from modules.review.domain.models import PanelMember, ReviewDecision, ReviewStatus
 from modules.review.domain.repo_interface import IReviewRepo
 from modules.review.infra.impl_supabase import SupabaseReviewRepo
-from modules.shared.infrastructure.auth_dependencies import require_operational_roles
+from modules.shared.infrastructure.auth_dependencies import (
+    require_operational_roles,
+    require_roles,
+)
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 
@@ -40,22 +43,76 @@ class SubmitReviewRequest(BaseModel):
     review_text: str = ""
 
 
+class InviteReviewerRequest(BaseModel):
+    reviewer_id: str
+
+
 class BatchStatusRequest(BaseModel):
     candidate_uuids: List[str] = Field(min_length=1, max_length=MAX_BATCH)
+
+
+@router.get("/reviewers", response_model=List[PanelMember])
+async def list_available_reviewers(
+    service: ServiceDep,
+    _current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
+) -> List[PanelMember]:
+    """Tech Lead mà HR có thể mời. Khai TRƯỚC /panels/{id} để không bị nuốt."""
+    return await service.list_available_reviewers()
+
+
+@router.get("/panels/{job_posting_id}", response_model=List[PanelMember])
+async def get_panel(
+    job_posting_id: str,
+    service: ServiceDep,
+    _current_user: Annotated[AuthUser, Depends(require_operational_roles())],
+) -> List[PanelMember]:
+    """Hội đồng Tech Lead của một tin tuyển dụng."""
+    return await service.get_panel(job_posting_id)
+
+
+@router.post("/panels/{job_posting_id}", response_model=List[PanelMember])
+async def invite_reviewer(
+    job_posting_id: str,
+    body: InviteReviewerRequest,
+    service: ServiceDep,
+    current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
+) -> List[PanelMember]:
+    """Mời một Tech Lead vào hội đồng. Chỉ HR mời được.
+
+    Quyết định ai chấm hồ sơ là quyết định nhân sự; để tech lead tự thêm mình
+    vào thì họ tự cấp quyền xem PII cho chính mình.
+    """
+    return await service.invite_reviewer(
+        job_posting_id=job_posting_id,
+        reviewer_id=body.reviewer_id,
+        invited_by=current_user.id,
+    )
+
+
+@router.delete("/panels/{job_posting_id}/{reviewer_id}", response_model=List[PanelMember])
+async def remove_reviewer(
+    job_posting_id: str,
+    reviewer_id: str,
+    service: ServiceDep,
+    _current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
+) -> List[PanelMember]:
+    return await service.remove_reviewer(job_posting_id, reviewer_id)
 
 
 @router.post("/batch", response_model=Dict[str, ReviewStatus])
 async def get_review_statuses(
     body: BatchStatusRequest,
     service: ServiceDep,
-    _current_user: Annotated[AuthUser, Depends(require_operational_roles())],
+    current_user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> Dict[str, ReviewStatus]:
     """Trạng thái review của nhiều ứng viên trong một request.
 
     Khai báo TRƯỚC `/{candidate_uuid}`: đăng ký sau thì "batch" sẽ bị route
     tham số nuốt mất và biến thành một candidate_uuid.
     """
-    return await service.get_statuses(body.candidate_uuids)
+    return await service.get_statuses(
+        body.candidate_uuids, user_id=current_user.id, role=current_user.role
+    )
 
 
 @router.post("/{candidate_uuid}", response_model=ReviewStatus)
@@ -78,6 +135,8 @@ async def submit_review(
             decision=body.decision,
             review_text=body.review_text,
         )
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -89,6 +148,14 @@ async def submit_review(
 async def get_review_status(
     candidate_uuid: str,
     service: ServiceDep,
-    _current_user: Annotated[AuthUser, Depends(require_operational_roles())],
+    current_user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> ReviewStatus:
+    # 404 chứ không 403: 403 xác nhận ứng viên đó tồn tại, biến endpoint thành
+    # công cụ dò xem một người có ứng tuyển hay không.
+    if not await service.may_access_candidate(
+        candidate_uuid, current_user.id, current_user.role
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found."
+        )
     return await service.get_status(candidate_uuid)

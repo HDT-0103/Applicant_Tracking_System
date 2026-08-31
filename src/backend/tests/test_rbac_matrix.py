@@ -113,6 +113,43 @@ def test_token_without_valid_role_is_rejected(bad):
 # Ma trận endpoint
 # --------------------------------------------------------------------------
 
+class _PanelStub:
+    """Repo review tối giản: chỉ trả lời câu hỏi về quyền.
+
+    Có nó thì ma trận RBAC không phải chạm Supabase thật — trước đây test này
+    đi thẳng vào cơ sở dữ liệu chung để hỏi một câu về phân quyền.
+    """
+
+    def __init__(self, member: bool) -> None:
+        self._member = member
+
+    async def is_panel_member(self, candidate_uuid, reviewer_id):
+        return self._member
+
+    async def get_reviews(self, candidate_uuid):
+        return []
+
+    async def get_panel_size(self, candidate_uuid):
+        return 1
+
+
+@pytest.fixture
+def on_panel():
+    from modules.review.adapters.routes import get_review_repo
+
+    app.dependency_overrides[get_review_repo] = lambda: _PanelStub(member=True)
+    yield
+    app.dependency_overrides.pop(get_review_repo, None)
+
+
+@pytest.fixture
+def off_panel():
+    from modules.review.adapters.routes import get_review_repo
+
+    app.dependency_overrides[get_review_repo] = lambda: _PanelStub(member=False)
+    yield
+    app.dependency_overrides.pop(get_review_repo, None)
+
 #: (method, path) của các endpoint nghiệp vụ đại diện cho từng module.
 OPERATIONAL_ENDPOINTS = [
     ("get", "/api/enrichment/some-uuid"),
@@ -133,12 +170,31 @@ def test_admin_is_blocked_from_business_endpoints(client, method, path):
 
 @pytest.mark.parametrize("method,path", OPERATIONAL_ENDPOINTS)
 @pytest.mark.parametrize("role", ["hr", "tech_lead"])
-def test_hr_and_tech_lead_reach_the_same_endpoints(client, method, path, role):
+def test_hr_and_tech_lead_are_not_blocked_by_role(client, method, path, role, on_panel):
+    """Cả hai role đều ĐƯỢC PHÉP dùng các endpoint nghiệp vụ.
+
+    Từ V008, tech lead còn phải nằm trong hội đồng của ứng viên nữa — nhưng đó
+    là luật về DỮ LIỆU, không phải về role. Fixture `on_panel` cấp quyền hội
+    đồng để test này chỉ còn kiểm đúng một điều: role có bị chặn hay không.
+    """
     app.dependency_overrides[get_current_user] = lambda: _as(role)
     try:
         response = getattr(client, method)(path)
-        # Điều cần khẳng định là KHÔNG bị chặn vì role (403).
         assert response.status_code != 403, f"{role} bị chặn ở {path}"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_a_tech_lead_outside_the_panel_cannot_reach_a_candidate(client, off_panel):
+    """Ranh giới mới của V008, ở tầng HTTP.
+
+    Không có nó thì mọi tech lead trong công ty đọc được PII của mọi ứng viên,
+    kể cả ở những vị trí họ không được giao chấm.
+    """
+    app.dependency_overrides[get_current_user] = lambda: _as("tech_lead")
+    try:
+        for method, path in OPERATIONAL_ENDPOINTS:
+            assert getattr(client, method)(path).status_code == 404, path
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 

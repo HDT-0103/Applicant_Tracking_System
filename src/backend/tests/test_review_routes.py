@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from apps.main import app
 from modules.auth.domain.models import AuthUser
 from modules.review.adapters.routes import get_review_repo
-from modules.review.domain.models import CvReview
+from modules.review.domain.models import CvReview, PanelMember
 from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.auth_dependencies import get_current_user
 
@@ -35,6 +35,11 @@ class FakeReviewRepo(IReviewRepo):
         self.reviews: dict[str, list[CvReview]] = {}
         self.panel_size = panel_size
         self.application_status: dict[str, str] = {}
+        self.frozen_panel_size: dict[str, int] = {}
+        self.panel: dict[str, list] = {}
+        #: Ai được xem hồ sơ nào. `None` = ai cũng được, để những test không
+        #: quan tâm tới hội đồng khỏi phải khai.
+        self.members: set[tuple[str, str]] | None = None
 
     async def get_reviews(self, candidate_uuid):
         return list(self.reviews.get(candidate_uuid, []))
@@ -55,7 +60,41 @@ class FakeReviewRepo(IReviewRepo):
         bucket.append(review)
 
     async def get_panel_size(self, candidate_uuid):
-        return self.panel_size
+        return self.frozen_panel_size.get(candidate_uuid, self.panel_size)
+
+    async def freeze_panel_size(self, candidate_uuid, size):
+        self.frozen_panel_size.setdefault(candidate_uuid, size)
+
+    async def is_panel_member(self, candidate_uuid, reviewer_id):
+        if self.members is None:
+            return True
+        return (candidate_uuid, reviewer_id) in self.members
+
+    async def filter_accessible(self, candidate_uuids, reviewer_id):
+        if self.members is None:
+            return set(candidate_uuids)
+        return {c for c in candidate_uuids if (c, reviewer_id) in self.members}
+
+    async def get_panel(self, job_posting_id):
+        return list(self.panel.get(job_posting_id, []))
+
+    async def add_panel_member(self, job_posting_id, reviewer_id, invited_by):
+        self.panel.setdefault(job_posting_id, []).append(
+            PanelMember(
+                reviewer_id=reviewer_id,
+                name="TL",
+                email="tl@smartats.com",
+                invited_at="2026-09-01T00:00:00Z",
+            )
+        )
+
+    async def remove_panel_member(self, job_posting_id, reviewer_id):
+        self.panel[job_posting_id] = [
+            m for m in self.panel.get(job_posting_id, []) if m.reviewer_id != reviewer_id
+        ]
+
+    async def count_panel(self, job_posting_id):
+        return len(self.panel.get(job_posting_id, []))
 
     async def set_application_status(self, candidate_uuid, status):
         self.application_status[candidate_uuid] = status
@@ -369,3 +408,117 @@ class TestBatchStatus:
             json={"candidate_uuids": [str(_uuid.uuid4()) for _ in range(101)]},
         )
         assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Hội đồng theo tin tuyển dụng (V008)
+# ---------------------------------------------------------------------------
+
+class TestPanelMembership:
+    """Chỉ Tech Lead được HR mời mới xem và chấm được hồ sơ.
+
+    Hồ sơ ứng viên chứa PII, nên đây là ranh giới bảo mật chứ không phải quy
+    ước quy trình: một tech lead ngoài hội đồng không được nhìn thấy hồ sơ,
+    chứ không phải "nhìn được nhưng không bấm được nút".
+    """
+
+    def test_a_tech_lead_off_the_panel_cannot_read_the_status(
+        self, client, as_role, repo
+    ):
+        repo.members = set()  # không ai trong hội đồng nào
+        as_role("tech_lead")
+        r = client.get(f"/api/review/{CANDIDATE}")
+        # 404 chứ không 403: 403 xác nhận ứng viên này CÓ TỒN TẠI, tức là tiết
+        # lộ rằng ai đó đã ứng tuyển — bản thân điều đó là thông tin cá nhân.
+        assert r.status_code == 404
+
+    def test_a_tech_lead_off_the_panel_cannot_submit(self, client, as_role, repo):
+        repo.members = set()
+        as_role("tech_lead")
+        r = client.post(f"/api/review/{CANDIDATE}", json={"decision": "approved"})
+        assert r.status_code == 403
+        assert "panel" in r.json()["detail"].lower()
+
+    def test_hr_sees_every_candidate(self, client, as_role, repo):
+        repo.members = set()
+        as_role("hr")
+        assert client.get(f"/api/review/{CANDIDATE}").status_code == 200
+
+    def test_the_batch_omits_candidates_off_the_panel(self, client, as_role, repo):
+        mine, theirs = CANDIDATE, str(_uuid.uuid4())
+        repo.members = {(mine, "panel-member")}
+        app.dependency_overrides[get_current_user] = lambda: AuthUser(
+            id="panel-member", email="tl@smartats.com", name="TL", role="tech_lead"
+        )
+        try:
+            body = client.post(
+                "/api/review/batch", json={"candidate_uuids": [mine, theirs]}
+            ).json()
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+        # Vắng hẳn, không phải trả về rỗng: một mục "đang chờ" cho ứng viên lạ
+        # vẫn tiết lộ rằng người đó có ứng tuyển.
+        assert set(body) == {mine}
+
+    def test_only_hr_may_invite_a_reviewer(self, client, as_role):
+        as_role("tech_lead")
+        r = client.post("/api/review/panels/job-1", json={"reviewer_id": "tl-9"})
+        # Để tech lead tự thêm mình vào hội đồng là để họ tự cấp quyền xem PII.
+        assert r.status_code == 403
+
+    def test_hr_invites_and_removes(self, client, as_role):
+        as_role("hr")
+        panel = client.post(
+            "/api/review/panels/job-1", json={"reviewer_id": "tl-9"}
+        ).json()
+        assert [m["reviewer_id"] for m in panel] == ["tl-9"]
+
+        panel = client.delete("/api/review/panels/job-1/tl-9").json()
+        assert panel == []
+
+    def test_inviting_the_same_person_twice_is_harmless(self, client, as_role, repo):
+        as_role("hr")
+        client.post("/api/review/panels/job-1", json={"reviewer_id": "tl-9"})
+        r = client.post("/api/review/panels/job-1", json={"reviewer_id": "tl-9"})
+        assert r.status_code == 200
+
+
+class TestPanelSizeIsFrozen:
+    """Sĩ số hội đồng chốt tại lá phiếu đầu tiên.
+
+    Nếu tính theo thời gian thực, HR mời thêm một người là ứng viên sắp đủ
+    phiếu bỗng quay về trạng thái đang chờ — ngưỡng đổi giữa chừng cuộc chấm.
+    """
+
+    def test_the_first_vote_freezes_the_size(self, client, as_role, repo):
+        repo.panel_size = 5
+        as_role("tech_lead")
+        client.post(f"/api/review/{CANDIDATE}", json={"decision": "approved"})
+
+        assert repo.frozen_panel_size[CANDIDATE] == 5
+
+    def test_growing_the_panel_afterwards_does_not_move_the_goalposts(
+        self, client, as_role, repo
+    ):
+        repo.panel_size = 5
+        as_role("tech_lead")
+        client.post(f"/api/review/{CANDIDATE}", json={"decision": "approved"})
+
+        repo.panel_size = 20  # HR mời thêm 15 người sau đó
+        body = client.get(f"/api/review/{CANDIDATE}").json()
+
+        assert body["total_tls"] == 5
+        assert body["required_tl_approvals"] == 4  # vẫn là ceil(5 * 0.8)
+
+    def test_a_job_with_no_panel_never_reaches_hr(self, client, as_role, repo):
+        # Ngưỡng 80% của 0 người là vô nghĩa. Không quy về hội đồng một người:
+        # như thế một phiếu vu vơ là hồ sơ đậu.
+        repo.panel_size = 0
+        as_role("hr")
+        body = client.get(f"/api/review/{CANDIDATE}").json()
+
+        assert body["total_tls"] == 0
+        assert body["required_tl_approvals"] == 0
+        assert body["overall_status"] == "waiting_for_tls"
+        assert "chưa có hội đồng" in body["panel_rule"]

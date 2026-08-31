@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, Suspense, KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppHeader } from "../../../components/AppHeader";
+import { ReviewPanelPicker } from "../../../components/ReviewPanelPicker";
 import { LeftSidebar } from "../../../components/LeftSidebar";
 import { D } from "../../../lib/shared";
 import { db } from "../../../lib/db";
@@ -506,6 +507,8 @@ function CreateJobPostingForm() {
   });
 
   const [postingId, setPostingId] = useState<string | null>(null);
+  /** Sĩ số hội đồng chấm. 0 = chưa mời ai, và tin không được đăng. */
+  const [panelCount, setPanelCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [savingError, setSavingError] = useState<string | null>(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -568,6 +571,19 @@ function CreateJobPostingForm() {
   }, [editJobId]);
 
   const saveToSupabase = async (status: 'DRAFT' | 'PUBLISHED') => {
+    // Đăng tin mà chưa có hội đồng thì hồ sơ về sẽ nằm im: không tech lead nào
+    // xem được, và ngưỡng 80% của 0 người là vô nghĩa. Chặn ở đây vì sai lầm
+    // phát hiện lúc đăng tin rẻ hơn nhiều so với lúc ứng viên đã nộp.
+    if (status === 'PUBLISHED' && panelCount === 0) {
+      setSavingError(
+        "Add at least one Tech Lead to the review panel before publishing — " +
+        "applications to a posting with no panel cannot be reviewed by anyone.",
+      );
+      setSaveStatus("idle");
+      setCurrentStep(3);
+      return;
+    }
+
     const data = jdRef.current;
     if (!data.title || !data.title.trim()) {
       setSavingError("Job title is required!");
@@ -641,6 +657,8 @@ function CreateJobPostingForm() {
   const handlePublish = () => {
     saveToSupabase('PUBLISHED');
   };
+
+  const publishBlocked = panelCount === 0;
 
   const inputCls = "h-10 text-sm border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none rounded-md px-3";
   const selectCls = "h-10 text-sm border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none rounded-md px-3 w-full appearance-none cursor-pointer bg-white";
@@ -1174,6 +1192,8 @@ function CreateJobPostingForm() {
                     </div>
                   )}
 
+                  <ReviewPanelPicker jobPostingId={postingId} onCountChange={setPanelCount} />
+
                   <div className="flex items-center justify-between pt-4 border-t border-border">
                     <button
                       type="button"
@@ -1194,10 +1214,16 @@ function CreateJobPostingForm() {
                       <button
                         type="button"
                         onClick={handlePublish}
-                        className="px-5 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2"
+                        disabled={publishBlocked}
+                        title={
+                          publishBlocked
+                            ? "Add at least one Tech Lead to the review panel first"
+                            : undefined
+                        }
+                        className="px-5 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Globe className="w-4 h-4" />
-                        Publish & Open Applications
+                        Publish &amp; Open Applications
                       </button>
                     </div>
                   </div>

@@ -20,6 +20,15 @@ class CvReview(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
+class PanelMember(BaseModel):
+    """Một Tech Lead được HR mời vào hội đồng của một tin tuyển dụng."""
+
+    reviewer_id: str
+    name: str
+    email: str
+    invited_at: str
+
+
 class TLReviewSummary(BaseModel):
     reviewer_id: str
     decision: ReviewDecision
