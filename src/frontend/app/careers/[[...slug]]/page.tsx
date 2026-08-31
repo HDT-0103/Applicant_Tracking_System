@@ -167,24 +167,25 @@ async function loadExistingApplication(jobId: string): Promise<ExistingApplicati
   const ref = readStoredApplication(jobId);
   if (!ref) return null;
 
-  const { data, error } = await supabase
-    .from('applications')
-    .select(
-      'id, job_posting_id, candidate_uuid, resume_id, submitted_at, ' +
-      'expected_salary_min, expected_salary_max, salary_basis, work_mode_pref, ' +
-      'availability_bucket, availability_date, skill_ratings, motivation_reason, ' +
-      'motivation_other, work_style, consent_data_sharing, resumes(filename)'
-    )
-    .eq('id', ref.applicationId)
-    .maybeSingle();
-
-  if (error) {
-    // Transient fetch problem: keep the stored ref, fall back to a fresh form.
-    console.error('Failed to load previous application:', error);
+  // Qua backend: endpoint chỉ trả CÂU TRẢ LỜI của chính ứng viên, không kèm
+  // `status` hay điểm chấm nội bộ. Đọc thẳng bảng thì cả hai đi ra cùng nhau.
+  let row: Record<string, unknown> | null = null;
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}` +
+        `/api/v1/applications/${ref.applicationId}/screening` +
+        `?candidate_uuid=${encodeURIComponent(ref.candidateUuid)}`,
+    );
+    if (response.ok) {
+      row = (await response.json()) as Record<string, unknown>;
+    } else if (response.status !== 404) {
+      // Trục trặc tạm thời: giữ lại ref, quay về form trắng.
+      return null;
+    }
+  } catch {
     return null;
   }
-  // supabase-js cannot infer types from a concatenated select string.
-  const row = data as unknown as Record<string, unknown> | null;
+
   if (!row || row.job_posting_id !== jobId || row.candidate_uuid !== ref.candidateUuid) {
     // The application was removed (or the ref is corrupt) — forget it.
     clearStoredApplication(jobId);
@@ -948,6 +949,17 @@ export default function CareersPortalPage() {
     loadJobData();
   }, [slug, jobId]);
 
+/** Câu duy nhất ứng viên nhìn thấy khi nộp hỏng.
+ *
+ *  Thông báo kỹ thuật mô tả bảng, cột và chính sách bên trong hệ thống. Nó vô
+ *  nghĩa với người đang nộp hồ sơ, và vẽ sơ đồ dữ liệu cho người không nên
+ *  biết. Chi tiết ở lại log máy chủ, nơi có người sửa được nó. */
+const SUBMIT_FAILED_MESSAGE =
+  "We could not submit your application. Please check your file and try again — if it keeps happening, contact us.";
+
+const UPDATE_FAILED_MESSAGE =
+  "We could not save your changes. Please try again in a moment.";
+
   /** Edit mode: the candidate already applied — update their answers in place. */
   const handleUpdate = async (form: FormData) => {
     if (!selectedJob || !existingApp) return;
@@ -956,24 +968,25 @@ export default function CareersPortalPage() {
     setPhase("loading");
 
     try {
-      const { error: applicationError } = await supabase
-        .from('applications')
-        .update(buildScreeningPayload(form, new Date().toISOString()))
-        .eq('id', existingApp.ref.applicationId);
+      // Qua backend, giống hệt lượt nộp đầu. Không còn UPDATE trực tiếp nào từ
+      // trình duyệt, nên `applications` và `candidates` khoá được hoàn toàn.
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/v1/applications/${existingApp.ref.applicationId}/screening`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            candidate_uuid: existingApp.ref.candidateUuid,
+            screening: {
+              ...buildScreeningPayload(form, new Date().toISOString()),
+              salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin),
+            },
+          }),
+        },
+      );
 
-      if (applicationError) {
-        console.error('application update error:', applicationError);
-        throw new Error(applicationError.message || 'Failed to update application');
-      }
-
-      // Keep the headline figure on the candidate row in sync (same as create).
-      const { error: candidateError } = await supabase
-        .from('candidates')
-        .update({ salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin) })
-        .eq('uuid', existingApp.ref.candidateUuid);
-      if (candidateError) {
-        // Reporting-only field — the application itself was saved, so don't fail.
-        console.error('candidate update error:', candidateError);
+      if (!response.ok) {
+        throw new Error(UPDATE_FAILED_MESSAGE);
       }
 
       const { resume: _resume, ...answers } = form;
@@ -983,7 +996,7 @@ export default function CareersPortalPage() {
       setPhase("results");
     } catch (err) {
       console.error('Application update failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update application');
+      setError(UPDATE_FAILED_MESSAGE);
       setSubmitting(false);
       setPhase("form");
     }
@@ -1003,81 +1016,51 @@ export default function CareersPortalPage() {
     setError(null);
 
     try {
-      // Name, email, phone and social links are extracted from the CV by the
-      // ingest pipeline, so the form does not collect them.
+      // MỘT request duy nhất. Backend ghi candidates -> resumes ->
+      // applications bằng khoá service-role, trong cùng lượt đó.
+      //
+      // Trước đây trang này gọi /api/v1/ingest rồi TỰ chèn thêm ba dòng của
+      // riêng nó. Backend đã ghi đủ cả ba, nên mỗi hồ sơ nộp sinh ra HAI đơn
+      // ứng tuyển — và bảng `candidates` buộc phải mở quyền ghi cho anon, thứ
+      // đổ vỡ ngay khi bật RLS ("new row violates row-level security policy").
+      //
+      // Tên, email, điện thoại và link mạng xã hội do backend đọc từ CV, nên
+      // form không hỏi lại.
       const formDataUpload = new FormData();
       if (form.resume) formDataUpload.append('file', form.resume);
       formDataUpload.append('job_id', selectedJob.id);
       formDataUpload.append('job_title', selectedJob.job_title);
+      formDataUpload.append(
+        'screening',
+        JSON.stringify({
+          ...buildScreeningPayload(form, new Date().toISOString()),
+          salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin),
+        }),
+      );
 
       setPhase("loading");
 
-      const ingestResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/v1/ingest`, {
-        method: 'POST',
-        body: formDataUpload,
-      });
+      const ingestResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/v1/ingest`,
+        { method: 'POST', body: formDataUpload },
+      );
 
       if (!ingestResponse.ok) {
-        const errorData = await ingestResponse.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.message || 'Failed to upload CV');
+        throw new Error(SUBMIT_FAILED_MESSAGE);
       }
 
       const ingestData = await ingestResponse.json();
-      const candidateUuid = ingestData.candidate_uuid;
-      const storageUrl = ingestData.storage_url;
-
-      if (!candidateUuid) {
-        throw new Error('No candidate UUID returned from ingest API');
+      const candidateUuid = ingestData.candidate_uuid as string | undefined;
+      const applicationId = ingestData.application_id as string | undefined;
+      if (!candidateUuid || !applicationId) {
+        throw new Error(SUBMIT_FAILED_MESSAGE);
       }
 
-      // Only what the CV cannot provide. The ingest pipeline fills in the rest.
-      const { error: candidateError } = await supabase
-        .from('candidates')
-        .upsert({
-          uuid: candidateUuid,
-          // Headline figure for ABAC-governed reporting; the full range lives on
-          // the application row, since expectations differ per role.
-          salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin),
-          cv_file_path: storageUrl || null,
-        }, { onConflict: 'uuid' });
-
-      if (candidateError) {
-        console.error('candidate upsert error:', candidateError);
-        throw new Error(candidateError.message || 'Failed to save candidate');
-      }
-
-      // Create resume record
-      const { data: resumeData, error: resumeError } = await supabase
-        .from('resumes')
-        .insert({
-          candidate_uuid: candidateUuid,
-          filename: form.resume?.name || 'resume.pdf',
-          file_path: storageUrl || null,
-        })
-        .select('id')
-        .single();
-
-      if (resumeError) {
-        console.error('resume insert error:', resumeError);
-        throw new Error(resumeError.message || 'Failed to save resume');
-      }
-
-      // Create application record
-      const { data: applicationData, error: applicationError } = await supabase
-        .from('applications')
-        .insert({
-          candidate_uuid: candidateUuid,
-          job_posting_id: selectedJob.id,
-          resume_id: resumeData.id,
-          ...buildScreeningPayload(form, new Date().toISOString()),
-        })
-        .select('id, submitted_at')
-        .single();
-
-      if (applicationError) {
-        console.error('application insert error:', applicationError);
-        throw new Error(applicationError.message || 'Failed to save application');
-      }
+      const applicationData = {
+        id: applicationId,
+        submitted_at: new Date().toISOString(),
+      };
+      const resumeData = { id: ingestData.resume_id as string };
 
       // Remember this submission so a return visit becomes an edit, not a duplicate.
       const submittedAt = (applicationData.submitted_at as string | null) ?? new Date().toISOString();
@@ -1101,8 +1084,13 @@ export default function CareersPortalPage() {
       setPhase("results");
 
     } catch (err) {
+      // Ứng viên chỉ thấy MỘT câu. Thông báo lỗi kỹ thuật ở đây mô tả bảng,
+      // cột và chính sách bên trong hệ thống — ví dụ "new row violates
+      // row-level security policy for table candidates" — vừa vô nghĩa với
+      // người đang nộp hồ sơ, vừa vẽ ra sơ đồ dữ liệu cho người không nên biết.
+      // Chi tiết ở lại log của máy chủ, nơi có người sửa được nó.
       console.error('Application submission failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit application');
+      setError(SUBMIT_FAILED_MESSAGE);
       setSubmitting(false);
       setPhase("form");
     }

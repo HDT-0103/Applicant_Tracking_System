@@ -9,6 +9,7 @@ Tests cover:
 - CV Signed URL redirection
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
@@ -237,3 +238,76 @@ class TestServiceBusIsOptional:
                 data={"full_name": "Ứng viên", "email": "uv@example.com"},
             )
         assert r.status_code in (200, 202), r.text
+
+
+class TestScreeningAnswers:
+    """Câu trả lời sàng lọc đi CÙNG lượt nộp CV.
+
+    Trước đây trang careers gọi /api/v1/ingest rồi tự chèn thêm dòng
+    `resumes` và `applications` của riêng nó — mà backend đã ghi đủ cả ba. Mỗi
+    hồ sơ nộp vào sinh ra HAI đơn ứng tuyển, và bảng `candidates` buộc phải mở
+    quyền ghi cho anon, thứ đổ vỡ ngay khi bật RLS.
+    """
+
+    @staticmethod
+    def _submit(client, screening: dict | str):
+        pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+        with patch("modules.ingestion.adapters.azure_routes.enrichment_worker"), patch(
+            "modules.ingestion.adapters.azure_routes._assert_job_accepts_applications"
+        ):
+            return client.post(
+                "/api/v1/ingest",
+                files={"file": ("cv.pdf", pdf, ALLOWED_MIME_TYPE)},
+                data={
+                    "job_id": "job-1",
+                    "screening": screening
+                    if isinstance(screening, str)
+                    else json.dumps(screening),
+                },
+            )
+
+    def test_answers_reach_the_ingest_service(self, client, mock_azure_service):
+        r = self._submit(client, {"salary_basis": "gross", "skill_ratings": {"Python": 4}})
+        assert r.status_code in (200, 202), r.text
+
+        passed = mock_azure_service.ingest_pdf.await_args.kwargs["screening"]
+        assert passed == {"salary_basis": "gross", "skill_ratings": {"Python": 4}}
+
+    def test_a_client_cannot_write_internal_columns(self, client, mock_azure_service):
+        # Danh sách trắng, không phải danh sách đen. Nhận nguyên dict từ client
+        # thì ứng viên tự đặt được `status` của chính mình.
+        self._submit(
+            client,
+            {
+                "salary_basis": "gross",
+                "status": "APPROVED",
+                "overall_score": 999,
+                "candidate_uuid": "someone-else",
+            },
+        )
+
+        passed = mock_azure_service.ingest_pdf.await_args.kwargs["screening"]
+        assert passed == {"salary_basis": "gross"}
+
+    def test_the_salary_headline_is_split_out_for_the_candidate_row(
+        self, client, mock_azure_service
+    ):
+        self._submit(client, {"salary_expectation": 20_000_000})
+
+        kwargs = mock_azure_service.ingest_pdf.await_args.kwargs
+        assert kwargs["salary_expectation"] == 20_000_000
+        # `salary_expectation` là cột của `candidates`, không phải `applications`.
+        assert "salary_expectation" not in (kwargs["screening"] or {})
+
+    def test_malformed_answers_are_refused_not_ignored(self, client, mock_azure_service):
+        r = self._submit(client, "{not json")
+        assert r.status_code == 400
+
+    def test_a_submission_without_answers_still_works(self, client, mock_azure_service):
+        pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+        with patch("modules.ingestion.adapters.azure_routes.enrichment_worker"):
+            r = client.post(
+                "/api/v1/ingest", files={"file": ("cv.pdf", pdf, ALLOWED_MIME_TYPE)}
+            )
+        assert r.status_code in (200, 202)
+        assert mock_azure_service.ingest_pdf.await_args.kwargs["screening"] is None

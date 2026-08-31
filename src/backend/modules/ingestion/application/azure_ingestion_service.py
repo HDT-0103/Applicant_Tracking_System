@@ -37,6 +37,8 @@ class AzureIngestionService:
         github_url: str = None,
         job_id: str = None,
         filename: str = None,
+        screening: dict = None,
+        salary_expectation: float = None,
     ) -> IngestionResponse:
         candidate_uuid = str(uuid.uuid4())
 
@@ -58,6 +60,8 @@ class AzureIngestionService:
             linkedin_url=linkedin_url,
             github_username=github_url,
             job_id=job_id,
+            screening=screening,
+            salary_expectation=salary_expectation,
         )
 
         # Parse PDF to extract social links immediately
@@ -137,6 +141,8 @@ class AzureIngestionService:
         linkedin_url: str = None,
         github_username: str = None,
         job_id: str = None,
+        screening: dict = None,
+        salary_expectation: float = None,
     ) -> tuple:
         """
         Write candidates -> resumes -> applications inside the request, so a
@@ -166,6 +172,7 @@ class AzureIngestionService:
                 phone=phone,
                 linkedin_url=linkedin_url,
                 github_username=github_username,
+                salary_expectation=salary_expectation,
             )
             if not candidate_ok:
                 raise RuntimeError(f"candidates upsert failed for {candidate_uuid}")
@@ -176,7 +183,7 @@ class AzureIngestionService:
             application_id = None
             if job_id:
                 application_id = repository.create_application(
-                    candidate_uuid, job_id, resume_id
+                    candidate_uuid, job_id, resume_id, screening=screening
                 )
 
             return resume_id, application_id

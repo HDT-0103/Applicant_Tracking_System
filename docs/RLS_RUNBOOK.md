@@ -79,37 +79,36 @@ ALTER TABLE api_rate_limits      ENABLE ROW LEVEL SECURITY;
 
 Sau bước này, `curl` với anon key phải trả về `[]` cho mọi bảng trên.
 
-### Bước 3 — Ba bảng mà `/careers` cần
+### Bước 3 — Một bảng duy nhất mà `/careers` cần
 
-Trang tuyển dụng công khai phải chạy được **không có tài khoản**. Ứng viên
-không có và sẽ không bao giờ có tài khoản, nên đây là ngoại lệ có chủ đích.
+Trang tuyển dụng công khai phải chạy được **không có tài khoản**. Nhưng nó chỉ
+cần ĐỌC danh sách tin: việc nộp hồ sơ đã chuyển hết sang `POST /api/v1/ingest`,
+nơi backend ghi `candidates` → `resumes` → `applications` bằng khoá
+service-role trong cùng một lượt.
 
 ```sql
 ALTER TABLE jobs_posting ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resumes      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
 
--- Ai cũng ĐỌC được tin đang tuyển. Chỉ tin PUBLISHED, chỉ những cột cần để
--- vẽ trang — bản nháp và tin đã đóng không được lộ.
+-- Ai cũng ĐỌC được tin đang tuyển. Chỉ tin PUBLISHED — bản nháp và tin đã
+-- đóng không được lộ.
 CREATE POLICY careers_read_published ON jobs_posting
   FOR SELECT TO anon
   USING (status = 'PUBLISHED');
-
--- Ứng viên GHI được hồ sơ của mình, và KHÔNG đọc lại được.
--- Không có policy SELECT nào cho ba bảng dưới: nộp xong là không xem được gì,
--- kể cả hồ sơ của chính mình — vì không có cách nào chứng minh "chính mình".
-CREATE POLICY careers_submit_candidate ON candidates
-  FOR INSERT TO anon WITH CHECK (true);
-
-CREATE POLICY careers_submit_resume ON resumes
-  FOR INSERT TO anon WITH CHECK (true);
-
-CREATE POLICY careers_submit_application ON applications
-  FOR INSERT TO anon WITH CHECK (true);
 ```
 
-> **Lưu ý:** `candidates` ở Bước 2 đã bật RLS và không có policy SELECT cho
-> anon — đúng như vậy. Policy INSERT ở đây chỉ cho phép GHI.
+**Không cần policy nào cho `candidates`, `resumes`, `applications`.** Bản trước
+của tài liệu này đề xuất ba policy INSERT cho anon; giờ không cần nữa — và đó
+là kết quả tốt hơn, vì một policy `WITH CHECK (true)` cho phép người lạ chèn
+bao nhiêu dòng tuỳ thích vào bảng ứng viên.
+
+> Nếu bạn đã tạo ba policy đó theo bản trước, hãy xoá đi:
+> ```sql
+> DROP POLICY IF EXISTS careers_submit_candidate   ON candidates;
+> DROP POLICY IF EXISTS careers_submit_resume      ON resumes;
+> DROP POLICY IF EXISTS careers_submit_application ON applications;
+> ```
 
 ### Bước 4 — Kiểm chứng
 
@@ -135,7 +134,8 @@ Rồi thử tay:
 | Việc | Kết quả mong đợi |
 |---|---|
 | Mở `/careers` khi chưa đăng nhập | Thấy danh sách tin |
-| Nộp CV qua `/careers/<tin>` | Thành công |
+| Nộp CV qua `/careers/<tin>` | Thành công, và bảng `applications` chỉ tăng **1** dòng |
+| Quay lại `/careers/<tin>` trên cùng trình duyệt | Form điền sẵn câu trả lời cũ |
 | Đăng nhập HR → Dashboard | Thấy ứng viên (qua `/api/catalog/dashboard`) |
 | Đăng nhập Tech Lead → Dashboard | Chỉ thấy ứng viên thuộc hội đồng mình, tên bị che `***` |
 | Sidebar, Analytics, Schedule, tạo tin | Chạy bình thường |

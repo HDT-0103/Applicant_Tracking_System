@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Annotated, Optional
 
@@ -7,6 +8,7 @@ from pydantic import BaseModel
 
 from modules.ingestion.application.azure_ingestion_service import AzureIngestionService
 from modules.ingestion.domain.models import IngestionResponse
+from modules.ingestion.infra.application_repository import ApplicationRepository
 from modules.ingestion.infra.azure_blob_service import BLOB_CONTAINER_NAME, AzureBlobService
 from modules.ingestion.infra.azure_service_bus_service import AzureServiceBusService
 from modules.enrichment.application.enrichment_service import enrichment_worker
@@ -21,6 +23,24 @@ logger = structlog.get_logger(__name__)
 
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB hard threshold
 ALLOWED_MIME_TYPE = "application/pdf"
+
+#: Cột trên `applications` mà ứng viên được phép điền qua form công khai.
+#: Danh sách trắng, không phải danh sách đen: cột mới thêm vào bảng sẽ KHÔNG
+#: tự động mở cho người ngoài ghi.
+SCREENING_FIELDS = frozenset({
+    "expected_salary_min",
+    "expected_salary_max",
+    "salary_basis",
+    "work_mode_pref",
+    "availability_bucket",
+    "availability_date",
+    "skill_ratings",
+    "motivation_reason",
+    "motivation_other",
+    "work_style",
+    "consent_data_sharing",
+    "consent_at",
+})
 
 
 def _assert_job_accepts_applications(job_id: str, settings: Settings) -> None:
@@ -131,6 +151,13 @@ async def ingest_cv(
     linkedin_url: Annotated[Optional[str], Form()] = None,
     github_url: Annotated[Optional[str], Form()] = None,
     job_id: Annotated[Optional[str], Form()] = None,
+    #: Câu trả lời sàng lọc, JSON trong một trường form.
+    #:
+    #: Đi CÙNG lượt nộp CV chứ không phải một lượt ghi riêng từ trình duyệt.
+    #: Trước đây trang careers gọi endpoint này rồi tự chèn thêm dòng
+    #: `resumes` và `applications` của riêng nó — nên mỗi hồ sơ nộp sinh ra
+    #: HAI đơn ứng tuyển, và bảng `candidates` phải mở quyền ghi cho anon.
+    screening: Annotated[Optional[str], Form()] = None,
 ) -> IngestionResponse:
     # Applications from the public career page always carry a job_id; internal
     # uploads (HR dashboard) do not, and stay unaffected.
@@ -172,6 +199,31 @@ async def ingest_cv(
             detail="Invalid PDF file. Magic bytes verification failed.",
         )
 
+    screening_payload: Optional[dict] = None
+    salary_expectation: Optional[float] = None
+    if screening:
+        try:
+            parsed = json.loads(screening)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Malformed screening answers.",
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Malformed screening answers.",
+            )
+        # Danh sách cột được ghi là CỐ ĐỊNH ở đây. Nhận nguyên dict từ client
+        # thì client tự chọn được cột nào bị ghi — kể cả `status` hay
+        # `overall_score`.
+        screening_payload = {
+            k: v for k, v in parsed.items() if k in SCREENING_FIELDS
+        }
+        raw_salary = parsed.get("salary_expectation")
+        if isinstance(raw_salary, (int, float)):
+            salary_expectation = float(raw_salary)
+
     try:
         # Strip GitHub URL to extract username only
         clean_github_username = None
@@ -187,6 +239,8 @@ async def ingest_cv(
             github_url=clean_github_username,
             job_id=job_id,
             filename=file.filename,
+            screening=screening_payload,
+            salary_expectation=salary_expectation,
         )
         # Trigger enrichment in background (GitHub + LinkedIn + skill matrix)
         background_tasks.add_task(enrichment_worker, result.candidate_uuid, settings)
@@ -218,6 +272,85 @@ async def ingest_cv(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during ingestion.",
         ) from exc
+
+
+@router.get("/applications/{application_id}/screening", response_model=dict)
+async def get_application_screening(
+    application_id: str,
+    candidate_uuid: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _limit: Annotated[None, Depends(ingest_rate_limit)] = None,
+) -> dict:
+    """Đọc lại câu trả lời của chính ứng viên, để điền sẵn form khi họ quay lại.
+
+    Chỉ trả về CÂU TRẢ LỜI SÀNG LỌC, không trả `status`, `overall_score` hay
+    bất kỳ trường chấm điểm nội bộ nào — ứng viên không cần biết hệ thống đang
+    đánh giá họ ra sao.
+
+    Quyền sở hữu chứng minh bằng việc giữ được cả hai mã, như ở PATCH.
+    """
+    client = get_supabase_client(settings, use_admin=True)
+    if client is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+
+    res = (
+        client.table("applications")
+        .select(
+            "id, job_posting_id, candidate_uuid, resume_id, submitted_at, "
+            + ", ".join(sorted(SCREENING_FIELDS))
+            + ", resumes(filename)"
+        )
+        .eq("id", application_id)
+        .eq("candidate_uuid", candidate_uuid)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+    return res.data[0]
+
+
+class UpdateScreeningRequest(BaseModel):
+    candidate_uuid: str
+    screening: dict
+
+
+@router.patch("/applications/{application_id}/screening", status_code=status.HTTP_204_NO_CONTENT)
+async def update_application_screening(
+    application_id: str,
+    body: UpdateScreeningRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _limit: Annotated[None, Depends(ingest_rate_limit)] = None,
+) -> None:
+    """Ứng viên sửa lại câu trả lời của mình.
+
+    Không có xác thực vì ứng viên không có tài khoản — quyền sở hữu chứng minh
+    bằng việc giữ được CẢ `application_id` lẫn `candidate_uuid`. Đó là mô hình
+    tin cậy y như trước, chỉ khác là giờ nó nằm ở máy chủ, nên `applications`
+    và `candidates` không phải mở quyền ghi cho anon.
+    """
+    client = get_supabase_client(settings, use_admin=True)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="This service is temporarily unavailable. Please try again later.",
+        )
+
+    screening = {k: v for k, v in body.screening.items() if k in SCREENING_FIELDS}
+    if not screening:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update."
+        )
+
+    repository = ApplicationRepository(client)
+    if not repository.update_screening(application_id, body.candidate_uuid, screening):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Application not found."
+        )
+
+    raw_salary = body.screening.get("salary_expectation")
+    if isinstance(raw_salary, (int, float)):
+        repository.update_candidate_salary(body.candidate_uuid, float(raw_salary))
 
 
 class CandidateCvLink(BaseModel):

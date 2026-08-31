@@ -31,6 +31,7 @@ class SupabaseCandidateService:
         phone: Optional[str] = None,
         linkedin_url: Optional[str] = None,
         github_username: Optional[str] = None,
+        salary_expectation: Optional[float] = None,
     ) -> bool:
         """
         Ensure candidate exists in public.candidates table
@@ -65,6 +66,11 @@ class SupabaseCandidateService:
                 new_candidate["linkedin_url"] = linkedin_url
             if github_username:
                 new_candidate["github_username"] = github_username
+            # Mức lương mong muốn do ứng viên tự khai trong form, không đọc
+            # được từ CV. Ghi cùng lượt upsert này để trình duyệt không phải
+            # tự chạm vào bảng `candidates`.
+            if salary_expectation is not None:
+                new_candidate["salary_expectation"] = salary_expectation
             
             result = self._client.table('candidates').upsert(
                 new_candidate,
