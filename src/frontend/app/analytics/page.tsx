@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from 'next/navigation';
 import { AppShell } from "../../components/AppShell";
 import { D } from "../../lib/shared";
-import { db } from "../../lib/db";
+import { getAnalytics } from "../../services/catalogService";
 import {
   BarChart3,
   TrendingUp,
@@ -69,30 +69,18 @@ export default function AnalyticsPage() {
       try {
         setLoading(true);
 
-        // 1. Query real jobs_posting from Supabase
-        const { data: jobData, error: jobErr } = await db()
-          .from('jobs_posting')
-          .select('id, job_title, department, status, must_have_skills, nice_to_have_skills, created_at');
-
-        if (jobErr) console.error("Error fetching jobs:", jobErr);
-
-        // 2. Query real applications from Supabase
-        const { data: appData, error: appErr } = await db()
-          .from('applications')
-          .select('id, job_posting_id, referral_source, experience_bucket, work_mode_pref, skill_ratings, created_at');
-
-        if (appErr) console.error("Error fetching applications:", appErr);
-
-        // 3. Query real candidates from Supabase
-        const { data: candidateData, error: candErr } = await db()
-          .from('candidates')
-          .select('uuid, full_name, email, current_location, github_username, linkedin_url, created_at');
-
-        if (candErr) console.error("Error fetching candidates:", candErr);
+        // Một request qua backend, thay cho ba lượt `select` thẳng vào Supabase.
+        //
+        // Đáng chú ý: bản cũ kéo về full_name, email, github_username,
+        // linkedin_url của MỌI ứng viên chỉ để hiện ra vài con số tổng. Danh
+        // tính không cần rời khỏi máy chủ để đếm; endpoint mới trả về số đếm.
+        const analytics = await getAnalytics();
+        const jobData = analytics.jobs as any[];
+        const appData = analytics.applications as any[];
 
         // Count Real Database Metrics
         const realAppCount = appData?.length || 0;
-        const realCandCount = candidateData?.length || 0;
+        const realCandCount = analytics.candidate_count;
         setTotalApplications(realAppCount);
         setTotalCandidates(realCandCount > 0 ? realCandCount : (realAppCount > 0 ? realAppCount : 148));
 

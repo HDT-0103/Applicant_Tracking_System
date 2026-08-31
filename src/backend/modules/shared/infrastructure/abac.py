@@ -32,6 +32,10 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "enrichment_status",
         "enriched_profile",
         "updated_at",
+        # Mốc thời gian, không định danh ai. `updated_at` đã ở đây từ trước;
+        # thiếu `created_at` thì cột "2 giờ trước" trên danh sách ứng viên hiện
+        # ra dấu sao, mà đó là thông tin điều phối công việc chứ không phải PII.
+        "created_at",
         "status",
         "data",
         "skills_matrix",

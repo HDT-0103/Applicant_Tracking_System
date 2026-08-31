@@ -4,9 +4,13 @@ import React, { useState, useEffect, useRef, Suspense, KeyboardEvent } from "rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppHeader } from "../../../components/AppHeader";
 import { ReviewPanelPicker } from "../../../components/ReviewPanelPicker";
+import {
+  getJobPosting,
+  saveJobPosting,
+  setJobPostingStatus,
+} from "../../../services/catalogService";
 import { LeftSidebar } from "../../../components/LeftSidebar";
 import { D } from "../../../lib/shared";
-import { db } from "../../../lib/db";
 import {
   Plus,
   X,
@@ -529,13 +533,7 @@ function CreateJobPostingForm() {
 
     const fetchExistingJob = async () => {
       try {
-        const { data: job, error } = await db()
-          .from('jobs_posting')
-          .select('*')
-          .eq('id', editJobId)
-          .single();
-
-        if (error) throw error;
+        const job = await getJobPosting(editJobId);
 
         if (job && isMounted) {
           setJD({
@@ -593,43 +591,37 @@ function CreateJobPostingForm() {
     setSaveStatus("saving");
     setSavingError(null);
 
-    const payload = {
-      job_title: data.title.trim(),
-      department: data.department || null,
-      location: data.location || null,
-      seniority_level: data.seniority || null,
-      employment_type: data.employmentType || null,
-      work_mode: data.workMode || null,
-      target_openings: data.targetApplicants ? parseInt(data.targetApplicants, 10) : null,
-      salary_min: data.salaryMin ? parseFloat(data.salaryMin) : null,
-      salary_max: data.salaryMax ? parseFloat(data.salaryMax) : null,
-      must_have_skills: data.mustHaveSkills,
-      nice_to_have_skills: data.niceToHaveSkills,
-      description: data.overview || null,
-      key_responsibilities: data.responsibilities || null,
-      requirements: data.requirements || null,
-      nice_to_have_qualifications: data.niceToHaveQuals || null,
-      status,
-      ...(status === 'PUBLISHED' ? { posted_at: new Date().toISOString() } : {}),
-      ...(postingId ? {} : { last_saved_at: new Date().toISOString() }),
-    };
-
     try {
-      if (postingId) {
-        const { error } = await db()
-          .from('jobs_posting')
-          .update({ ...payload, last_saved_at: new Date().toISOString() })
-          .eq('id', postingId);
-        if (error) throw error;
-      } else {
-        const { data: inserted, error } = await db()
-          .from('jobs_posting')
-          .insert(payload)
-          .select('id')
-          .single();
-        if (error) throw error;
-        setPostingId(inserted.id);
+      // Qua backend: danh sách trường được lưu là CỐ ĐỊNH ở phía máy chủ.
+      // Trước đây trình duyệt gửi payload thẳng vào PostgREST, nên client tự
+      // quyết được cột nào bị ghi — kể cả `created_by` hay `status`.
+      const saved = await saveJobPosting(
+        {
+          job_title: data.title.trim(),
+          department: data.department || null,
+          location: data.location || null,
+          seniority_level: data.seniority || null,
+          employment_type: data.employmentType || null,
+          work_mode: data.workMode || null,
+          target_openings: data.targetApplicants ? parseInt(data.targetApplicants, 10) : null,
+          salary_min: data.salaryMin ? parseFloat(data.salaryMin) : null,
+          salary_max: data.salaryMax ? parseFloat(data.salaryMax) : null,
+          must_have_skills: data.mustHaveSkills,
+          nice_to_have_skills: data.niceToHaveSkills,
+          description: data.overview || null,
+          key_responsibilities: data.responsibilities || null,
+          requirements: data.requirements || null,
+          nice_to_have_qualifications: data.niceToHaveQuals || null,
+        },
+        postingId,
+      );
+      if (!postingId && saved?.id) setPostingId(saved.id);
+
+      // Đăng tin là bước RIÊNG: backend từ chối nếu chưa có hội đồng chấm.
+      if (status === 'PUBLISHED') {
+        await setJobPostingStatus(saved?.id ?? postingId!, 'PUBLISHED');
       }
+
       setSaveStatus("saved");
       if (status === 'PUBLISHED') {
         setShowPublishModal(true);

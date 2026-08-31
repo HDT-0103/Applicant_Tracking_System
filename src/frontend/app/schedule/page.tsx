@@ -16,7 +16,7 @@ import {
   type Interviewer, type TimeSlot, type ConfirmedSlot,
 } from "../../services/schedulingService";
 
-import { supabase } from "../../lib/supabase";
+import { listCandidateOptions } from "../../services/catalogService";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -143,13 +143,15 @@ export default function SchedulePage() {
 
   // Load available candidates if not provided in URL
   useEffect(() => {
-    supabase
-      .from("candidates")
-      .select("uuid, full_name")
-      .order("created_at", { ascending: false })
-      .limit(30)
-      .then(({ data }) => {
-        if (data && data.length > 0) {
+    // Qua backend chứ không hỏi thẳng Supabase: danh sách này chỉ được chứa
+    // ứng viên mà người đang đăng nhập có quyền xem.
+    listCandidateOptions()
+      .then((options) => {
+        const data = options.map((o) => ({
+          uuid: o.candidate_uuid,
+          full_name: o.full_name || "Candidate",
+        }));
+        if (data.length > 0) {
           setCandidatesList(data);
           const initialUuid = searchParams.get("uuid");
           const initialName = searchParams.get("name");
@@ -162,6 +164,10 @@ export default function SchedulePage() {
             setCandidateName(data[0].full_name || "Candidate");
           }
         }
+      })
+      .catch(() => {
+        // Danh sách rỗng vẫn dùng được: HR tới đây từ hồ sơ ứng viên thì uuid
+        // đã có sẵn trong URL.
       });
   }, [searchParams]);
 

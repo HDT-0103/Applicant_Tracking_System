@@ -19,7 +19,12 @@ import {
   Copy,
   Pin
 } from "lucide-react";
-import { db } from "../lib/db";
+import {
+  deleteJobPosting,
+  duplicateJobPosting,
+  listJobPostings,
+  setJobPostingStatus,
+} from "../services/catalogService";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 /** Bề rộng rail khi thu gọn — vừa đủ cho vùng bấm 36px và lề hai bên. */
@@ -92,30 +97,15 @@ export const LeftSidebar: React.FC = () => {
   useEffect(() => {
     const loadJobPostings = async () => {
       try {
-        const { data, error } = await db()
-          .from('jobs_posting')
-          .select('id, job_title, status')
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        const { data: appCounts, error: appError } = await db()
-          .from('applications')
-          .select('job_posting_id')
-          .not('job_posting_id', 'is', null);
-
-        if (appError) throw appError;
-
-        const countMap: Record<string, number> = {};
-        (appCounts || []).forEach((a) => {
-          countMap[a.job_posting_id] = (countMap[a.job_posting_id] || 0) + 1;
-        });
-
-        const mapped: JobPosting[] = (data || []).map((job) => ({
+        // Qua backend: sidebar hiện ở MỌI trang, nên nó là truy vấn chạy nhiều
+        // nhất trong app. Trước đây nó đọc thẳng Supabase bằng anon key và tự
+        // đếm hồ sơ ứng tuyển ở phía trình duyệt.
+        const jobs = await listJobPostings();
+        const mapped: JobPosting[] = jobs.map((job) => ({
           id: job.id,
           title: job.job_title,
           status: job.status,
-          applicant_count: countMap[job.id] || 0,
+          applicant_count: job.applicant_count,
         }));
 
         setJobPostings(mapped);
@@ -138,19 +128,18 @@ export const LeftSidebar: React.FC = () => {
   const handleToggleStatus = async (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
     const newStatus = job.status === 'PUBLISHED' ? 'CLOSED' : 'PUBLISHED';
+    setJobError(null);
     try {
-      const { error } = await db()
-        .from('jobs_posting')
-        .update({ status: newStatus })
-        .eq('id', job.id);
-
-      if (error) throw error;
-
+      await setJobPostingStatus(job.id, newStatus);
       setJobPostings((prev) =>
         prev.map((j) => (j.id === job.id ? { ...j, status: newStatus } : j))
       );
     } catch (err) {
-      console.error('Failed to update job status:', err);
+      // Mở lại một tin chưa có hội đồng bị backend từ chối — người dùng cần
+      // đọc được lý do, không phải thấy menu đóng lại và không có gì xảy ra.
+      setJobError(
+        err instanceof Error ? err.message : 'Could not change the posting status.',
+      );
     } finally {
       setOpenMenuJobId(null);
     }
@@ -158,38 +147,17 @@ export const LeftSidebar: React.FC = () => {
 
   const handleDuplicateJob = async (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
+    setJobError(null);
     try {
-      const { data: original, error: fetchErr } = await db()
-        .from('jobs_posting')
-        .select('*')
-        .eq('id', job.id)
-        .single();
-
-      if (fetchErr || !original) throw fetchErr;
-
-      const { id, created_at, last_saved_at, ...rest } = original;
-      const copyPayload = {
-        ...rest,
-        job_title: `${original.job_title} (Copy)`,
-        status: 'DRAFT',
-        created_at: new Date().toISOString(),
-        last_saved_at: new Date().toISOString(),
-      };
-
-      const { data: inserted, error: insertErr } = await db()
-        .from('jobs_posting')
-        .insert(copyPayload)
-        .select('id, job_title, status')
-        .single();
-
-      if (insertErr || !inserted) throw insertErr;
-
+      const copy = await duplicateJobPosting(job.id);
       setJobPostings((prev) => [
-        { id: inserted.id, title: inserted.job_title, status: inserted.status, applicant_count: 0 },
+        { id: copy.id, title: copy.job_title, status: copy.status, applicant_count: 0 },
         ...prev,
       ]);
     } catch (err) {
-      console.error('Failed to duplicate job posting:', err);
+      setJobError(
+        err instanceof Error ? err.message : 'Could not duplicate this posting.',
+      );
     } finally {
       setOpenMenuJobId(null);
     }
@@ -208,13 +176,7 @@ export const LeftSidebar: React.FC = () => {
     setDeleting(true);
     setJobError(null);
     try {
-      const { error } = await db()
-        .from('jobs_posting')
-        .delete()
-        .eq('id', job.id);
-
-      if (error) throw error;
-
+      await deleteJobPosting(job.id);
       setJobPostings((prev) => prev.filter((j) => j.id !== job.id));
       setDeletingJob(null);
     } catch (err) {

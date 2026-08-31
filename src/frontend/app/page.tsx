@@ -5,12 +5,11 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "../components/AppShell";
 import { D } from "../lib/shared";
 import {
-  firstOf,
   readMustHave,
   topLanguages,
   candidateContext,
 } from "../lib/candidateSummary";
-import { guarded, supabase } from "../lib/db";
+import { getDashboard } from "../services/catalogService";
 import { BarChart3, CalendarDays, Loader2, Send, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { getReviewStatuses, ReviewStatus } from "../services/reviewService";
@@ -49,59 +48,33 @@ export default function Dashboard() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      // 1. Fetch recent candidates.
-      // CỐ Ý KHÔNG lấy race / gender_identity / disability_status /
-      // military_status / age_group: đó là dữ liệu EEO cho báo cáo tổng hợp,
-      // đưa lên màn hình sàng lọc là tạo thiên kiến ngay chỗ ra quyết định.
-      const cData = await guarded("load recent candidates", () => supabase
-        .from("candidates")
-        .select(`
-          uuid,
-          full_name,
-          email,
-          created_at,
-          current_company,
-          current_location,
-          applications!left (
-            job_posting_id,
-            jobs_posting!left (job_title)
-          ),
-          enrichment_profiles!left (
-            match_confidence_score,
-            skill_matrix
-          ),
-          github_profiles!left (
-            public_repos_count,
-            top_languages
-          )
-        `)
-        .order("created_at", { ascending: false })
-        .limit(30));
-
-      if (!mounted) return;
-      if (!cData) {
+      // Một request duy nhất, đi qua backend.
+      //
+      // Trước đây chỗ này `select` thẳng vào Supabase bằng anon key — khoá nằm
+      // trong bundle JS công khai, nên toàn bộ bảng `candidates` đọc được mà
+      // không cần đăng nhập, và tầng che PII ở backend bị đi vòng hoàn toàn.
+      // Endpoint mới lọc theo hội đồng của người đang đăng nhập và che PII
+      // theo role trước khi trả về.
+      let dashboard;
+      try {
+        dashboard = await getDashboard();
+      } catch (err) {
+        if (!mounted) return;
         setLoading(false);
+        setNotice(null);
+        setSendError(err instanceof Error ? err.message : "Could not load candidates.");
         return;
       }
+      if (!mounted) return;
 
-      // 2. Fetch confirmed slots
-      const { data: sData } = await supabase
-        .from("confirmed_slots")
-        .select("*");
+      const slots = dashboard.slots;
 
-      const slots = sData || [];
-
-      // 3. Trạng thái review của CẢ danh sách trong một request. Hỏi từng
-      // ứng viên một là 30 vòng khứ hồi trước khi bảng kịp hiện ra.
       const reviewByUuid = await getReviewStatuses(
-        cData.map((c: any) => c.uuid),
+        dashboard.candidates.map((c) => c.candidate_uuid),
       ).catch(() => ({} as Record<string, ReviewStatus>));
 
-      const mapped = cData.map((c: any) => {
-        const app = firstOf<any>(c.applications);
-        const ep = firstOf<any>(c.enrichment_profiles);
-        const gh = firstOf<any>(c.github_profiles);
-        
+      const now = new Date().toISOString();
+      const mapped = dashboard.candidates.map((c) => {
         const ts = c.created_at ? new Date(c.created_at).getTime() : Date.now();
         const elapsed = Date.now() - ts;
         let time: string;
@@ -110,23 +83,23 @@ export default function Dashboard() {
         else if (elapsed < 86400000) time = `${Math.floor(elapsed / 3600000)}h ago`;
         else time = `${Math.floor(elapsed / 86400000)}d ago`;
 
-        // Find a future slot for this candidate
-        const now = new Date().toISOString();
-        const futureSlot = slots.find((s: any) => s.candidate_uuid === c.uuid && s.start_time > now);
-        
+        const futureSlot = slots.find(
+          (s) => s.candidate_uuid === c.candidate_uuid && s.start_time > now,
+        );
+
         return {
-          uuid: c.uuid,
+          uuid: c.candidate_uuid,
           name: c.full_name || "Unknown Candidate",
           email: c.email || undefined,
-          role: app?.jobs_posting?.job_title || "General Application",
-          score: ep?.match_confidence_score ?? null,
+          role: c.title || "General Application",
+          score: c.match_confidence_score ?? null,
           time,
           scheduledSlot: futureSlot || null,
-          reviewStatus: reviewByUuid[c.uuid] ?? null,
-          context: candidateContext(c.current_company, c.current_location),
-          languages: topLanguages(gh?.top_languages),
-          repoCount: gh?.public_repos_count ?? null,
-          mustHave: readMustHave(ep?.skill_matrix),
+          reviewStatus: reviewByUuid[c.candidate_uuid] ?? null,
+          context: candidateContext(c.company, c.current_location),
+          languages: topLanguages(c.top_languages),
+          repoCount: c.public_repos_count ?? null,
+          mustHave: readMustHave(c.skills_matrix),
         };
       });
 
