@@ -19,10 +19,15 @@ from apps.main import app
 
 #: Nhóm route nghiệp vụ. Thiếu tiền tố nào nghĩa là cả một router rơi khỏi
 #: `apps/main.py` — cả mảng tính năng biến mất mà test đơn lẻ không thấy.
+#
+#: `/api/ingestion` KHÔNG còn trong danh sách: đường nạp CV cũ đã bị gỡ vì nó
+#: là bản sao yếu hơn của `/api/v1/ingest` — ghi PDF ra đĩa server (mất sau mỗi
+#: lần deploy) và tạo candidate mồ côi không có application. `/api/catalog` là
+#: module thay cho việc trình duyệt hỏi thẳng PostgREST.
 EXPECTED_PREFIXES = (
     "/api/auth",
     "/api/admin",
-    "/api/ingestion",
+    "/api/catalog",
     "/api/enrichment",
     "/api/scheduling",
     "/api/review",
