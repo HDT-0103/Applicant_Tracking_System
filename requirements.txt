@@ -8,6 +8,18 @@
 # torch / transformers / accelerate / huggingface-hub KHÔNG khai ở đây:
 # chúng là phụ thuộc bắc cầu của sentence-transformers, ghim tay sẽ xung đột
 # phiên bản. faker cũng bỏ vì không nơi nào import.
+#
+# CẢNH BÁO BẢO MẬT — torch 2.2.2 còn 22 lỗ hổng chưa vá và KHÔNG nâng được
+# trên máy macOS Intel (x86_64): PyTorch ngừng phát hành wheel cho nền tảng đó
+# sau 2.2.2 (`pip index versions torch` chỉ liệt kê tới 2.2.2). Kéo theo đó,
+# transformers 5.x cũng không dùng được — đã thử và nó gãy ngay lúc import
+# (`NameError: name 'nn' is not defined`) vì cần API của torch mới hơn.
+#
+# Đây là giới hạn của NỀN TẢNG, không phải của file này. Muốn vá thì phải chạy
+# trên Apple Silicon hoặc Linux. Trên máy đó, nâng xong PHẢI chạy
+# POST /api/admin/vector/reindex: đổi phiên bản torch có thể làm lệch vector
+# nhúng, mà pgvector đang chứa vector sinh bởi bản cũ — trộn hai bản thì điểm
+# tương đồng sai.
 
 # API runtime
 fastapi>=0.115,<1.0
@@ -78,7 +90,7 @@ h2>=4.4.1              # PYSEC-2026-3628
 
 # Observability and testing
 structlog>=24.4,<25.0
-pytest>=8.3,<9.0
-pytest-asyncio>=0.25,<1.0
+pytest>=9.0.3,<10.0        # PYSEC-2026-1845
+pytest-asyncio>=1.0,<2.0   # pytest 9 cần bản này; 0.x ghim pytest<9
 ruff>=0.9,<1.0
 PyJWT>=2.10,<3.0
