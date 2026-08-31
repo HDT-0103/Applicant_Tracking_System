@@ -69,8 +69,6 @@ class Settings(BaseSettings):
     admin_emails: str = Field(default="", alias="ADMIN_EMAILS")
     recruiter_email_domains: str = Field(default="", alias="RECRUITER_EMAIL_DOMAINS")
 
-    upload_dir: str = Field(default="uploads", alias="UPLOAD_DIR")
-    max_upload_mb: int = Field(default=25, alias="MAX_UPLOAD_MB")
 
     github_api_token: str = Field(default="", alias="GITHUB_API_TOKEN")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")

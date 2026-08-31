@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 # in Python 3.14 and conflicts with winloop.
 
 from modules.auth.adapters.routes import router as auth_router
-from modules.ingestion.adapters.routes import router as ingestion_router
 from modules.ingestion.adapters.azure_routes import router as azure_ingestion_router
 from modules.enrichment.adapters.routes import router as enrichment_router
 from modules.admin.adapters.routes import router as admin_router
@@ -51,7 +50,6 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
-app.include_router(ingestion_router)
 app.include_router(azure_ingestion_router)
 app.include_router(enrichment_router)
 app.include_router(admin_router)
