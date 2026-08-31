@@ -31,7 +31,11 @@ def _assert_job_accepts_applications(job_id: str, settings: Settings) -> None:
     place we can be sure a CV lands on the job it was meant for — the form data
     itself is client-controlled.
     """
-    client = get_supabase_client(settings)
+    # service-role: đây là bước KIỂM TRA phía máy chủ trên một submission công
+    # khai. Client không quyết định hình dạng truy vấn, và khi RLS được bật thì
+    # anon key sẽ không đọc nổi `jobs_posting` — mỗi hồ sơ nộp vào sẽ bị từ
+    # chối với lý do "không xác minh được tin tuyển dụng".
+    client = get_supabase_client(settings, use_admin=True)
     if client is None:
         # Supabase not configured (local dev without credentials): fall through
         # rather than blocking every upload.
@@ -262,7 +266,9 @@ async def get_candidate_cv(
             status_code=status.HTTP_404_NOT_FOUND, detail="CV file for this candidate was not found."
         )
 
-    client = get_supabase_client(settings)
+    # service-role: quyền đã được quyết ở ngay trên (auth + hội đồng), nên
+    # truy vấn này không được phụ thuộc vào việc RLS có mở cho anon hay không.
+    client = get_supabase_client(settings, use_admin=True)
     stored_path = None
     if client:
         try:
