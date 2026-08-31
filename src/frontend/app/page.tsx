@@ -44,6 +44,8 @@ export default function Dashboard() {
   const [detailsFor, setDetailsFor] = useState<ExtendedCandidate | null>(null);
   /** Băng thông báo sau khi gửi. `alert()` chặn cả tab và không khớp với phần còn lại của app. */
   const [notice, setNotice] = useState<string | null>(null);
+  /** Đọc trạng thái duyệt hỏng. Hồ sơ vẫn hiện, nhưng phân nhóm sẽ không chính xác. */
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -69,9 +71,19 @@ export default function Dashboard() {
 
       const slots = dashboard.slots;
 
-      const reviewByUuid = await getReviewStatuses(
-        dashboard.candidates.map((c) => c.candidate_uuid),
-      ).catch(() => ({} as Record<string, ReviewStatus>));
+      // Hỏng ở đây KHÔNG được làm hồ sơ biến mất — hồ sơ vẫn hiện, chỉ là
+      // chưa biết trạng thái duyệt. Nhưng phải nói ra: nuốt lỗi rồi để danh
+      // sách trống là cách hỏng tệ nhất, vì trông y hệt "không có ứng viên nào".
+      let reviewByUuid: Record<string, ReviewStatus> = {};
+      let reviewFailed: string | null = null;
+      try {
+        reviewByUuid = await getReviewStatuses(
+          dashboard.candidates.map((c) => c.candidate_uuid),
+        );
+      } catch (err) {
+        reviewFailed =
+          err instanceof Error ? err.message : "Could not load review status.";
+      }
 
       const now = new Date().toISOString();
       const mapped = dashboard.candidates.map((c) => {
@@ -105,6 +117,7 @@ export default function Dashboard() {
 
       if (mounted) {
         setCandidates(mapped);
+        setReviewError(reviewFailed);
         setLoading(false);
       }
     })();
@@ -261,18 +274,43 @@ export default function Dashboard() {
     </div>
   );
 
-  // Filter candidates based on Role
+  // Phân nhóm ứng viên.
+  //
+  // Quy tắc: mọi ứng viên PHẢI rơi vào đúng một nhóm. Bản trước lọc theo
+  // `overall_status` cho cả ba nhóm của HR, nên bất cứ hồ sơ nào có
+  // reviewStatus null — chưa ai chấm, hoặc lượt gọi trạng thái hỏng — đều
+  // không khớp nhóm nào và BIẾN MẤT khỏi màn hình, không kèm lời giải thích.
+  // Đúng một lỗi như thế đã làm cả trang HR trống trơn trong khi Analytics vẫn
+  // đếm ra 17 người.
   let hrNeedsApproval: ExtendedCandidate[] = [];
   let toReviewOrSchedule: ExtendedCandidate[] = [];
+  let inTechnicalReview: ExtendedCandidate[] = [];
   let scheduled: ExtendedCandidate[] = [];
 
+  const unscheduled = candidates.filter((c) => !c.scheduledSlot);
+  scheduled = candidates.filter((c) => c.scheduledSlot !== null);
+
   if (user?.role === "hr") {
-    hrNeedsApproval = candidates.filter((c) => !c.scheduledSlot && c.reviewStatus?.overall_status === "waiting_for_hr");
-    toReviewOrSchedule = candidates.filter((c) => !c.scheduledSlot && c.reviewStatus?.overall_status === "ready_to_schedule");
-    scheduled = candidates.filter((c) => c.scheduledSlot !== null);
+    hrNeedsApproval = unscheduled.filter(
+      (c) => c.reviewStatus?.overall_status === "waiting_for_hr",
+    );
+    toReviewOrSchedule = unscheduled.filter(
+      (c) => c.reviewStatus?.overall_status === "ready_to_schedule",
+    );
+    // Nhóm hứng phần còn lại: chưa qua vòng kỹ thuật, đã bị từ chối, hoặc
+    // không đọc được trạng thái. HR vẫn nhìn thấy hồ sơ tồn tại.
+    inTechnicalReview = unscheduled.filter(
+      (c) =>
+        c.reviewStatus?.overall_status !== "waiting_for_hr" &&
+        c.reviewStatus?.overall_status !== "ready_to_schedule",
+    );
   } else {
-    // Tech Lead: Pending review
-    toReviewOrSchedule = candidates.filter((c) => !c.scheduledSlot && (c.reviewStatus?.overall_status === "waiting_for_tls" || !c.reviewStatus));
+    toReviewOrSchedule = unscheduled.filter(
+      (c) => c.reviewStatus?.overall_status === "waiting_for_tls" || !c.reviewStatus,
+    );
+    inTechnicalReview = unscheduled.filter(
+      (c) => c.reviewStatus && c.reviewStatus.overall_status !== "waiting_for_tls",
+    );
   }
 
   return (
@@ -290,6 +328,25 @@ export default function Dashboard() {
         onCancel={() => setDetailsFor(null)}
         onSend={handleSendDetails}
       />
+
+      {reviewError && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: `1px solid ${D.amber}40`,
+            background: `${D.amber}10`,
+            color: D.amber,
+            fontSize: 12.5,
+            lineHeight: 1.5,
+          }}
+        >
+          Review status could not be loaded, so candidates below are not sorted by
+          review stage. {reviewError}
+        </div>
+      )}
 
       {notice && (
         <div
@@ -381,6 +438,17 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
+
+                {inTechnicalReview.length > 0 && (
+                  <div>
+                    <h2 style={{ fontSize: 18, fontWeight: 600, color: D.sub, marginBottom: 16 }}>
+                      {user?.role === "hr" ? "In Technical Review" : "Already Decided"}
+                    </h2>
+                    <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }}>
+                      {inTechnicalReview.map((c) => renderCandidateRow(c, false))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Table 2: Scheduled Interviews for HR */}
                 {user?.role === "hr" && (

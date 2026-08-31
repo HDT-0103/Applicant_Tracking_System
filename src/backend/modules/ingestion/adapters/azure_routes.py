@@ -93,12 +93,12 @@ def _assert_job_accepts_applications(job_id: str, settings: Settings) -> None:
 def get_azure_ingestion_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AzureIngestionService:
-    """Dựng đường nạp CV. Thiếu cấu hình Azure thì báo 503, không phải 500.
+    """Dựng đường nạp CV. Thiếu cấu hình BẮT BUỘC thì báo 503, không phải 500.
 
-    `AzureServiceBusService.__init__` ném ValueError khi thiếu connection
-    string. Trước đây lỗi đó lọt thẳng ra ngoài thành 500 "unexpected error" —
-    ứng viên đang nộp hồ sơ đọc được đúng một câu vô nghĩa, còn người vận hành
-    thì phải mở log mới biết chỉ là thiếu một biến môi trường.
+    Chỉ Blob Storage là bắt buộc — không có nó thì CV không lưu được đi đâu.
+    Service Bus là tuỳ chọn: nó chỉ phát một sự kiện thông báo, còn enrichment
+    do route tự chạy nền. Bắt nó phải có thì một máy đã cấu hình Blob vẫn từ
+    chối mọi hồ sơ ứng tuyển.
     """
     try:
         return AzureIngestionService(

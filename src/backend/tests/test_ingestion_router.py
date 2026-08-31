@@ -191,3 +191,49 @@ class TestCandidateCvLink:
             r = client.get("/api/v1/candidates/nobody/cv")
 
         assert r.status_code == 404
+
+
+class TestServiceBusIsOptional:
+    """Thiếu Service Bus KHÔNG được chặn ứng viên nộp hồ sơ.
+
+    Sự kiện "đã nhận CV" là thông báo cho hệ thống ngoài; repo này chưa có
+    consumer nào đọc hàng đợi, và enrichment do chính route chạy nền. Trước đây
+    `AzureServiceBusService.__init__` ném lỗi khi thiếu connection string, nên
+    một máy đã cấu hình Blob vẫn từ chối MỌI hồ sơ với 503.
+    """
+
+    @staticmethod
+    def _settings(connection_string: str):
+        settings = MagicMock()
+        settings.azure_service_bus_connection_string = connection_string
+        return settings
+
+    def test_building_it_without_a_connection_string_does_not_raise(self):
+        from modules.ingestion.infra.azure_service_bus_service import (
+            AzureServiceBusService,
+        )
+
+        service = AzureServiceBusService(self._settings(""))
+        assert service.enabled is False
+
+    def test_publishing_without_configuration_is_logged_not_raised(self):
+        from modules.ingestion.infra import azure_service_bus_service as mod
+
+        service = mod.AzureServiceBusService(self._settings(""))
+        with patch.object(mod, "logger") as log:
+            service.publish_cv_received_event("cand-1", "https://blob/cv.pdf")
+
+        # Im lặng bỏ qua thì không ai biết sự kiện không được phát; ném lỗi thì
+        # mất luôn hồ sơ ứng viên vừa nộp.
+        log.warning.assert_called_once()
+        assert log.warning.call_args[0][0] == "azure.servicebus.not_configured"
+
+    def test_a_submission_still_succeeds(self, client, mock_azure_service):
+        valid_pdf = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+        with patch("modules.ingestion.adapters.azure_routes.enrichment_worker"):
+            r = client.post(
+                "/api/v1/ingest",
+                files={"file": ("cv.pdf", valid_pdf, ALLOWED_MIME_TYPE)},
+                data={"full_name": "Ứng viên", "email": "uv@example.com"},
+            )
+        assert r.status_code in (200, 202), r.text

@@ -75,7 +75,7 @@ class SupabaseReviewRepo(IReviewRepo):
         res = (
             self._client.table("applications")
             .select("id, job_posting_id, review_panel_size")
-            .eq("candidate_id", candidate_uuid)
+            .eq("candidate_uuid", candidate_uuid)
             .order("created_at", desc=True)
             .limit(1)
             .execute()
@@ -154,12 +154,12 @@ class SupabaseReviewRepo(IReviewRepo):
         # (2) trong danh sách được hỏi, ai nộp vào những tin đó
         apps = (
             self._client.table("applications")
-            .select("candidate_id")
-            .in_("candidate_id", list(candidate_uuids))
+            .select("candidate_uuid")
+            .in_("candidate_uuid", list(candidate_uuids))
             .in_("job_posting_id", job_ids)
             .execute()
         )
-        return {row["candidate_id"] for row in apps.data or []}
+        return {row["candidate_uuid"] for row in apps.data or []}
 
     async def get_panel(self, job_posting_id: str) -> List[PanelMember]:
         res = (
@@ -223,5 +223,5 @@ class SupabaseReviewRepo(IReviewRepo):
 
     async def set_application_status(self, candidate_uuid: str, status: str) -> None:
         self._client.table("applications").update({"status": status}).eq(
-            "candidate_id", candidate_uuid
+            "candidate_uuid", candidate_uuid
         ).execute()

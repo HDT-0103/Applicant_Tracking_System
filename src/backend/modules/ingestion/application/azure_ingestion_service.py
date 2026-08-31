@@ -103,6 +103,8 @@ class AzureIngestionService:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
+        # Bỏ qua lặng lẽ nếu Service Bus chưa cấu hình — publisher tự ghi log.
+        # Hồ sơ đã lưu xong ở bước trên; enrichment do route chạy nền.
         self._service_bus_service.publish_cv_received_event(
             candidate_uuid=candidate_uuid, storage_url=storage_url
         )
@@ -117,7 +119,9 @@ class AzureIngestionService:
             status="Accepted",
             candidate_uuid=candidate_uuid,
             storage_url=storage_url,
-            message="CV successfully ingested and processing event published",
+            # Không hứa "event published" nữa: câu đó sai khi Service Bus chưa
+            # bật, và nó là thứ người vận hành đọc để tin rằng sự kiện đã đi.
+            message="CV successfully ingested.",
             resume_id=resume_id,
             application_id=application_id,
         )

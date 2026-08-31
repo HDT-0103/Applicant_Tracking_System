@@ -12,20 +12,43 @@ QUEUE_NAME = "cv-received-queue"
 
 
 class AzureServiceBusService:
+    """Phát sự kiện "đã nhận CV" lên hàng đợi.
+
+    KHÔNG bắt buộc phải cấu hình. Sự kiện này là thông báo cho hệ thống ngoài;
+    luồng nhận CV không phụ thuộc vào nó — route tự chạy enrichment bằng
+    `background_tasks`, và trong repo hiện chưa có consumer nào đọc hàng đợi.
+
+    Trước đây `__init__` ném ValueError khi thiếu connection string, nên trên
+    máy có Blob mà chưa có Service Bus thì MỌI hồ sơ ứng tuyển đều bị từ chối
+    — một tính năng phụ chưa bật làm chết cả luồng nghiệp vụ chính.
+    """
+
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._connection_string = settings.azure_service_bus_connection_string
-
-        if not self._connection_string:
-            raise ValueError("AZURE_SERVICE_BUS_CONNECTION_STRING is not configured")
-
-        self._service_bus_client = ServiceBusClient.from_connection_string(
-            self._connection_string
+        self._service_bus_client = (
+            ServiceBusClient.from_connection_string(self._connection_string)
+            if self._connection_string
+            else None
         )
+
+    @property
+    def enabled(self) -> bool:
+        return self._service_bus_client is not None
 
     def publish_cv_received_event(
         self, candidate_uuid: str, storage_url: str
     ) -> None:
+        if self._service_bus_client is None:
+            # Ghi log rồi đi tiếp. Im lặng bỏ qua thì không ai biết sự kiện
+            # không được phát; ném lỗi thì mất luôn hồ sơ vừa nộp.
+            logger.warning(
+                "azure.servicebus.not_configured",
+                candidate_uuid=candidate_uuid,
+                queue_name=QUEUE_NAME,
+            )
+            return
+
         event_payload = {
             "candidate_uuid": candidate_uuid,
             "storage_url": storage_url,
