@@ -107,6 +107,9 @@ export async function confirmSlot(req: ConfirmRequest): Promise<ConfirmedSlot> {
   };
 }
 
+/**
+ * Sends room/address details for a confirmed slot to candidate + panel.
+ */
 export async function sendInterviewDetails(slotId: string, room: string, address: string): Promise<{status: string, message: string}> {
   return api.post<{status: string, message: string}>(`/api/scheduling/${slotId}/send-details`, { room, address });
 }

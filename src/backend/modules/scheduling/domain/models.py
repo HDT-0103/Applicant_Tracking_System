@@ -44,6 +44,14 @@ class ConfirmedSlot(BaseModel):
     )
 
 
+class CandidateContact(BaseModel):
+    """Chỉ đủ để gửi thư — cố ý không mang theo phần còn lại của hồ sơ."""
+
+    candidate_id: str
+    full_name: str
+    email: str
+
+
 class SchedulingConfig(BaseModel):
     work_start: str = "01:00"
     work_end: str = "10:00"

@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 from typing import Literal, Optional, List
 
 from pydantic import BaseModel, Field
@@ -20,10 +20,31 @@ class CvReview(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
+class PanelMember(BaseModel):
+    """Một Tech Lead được HR mời vào hội đồng của một tin tuyển dụng."""
+
+    reviewer_id: str
+    name: str
+    email: str
+    invited_at: str
+
+
 class TLReviewSummary(BaseModel):
     reviewer_id: str
     decision: ReviewDecision
     review_text: str
+
+#: Các trạng thái tổng hợp có thể xảy ra. Là Literal chứ không phải str tự do:
+#: frontend switch trên đúng những giá trị này, thêm nhánh mới mà quên sửa UI
+#: thì mypy/pydantic báo ngay thay vì render ra ô trống.
+OverallStatus = Literal[
+    "waiting_for_tls",
+    "rejected_by_tls",
+    "waiting_for_hr",
+    "rejected_by_hr",
+    "ready_to_schedule",
+]
+
 
 class ReviewStatus(BaseModel):
     candidate_uuid: str
@@ -33,4 +54,9 @@ class ReviewStatus(BaseModel):
     total_tls: int = 1
     approved_tls: int = 0
     rejected_tls: int = 0
-    overall_status: str = "waiting_for_tls"
+    #: Số phiếu duyệt cần có, backend tính sẵn từ policy. Frontend hiển thị
+    #: thẳng con số này thay vì tự nhân 0.8 — xem review/domain/policy.py.
+    required_tl_approvals: int = 1
+    #: Câu mô tả luật, để người duyệt đọc được ngay tại chỗ bấm nút.
+    panel_rule: str = ""
+    overall_status: OverallStatus = "waiting_for_tls"

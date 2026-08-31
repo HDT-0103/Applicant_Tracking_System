@@ -47,28 +47,33 @@ class SweepLineService:
                     overlap_start = None
                 active.discard(iid)
 
-        if overlap_start is not None:
-            now = datetime.now(timezone.utc)
-            if now > overlap_start:
-                overlap_windows.append((overlap_start, now))
+        # No dangling-window handling here on purpose. Every interval pushes
+        # both a +1 and a -1, so an overlap that opens always closes. The
+        # previous code closed it at `datetime.now()`, which for future
+        # availability would have produced a window ending in the past.
 
         min_delta = timedelta(minutes=min_slot_minutes)
+        # Sorted once: `interviewer_ids` below is built from a set, and set
+        # iteration order is not stable between processes. Unsorted, two
+        # identical requests return different payloads — which breaks response
+        # caching and makes any assertion on the field flaky.
+        panel = sorted(all_interviewer_ids)
         filtered = []
         for start, end in overlap_windows:
             cursor = start.replace(second=0, microsecond=0)
             if cursor < start:
                 cursor += timedelta(minutes=1)
             while cursor + min_delta <= end:
+                # The loop condition already guarantees the slot fits, so no
+                # clamping is needed and every slot is exactly min_slot_minutes.
                 slot_end = cursor + min_delta
-                if slot_end > end:
-                    slot_end = end
                 duration = (slot_end - cursor).total_seconds() / 60
                 filtered.append(
                     TimeSlot(
                         start_time=cursor,
                         end_time=slot_end,
                         duration_min=duration,
-                        interviewer_ids=list(all_interviewer_ids),
+                        interviewer_ids=panel,
                         recommendation=(
                             "Recommended"
                             if duration >= 60
@@ -78,11 +83,15 @@ class SweepLineService:
                 )
                 cursor += min_delta
 
-        filtered.sort(
-            key=lambda s: (-s.duration_min, s.start_time)
-        )
+        # Every slot is exactly min_slot_minutes long, so sorting by duration
+        # first would be a no-op tie-break. Chronological order is what a
+        # recruiter reading a list of suggestions actually expects.
+        filtered.sort(key=lambda s: s.start_time)
 
-        result = filtered
+        # `limit` used to be accepted and then ignored, so a free working day
+        # returned every 45-minute block in it. A dozen "suggestions" is not a
+        # suggestion. limit <= 0 means no cap.
+        result = filtered[:limit] if limit and limit > 0 else filtered
 
         logger.info(
             "scheduling.sweepline.complete",

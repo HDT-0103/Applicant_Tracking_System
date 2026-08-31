@@ -3,9 +3,14 @@
 import React, { useState, useEffect, useRef, Suspense, KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AppHeader } from "../../../components/AppHeader";
+import { ReviewPanelPicker } from "../../../components/ReviewPanelPicker";
+import {
+  getJobPosting,
+  saveJobPosting,
+  setJobPostingStatus,
+} from "../../../services/catalogService";
 import { LeftSidebar } from "../../../components/LeftSidebar";
 import { D } from "../../../lib/shared";
-import { supabase } from "../../../lib/supabase";
 import {
   Plus,
   X,
@@ -89,9 +94,9 @@ function StepIndicator({
                 className={cn(
                   "w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 transition-all",
                   isActive
-                    ? "bg-[#4f46e5] text-white shadow-sm shadow-[#4f46e5]/30"
+                    ? "bg-primary text-white shadow-sm shadow-primary/30"
                     : isDone
-                    ? "bg-[#4f46e5] text-white"
+                    ? "bg-primary text-white"
                     : "bg-[rgba(15,17,23,0.08)] text-muted-foreground",
                 )}
               >
@@ -100,7 +105,7 @@ function StepIndicator({
               <span
                 className={cn(
                   "text-sm font-medium whitespace-nowrap",
-                  isActive ? "text-[#4f46e5] font-semibold" : isDone ? "text-foreground" : "text-muted-foreground",
+                  isActive ? "text-primary font-semibold" : isDone ? "text-foreground" : "text-muted-foreground",
                 )}
               >
                 {step.label}
@@ -108,8 +113,8 @@ function StepIndicator({
             </button>
             {i < steps.length - 1 && (
               <div className="flex items-center mx-3">
-                <div className={cn("h-px w-8", isDone ? "bg-[#4f46e5]/40" : "bg-border")} />
-                <ChevronRight className={cn("w-3.5 h-3.5 -ml-1", isDone ? "text-[#4f46e5]/40" : "text-border")} />
+                <div className={cn("h-px w-8", isDone ? "bg-primary/40" : "bg-border")} />
+                <ChevronRight className={cn("w-3.5 h-3.5 -ml-1", isDone ? "text-primary/40" : "text-border")} />
               </div>
             )}
           </div>
@@ -168,7 +173,7 @@ function TagInput({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
           placeholder={placeholder}
-          className="h-9 text-sm border-[rgba(15,17,23,0.15)] focus:border-[#4f46e5] focus:ring-2 focus:ring-[#4f46e5]/20 rounded-md px-3 flex-1 outline-none transition-all"
+          className="h-9 text-sm border-[rgba(15,17,23,0.15)] focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-md px-3 flex-1 outline-none transition-all"
         />
         <button
           type="button"
@@ -178,7 +183,7 @@ function TagInput({
             "h-9 w-9 rounded-md flex items-center justify-center shrink-0 transition-all",
             "disabled:opacity-40 disabled:cursor-not-allowed",
             variant === "primary"
-              ? "bg-[#4f46e5] text-white hover:bg-[#4338ca]"
+              ? "bg-primary text-white hover:bg-primary-hover"
               : "border border-[rgba(15,17,23,0.15)] bg-white text-foreground hover:bg-[#f4f5f7] hover:border-[rgba(15,17,23,0.3)]",
           )}
         >
@@ -196,7 +201,7 @@ function TagInput({
             className={cn(
               "inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all",
               variant === "primary"
-                ? "bg-[#4f46e5]/10 text-[#4f46e5] border border-[#4f46e5]/20 hover:bg-[#4f46e5]/15"
+                ? "bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15"
                 : "bg-white text-foreground border border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)]",
             )}
           >
@@ -206,7 +211,7 @@ function TagInput({
               onClick={() => onRemove(tag)}
               className={cn(
                 "rounded-sm p-0.5 hover:bg-black/10 transition-colors",
-                variant === "primary" ? "text-[#4f46e5]" : "text-muted-foreground",
+                variant === "primary" ? "text-primary" : "text-muted-foreground",
               )}
             >
               <X className="w-3 h-3" />
@@ -272,7 +277,7 @@ function RichTextarea({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="rounded-t-none border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-[#4f46e5] focus:ring-2 focus:ring-[#4f46e5]/20 text-sm resize-none transition-all outline-none font-mono text-[13px] leading-relaxed w-full px-3 py-2 bg-white"
+        className="rounded-t-none border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-primary focus:ring-2 focus:ring-primary/20 text-sm resize-none transition-all outline-none font-mono text-[13px] leading-relaxed w-full px-3 py-2 bg-white"
       />
     </div>
   );
@@ -289,7 +294,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
 
   return (
     <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-br from-[#4f46e5] to-[#6d28d9] px-5 py-5">
+      <div className="bg-gradient-to-br from-primary to-[#6d28d9] px-5 py-5">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-xs">GC</span>
@@ -310,7 +315,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
           { icon: Layers, text: seniority },
         ].map(({ icon: Icon, text }) => (
           <div key={text} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Icon className="w-3.5 h-3.5 text-[#4f46e5]/60" />
+            <Icon className="w-3.5 h-3.5 text-primary/60" />
             {text}
           </div>
         ))}
@@ -323,7 +328,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
           </p>
           <div className="flex flex-wrap gap-1.5">
             {allMustHave.slice(0, 6).map((s) => (
-              <span key={s} className="text-[11px] px-2 py-0.5 rounded-md bg-[#4f46e5]/10 text-[#4f46e5] border border-[#4f46e5]/20 font-medium">
+              <span key={s} className="text-[11px] px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-medium">
                 {s}
               </span>
             ))}
@@ -353,7 +358,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
       <div className="px-5 pb-5">
         <button
           type="button"
-          className="w-full h-9 rounded-lg bg-[#4f46e5] text-white text-sm font-semibold hover:bg-[#4338ca] transition-colors"
+          className="w-full h-9 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors"
         >
           Apply Now
         </button>
@@ -386,13 +391,13 @@ function ShareLinkBox({ url }: { url: string }) {
           value={url}
           onFocus={(e) => e.currentTarget.select()}
           className="h-9 flex-1 min-w-0 rounded-lg border border-border bg-[#f8f9fb] px-3
-            text-xs font-mono text-foreground outline-none focus:border-[#4f46e5]"
+            text-xs font-mono text-foreground outline-none focus:border-primary"
         />
         <button
           type="button"
           onClick={copy}
-          className="h-9 shrink-0 rounded-lg bg-[#4f46e5] px-3 text-xs font-medium text-white
-            transition-colors hover:bg-[#4338ca] flex items-center gap-1.5"
+          className="h-9 shrink-0 rounded-lg bg-primary px-3 text-xs font-medium text-white
+            transition-colors hover:bg-primary-hover flex items-center gap-1.5"
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           {copied ? "Copied" : "Copy"}
@@ -421,7 +426,7 @@ function PublishModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="max-w-[480px] w-full mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        <div className="bg-gradient-to-br from-[#4f46e5] to-[#6d28d9] px-8 py-8 flex flex-col items-center gap-4">
+        <div className="bg-gradient-to-br from-primary to-[#6d28d9] px-8 py-8 flex flex-col items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-white/15 flex items-center justify-center shadow-lg">
             <CheckCircle2 className="w-8 h-8 text-white" />
           </div>
@@ -506,6 +511,8 @@ function CreateJobPostingForm() {
   });
 
   const [postingId, setPostingId] = useState<string | null>(null);
+  /** Sĩ số hội đồng chấm. 0 = chưa mời ai, và tin không được đăng. */
+  const [panelCount, setPanelCount] = useState(0);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [savingError, setSavingError] = useState<string | null>(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -526,13 +533,7 @@ function CreateJobPostingForm() {
 
     const fetchExistingJob = async () => {
       try {
-        const { data: job, error } = await supabase
-          .from('jobs_posting')
-          .select('*')
-          .eq('id', editJobId)
-          .single();
-
-        if (error) throw error;
+        const job = await getJobPosting(editJobId);
 
         if (job && isMounted) {
           setJD({
@@ -568,6 +569,19 @@ function CreateJobPostingForm() {
   }, [editJobId]);
 
   const saveToSupabase = async (status: 'DRAFT' | 'PUBLISHED') => {
+    // Đăng tin mà chưa có hội đồng thì hồ sơ về sẽ nằm im: không tech lead nào
+    // xem được, và ngưỡng 80% của 0 người là vô nghĩa. Chặn ở đây vì sai lầm
+    // phát hiện lúc đăng tin rẻ hơn nhiều so với lúc ứng viên đã nộp.
+    if (status === 'PUBLISHED' && panelCount === 0) {
+      setSavingError(
+        "Add at least one Tech Lead to the review panel before publishing — " +
+        "applications to a posting with no panel cannot be reviewed by anyone.",
+      );
+      setSaveStatus("idle");
+      setCurrentStep(3);
+      return;
+    }
+
     const data = jdRef.current;
     if (!data.title || !data.title.trim()) {
       setSavingError("Job title is required!");
@@ -577,43 +591,37 @@ function CreateJobPostingForm() {
     setSaveStatus("saving");
     setSavingError(null);
 
-    const payload = {
-      job_title: data.title.trim(),
-      department: data.department || null,
-      location: data.location || null,
-      seniority_level: data.seniority || null,
-      employment_type: data.employmentType || null,
-      work_mode: data.workMode || null,
-      target_openings: data.targetApplicants ? parseInt(data.targetApplicants, 10) : null,
-      salary_min: data.salaryMin ? parseFloat(data.salaryMin) : null,
-      salary_max: data.salaryMax ? parseFloat(data.salaryMax) : null,
-      must_have_skills: data.mustHaveSkills,
-      nice_to_have_skills: data.niceToHaveSkills,
-      description: data.overview || null,
-      key_responsibilities: data.responsibilities || null,
-      requirements: data.requirements || null,
-      nice_to_have_qualifications: data.niceToHaveQuals || null,
-      status,
-      ...(status === 'PUBLISHED' ? { posted_at: new Date().toISOString() } : {}),
-      ...(postingId ? {} : { last_saved_at: new Date().toISOString() }),
-    };
-
     try {
-      if (postingId) {
-        const { error } = await supabase
-          .from('jobs_posting')
-          .update({ ...payload, last_saved_at: new Date().toISOString() })
-          .eq('id', postingId);
-        if (error) throw error;
-      } else {
-        const { data: inserted, error } = await supabase
-          .from('jobs_posting')
-          .insert(payload)
-          .select('id')
-          .single();
-        if (error) throw error;
-        setPostingId(inserted.id);
+      // Qua backend: danh sách trường được lưu là CỐ ĐỊNH ở phía máy chủ.
+      // Trước đây trình duyệt gửi payload thẳng vào PostgREST, nên client tự
+      // quyết được cột nào bị ghi — kể cả `created_by` hay `status`.
+      const saved = await saveJobPosting(
+        {
+          job_title: data.title.trim(),
+          department: data.department || null,
+          location: data.location || null,
+          seniority_level: data.seniority || null,
+          employment_type: data.employmentType || null,
+          work_mode: data.workMode || null,
+          target_openings: data.targetApplicants ? parseInt(data.targetApplicants, 10) : null,
+          salary_min: data.salaryMin ? parseFloat(data.salaryMin) : null,
+          salary_max: data.salaryMax ? parseFloat(data.salaryMax) : null,
+          must_have_skills: data.mustHaveSkills,
+          nice_to_have_skills: data.niceToHaveSkills,
+          description: data.overview || null,
+          key_responsibilities: data.responsibilities || null,
+          requirements: data.requirements || null,
+          nice_to_have_qualifications: data.niceToHaveQuals || null,
+        },
+        postingId,
+      );
+      if (!postingId && saved?.id) setPostingId(saved.id);
+
+      // Đăng tin là bước RIÊNG: backend từ chối nếu chưa có hội đồng chấm.
+      if (status === 'PUBLISHED') {
+        await setJobPostingStatus(saved?.id ?? postingId!, 'PUBLISHED');
       }
+
       setSaveStatus("saved");
       if (status === 'PUBLISHED') {
         setShowPublishModal(true);
@@ -642,8 +650,10 @@ function CreateJobPostingForm() {
     saveToSupabase('PUBLISHED');
   };
 
-  const inputCls = "h-10 text-sm border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-[#4f46e5] focus:ring-2 focus:ring-[#4f46e5]/20 transition-all outline-none rounded-md px-3";
-  const selectCls = "h-10 text-sm border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-[#4f46e5] focus:ring-2 focus:ring-[#4f46e5]/20 transition-all outline-none rounded-md px-3 w-full appearance-none cursor-pointer bg-white";
+  const publishBlocked = panelCount === 0;
+
+  const inputCls = "h-10 text-sm border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none rounded-md px-3";
+  const selectCls = "h-10 text-sm border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.25)] focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none rounded-md px-3 w-full appearance-none cursor-pointer bg-white";
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -666,10 +676,10 @@ function CreateJobPostingForm() {
                   setIsEditingHeaderTitle(true);
                   setTimeout(() => headerTitleInputRef.current?.focus(), 50);
                 }}
-                className="w-9 h-9 rounded-xl bg-[#4f46e5]/10 hover:bg-[#4f46e5]/20 flex items-center justify-center cursor-pointer transition-colors"
+                className="w-9 h-9 rounded-xl bg-primary/10 hover:bg-primary/20 flex items-center justify-center cursor-pointer transition-colors"
                 title="Click to edit position title"
               >
-                <Pencil className="w-4.5 h-4.5 text-[#4f46e5]" />
+                <Pencil className="w-4.5 h-4.5 text-primary" />
               </div>
               <div className="flex-1">
                 {isEditingHeaderTitle ? (
@@ -682,7 +692,7 @@ function CreateJobPostingForm() {
                       if (e.key === "Enter") setIsEditingHeaderTitle(false);
                     }}
                     placeholder="Enter position title (Required)..."
-                    className="text-lg font-semibold text-foreground tracking-tight border-b-2 border-[#4f46e5] outline-none bg-transparent w-full"
+                    className="text-lg font-semibold text-foreground tracking-tight border-b-2 border-primary outline-none bg-transparent w-full"
                   />
                 ) : (
                   <div 
@@ -692,7 +702,7 @@ function CreateJobPostingForm() {
                     }}
                     className="group flex items-center gap-2 cursor-pointer"
                   >
-                    <h1 className={cn("text-lg font-semibold tracking-tight transition-colors group-hover:text-[#4f46e5]", jd.title.trim() ? "text-foreground" : "text-amber-600 italic")}>
+                    <h1 className={cn("text-lg font-semibold tracking-tight transition-colors group-hover:text-primary", jd.title.trim() ? "text-foreground" : "text-amber-600 italic")}>
                       {jd.title.trim() || "Position Title (Required) *"}
                     </h1>
                     <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -736,7 +746,7 @@ function CreateJobPostingForm() {
 
             {isLoadingJob ? (
               <div className="flex flex-col items-center justify-center py-28 gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-[#4f46e5]" />
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
                 <p className="text-sm font-medium text-muted-foreground">Loading position details...</p>
               </div>
             ) : (
@@ -751,7 +761,7 @@ function CreateJobPostingForm() {
                   {/* CARD: Position Details */}
                   <div className="bg-white rounded-xl border border-border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-5">
-                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <div className="w-1 h-5 rounded-full bg-primary" />
                       <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Position Details</h2>
                     </div>
 
@@ -901,18 +911,18 @@ function CreateJobPostingForm() {
                   {/* CARD: Skills */}
                   <div className="bg-white rounded-xl border border-border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-5">
-                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <div className="w-1 h-5 rounded-full bg-primary" />
                       <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Skills & Expertise</h2>
                     </div>
 
                     <div className="flex flex-col gap-7">
-                      <div className="rounded-lg border border-[#4f46e5]/15 bg-[#faf9ff] p-4">
+                      <div className="rounded-lg border border-primary/15 bg-[#faf9ff] p-4">
                         <div className="flex items-center gap-1.5 mb-3">
-                          <div className="w-4 h-4 rounded bg-[#4f46e5] flex items-center justify-center shrink-0">
+                          <div className="w-4 h-4 rounded bg-primary flex items-center justify-center shrink-0">
                             <Check className="w-2.5 h-2.5 text-white" />
                           </div>
-                          <span className="text-xs font-semibold text-[#4f46e5] uppercase tracking-[0.08em]">Must-Have Skills</span>
-                          <span className="ml-1.5 text-[10px] text-[#4f46e5]/60 bg-[#4f46e5]/10 px-1.5 py-0.5 rounded">Required</span>
+                          <span className="text-xs font-semibold text-primary uppercase tracking-[0.08em]">Must-Have Skills</span>
+                          <span className="ml-1.5 text-[10px] text-primary/60 bg-primary/10 px-1.5 py-0.5 rounded">Required</span>
                         </div>
                         <TagInput
                           label=""
@@ -947,7 +957,7 @@ function CreateJobPostingForm() {
                   {/* CARD: Job Content */}
                   <div className="bg-white rounded-xl border border-border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-5">
-                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <div className="w-1 h-5 rounded-full bg-primary" />
                       <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Job Content</h2>
                     </div>
 
@@ -993,7 +1003,7 @@ function CreateJobPostingForm() {
                   {/* CARD: Compensation */}
                   <div className="bg-[#ffffff] rounded-xl border border-border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-5">
-                      <div className="w-1 h-5 rounded-full bg-[#4f46e5]" />
+                      <div className="w-1 h-5 rounded-full bg-primary" />
                       <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">
                         Compensation <span className="font-normal text-muted-foreground normal-case tracking-normal">(Optional)</span>
                       </h2>
@@ -1044,7 +1054,7 @@ function CreateJobPostingForm() {
                       <button
                         type="button"
                         onClick={() => setCurrentStep(2)}
-                        className="gap-2 bg-[#4f46e5] hover:bg-[#4338ca] text-white shadow-sm shadow-[#4f46e5]/20 h-9 px-5 rounded-md text-sm transition-all flex items-center"
+                        className="gap-2 bg-primary hover:bg-primary-hover text-white shadow-sm shadow-primary/20 h-9 px-5 rounded-md text-sm transition-all flex items-center"
                       >
                         <span>Preview Card (Step 2)</span>
                         <ArrowRight className="w-4 h-4" />
@@ -1093,32 +1103,32 @@ function CreateJobPostingForm() {
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Role Overview</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Role Overview</h3>
                     <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
                       {jd.overview || "No role overview provided yet..."}
                     </p>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Key Responsibilities</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Key Responsibilities</h3>
                     <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
                       {jd.responsibilities || "No responsibilities provided yet..."}
                     </p>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Requirements</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Requirements</h3>
                     <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
                       {jd.requirements || "No requirements provided yet..."}
                     </p>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-[#4f46e5] uppercase tracking-wide mb-2">Must-Have Skills</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Must-Have Skills</h3>
                     <div className="flex flex-wrap gap-2">
                       {jd.mustHaveSkills.length > 0 ? (
                         jd.mustHaveSkills.map(s => (
-                          <span key={s} className="px-2.5 py-1 rounded-md bg-[#4f46e5]/10 text-[#4f46e5] text-xs font-medium border border-[#4f46e5]/20">
+                          <span key={s} className="px-2.5 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium border border-primary/20">
                             {s}
                           </span>
                         ))
@@ -1139,7 +1149,7 @@ function CreateJobPostingForm() {
                     <button
                       type="button"
                       onClick={() => setCurrentStep(3)}
-                      className="px-5 py-2 rounded-lg bg-[#4f46e5] text-white text-sm font-semibold hover:bg-[#4338ca] transition-colors flex items-center gap-2"
+                      className="px-5 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2"
                     >
                       <span>Proceed to Candidate View Portal (Step 3)</span>
                       <ArrowRight className="w-4 h-4" />
@@ -1174,6 +1184,8 @@ function CreateJobPostingForm() {
                     </div>
                   )}
 
+                  <ReviewPanelPicker jobPostingId={postingId} onCountChange={setPanelCount} />
+
                   <div className="flex items-center justify-between pt-4 border-t border-border">
                     <button
                       type="button"
@@ -1194,10 +1206,16 @@ function CreateJobPostingForm() {
                       <button
                         type="button"
                         onClick={handlePublish}
-                        className="px-5 py-2 rounded-lg bg-[#4f46e5] text-white text-sm font-semibold hover:bg-[#4338ca] transition-colors flex items-center gap-2"
+                        disabled={publishBlocked}
+                        title={
+                          publishBlocked
+                            ? "Add at least one Tech Lead to the review panel first"
+                            : undefined
+                        }
+                        className="px-5 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Globe className="w-4 h-4" />
-                        Publish & Open Applications
+                        Publish &amp; Open Applications
                       </button>
                     </div>
                   </div>
@@ -1226,7 +1244,7 @@ export default function CreateJobPostingPage() {
     <Suspense
       fallback={
         <div className="flex h-screen items-center justify-center bg-[#f8f9fb]">
-          <Loader2 className="w-8 h-8 animate-spin text-[#4f46e5]" />
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       }
     >

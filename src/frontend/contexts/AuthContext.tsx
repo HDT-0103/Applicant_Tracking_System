@@ -13,8 +13,11 @@ import {
   api,
   clearStoredTokens,
   getStoredAccessToken,
+  getStoredRefreshToken,
+  setSessionExpiredHandler,
   setStoredTokens,
 } from "../services/httpClient";
+import { resolveSessionState } from "../lib/jwt";
 import { landingPathForRole, normaliseRole, type UserRole } from "../lib/rbac";
 
 /* ------------------------------------------------------------------ */
@@ -89,17 +92,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const router = useRouter();
 
   useEffect(() => {
-    // Restore user session from localStorage on mount
-    if (typeof window !== "undefined") {
-      const storedUser = readStoredUser();
-      const accessToken = getStoredAccessToken();
-      
-      if (storedUser && accessToken) {
-        setUser(storedUser);
-      }
-      setIsLoading(false);
+    // Khôi phục phiên khi app khởi động.
+    //
+    // Trước đây chỉ kiểm tra token CÓ TỒN TẠI hay không:
+    //
+    //     if (storedUser && accessToken) setUser(storedUser);
+    //
+    // Một token chết từ nhiều tháng trước vẫn là chuỗi khác rỗng, nên app cho
+    // vào thẳng rồi mọi lời gọi API đều hỏng — người dùng thấy mình đã đăng
+    // nhập mà không mở được gì, và không hiểu vì sao.
+    if (typeof window === "undefined") return;
+
+    const storedUser = readStoredUser();
+    const state = resolveSessionState(
+      getStoredAccessToken(),
+      getStoredRefreshToken(),
+    );
+
+    if (storedUser && state !== "expired") {
+      // "refreshable": access đã chết nhưng refresh còn. Vào bình thường —
+      // lượt gọi API đầu tiên sẽ tự gia hạn, người dùng không thấy gì cả.
+      setUser(storedUser);
+    } else if (state === "expired") {
+      // Dọn sạch tàn dư để lần sau không rơi lại vào trạng thái nửa vời.
+      clearStoredTokens();
+      persistUser(null);
+      setUser(null);
     }
+
+    setIsLoading(false);
   }, []);
+
+  // `httpClient` không phải component nên không tự chuyển trang được. Nó gọi
+  // ngược lên đây khi refresh hỏng, để dọn `user` và đưa về màn hình đăng nhập.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      persistUser(null);
+      setUser(null);
+      router.replace("/login?reason=session_expired");
+    });
+    return () => setSessionExpiredHandler(null);
+  }, [router]);
 
   const loginWithGoogle = useCallback(
     async (credential: string) => {

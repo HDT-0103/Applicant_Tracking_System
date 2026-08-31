@@ -3,7 +3,12 @@ from typing import Optional
 from datetime import datetime
 
 from supabase import Client
-from modules.scheduling.domain.models import ConfirmedSlot, Interviewer, SchedulingConfig
+from modules.scheduling.domain.models import (
+    CandidateContact,
+    ConfirmedSlot,
+    Interviewer,
+    SchedulingConfig,
+)
 from modules.scheduling.domain.repo_interface import ISchedulingRepo
 
 logger = structlog.get_logger(__name__)
@@ -74,6 +79,27 @@ class SupabaseSchedulingRepo(ISchedulingRepo):
             return self.get_interviewer(interviewer_id)
         return None
 
+    def get_candidate_contact(self, candidate_id: str) -> Optional[CandidateContact]:
+        res = (
+            self._supabase.table("candidates")
+            .select("full_name, email")
+            .eq("uuid", candidate_id)
+            .execute()
+        )
+        if not res.data:
+            return None
+
+        row = res.data[0]
+        email = row.get("email")
+        if not email:
+            return None
+
+        return CandidateContact(
+            candidate_id=candidate_id,
+            full_name=row.get("full_name") or "Candidate",
+            email=email,
+        )
+
     def get_candidate_email(self, candidate_id: str) -> Optional[str]:
         res = self._supabase.table("candidates").select("email").eq("uuid", candidate_id).execute()
         if res.data and len(res.data) > 0:
@@ -95,21 +121,31 @@ class SupabaseSchedulingRepo(ISchedulingRepo):
 
         return slot
 
+    def get_confirmed_slot(self, slot_id: str) -> Optional[ConfirmedSlot]:
+        res = (
+            self._supabase.table("confirmed_slots")
+            .select("*")
+            .eq("id", slot_id)
+            .execute()
+        )
+        if not res.data:
+            return None
+        return self._to_slot(res.data[0])
+
+    @staticmethod
+    def _to_slot(row: dict) -> ConfirmedSlot:
+        return ConfirmedSlot(
+            id=row["id"],
+            candidate_id=row["candidate_uuid"],
+            start_time=datetime.fromisoformat(row["start_time"]),
+            end_time=datetime.fromisoformat(row["end_time"]),
+            interviewer_ids=row.get("interviewer_ids", []),
+            calendar_event_id=row.get("calendar_event_id"),
+            slack_notified=row.get("slack_notified", False),
+            email_notified=row.get("email_notified", False),
+            created_at=row.get("created_at"),
+        )
+
     def get_confirmed_slots(self, candidate_id: str) -> list[ConfirmedSlot]:
         res = self._supabase.table("confirmed_slots").select("*").eq("candidate_uuid", candidate_id).execute()
-        slots = []
-        for row in res.data:
-            slots.append(
-                ConfirmedSlot(
-                    id=row["id"],
-                    candidate_id=row["candidate_uuid"],
-                    start_time=datetime.fromisoformat(row["start_time"]),
-                    end_time=datetime.fromisoformat(row["end_time"]),
-                    interviewer_ids=row.get("interviewer_ids", []),
-                    calendar_event_id=row.get("calendar_event_id"),
-                    slack_notified=row.get("slack_notified", False),
-                    email_notified=row.get("email_notified", False),
-                    created_at=row.get("created_at")
-                )
-            )
-        return slots
+        return [self._to_slot(row) for row in res.data or []]

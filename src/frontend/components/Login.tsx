@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { type CredentialResponse } from "@react-oauth/google";
 import { Mail, KeyRound, Loader2, ArrowRight } from "lucide-react";
@@ -12,11 +13,21 @@ import { T } from "./auth/authTheme";
 
 export const Login: React.FC = () => {
   const { loginWithGoogle, loginWithEmailPassword } = useAuth();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Bị đưa về đây do phiên hết hạn thì phải nói rõ. Không có dòng này, người
+  // dùng đang làm dở việc bỗng thấy màn hình đăng nhập mà không hiểu vì sao —
+  // dễ tưởng app lỗi hoặc mất dữ liệu.
+  const sessionExpired = searchParams.get("reason") === "session_expired";
+  const notice = error
+    ?? (sessionExpired
+      ? "Your session has expired. Please sign in again to continue."
+      : null);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +69,7 @@ export const Login: React.FC = () => {
     <AuthShell
       heading="Sign in"
       subheading="Access your SmartATS workspace"
-      error={error}
+      error={notice}
       footer={
         <>
           Don&apos;t have an account?{" "}

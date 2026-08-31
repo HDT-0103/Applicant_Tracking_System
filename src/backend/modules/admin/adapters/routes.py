@@ -1,22 +1,25 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.connection import get_db_session
+from fastapi import APIRouter, Depends, HTTPException, status
+from supabase import Client
+
 from modules.admin.application.admin_service import AdminService
 from modules.auth.domain.models import AuthUser
-from modules.shared.infrastructure.auth_dependencies import get_current_user, require_roles
+from modules.shared.infrastructure.auth_dependencies import require_roles
+from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
 
 router = APIRouter(
     prefix="/api/admin",
     tags=["admin"],
-    dependencies=[Depends(require_roles("admin"))] # Global check for admin role
+    dependencies=[Depends(require_roles("admin"))],
 )
 
+
 def get_admin_service(
-    db: Annotated[AsyncSession, Depends(get_db_session)]
+    client: Annotated[Client, Depends(get_supabase_admin_client)]
 ) -> AdminService:
-    return AdminService(db)
+    return AdminService(client)
+
 
 # ----------------------------------------------------
 # USER MANAGEMENT & ACCESS ROUTES
@@ -64,46 +67,49 @@ async def list_policies(
         policies = await admin_service.get_abac_policies()
         return [
             {
-                "id": str(p.id),
-                "role": p.role,
-                "resource": p.resource,
-                "field_name": p.field_name,
-                "is_masked": p.is_masked,
-                "masking_pattern": p.masking_pattern
-            } for p in policies
+                "id": str(p.id) if hasattr(p, "id") else str(p.get("id")),
+                "role": getattr(p, "role", p.get("role") if isinstance(p, dict) else None),
+                "resource": getattr(p, "resource", p.get("resource") if isinstance(p, dict) else None),
+                "field_name": getattr(p, "field_name", p.get("field_name") if isinstance(p, dict) else None),
+                "is_masked": getattr(p, "is_masked", p.get("is_masked") if isinstance(p, dict) else None),
+                "masking_pattern": getattr(p, "masking_pattern", p.get("masking_pattern") if isinstance(p, dict) else None),
+            }
+            for p in policies
         ]
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=str(e),
         )
+
 
 @router.put("/abac/policies/{policy_id}")
 async def update_policy(
     policy_id: str,
     payload: dict,
-    admin_service: Annotated[AdminService, Depends(get_admin_service)]
+    admin_service: Annotated[AdminService, Depends(get_admin_service)],
 ):
     is_masked = payload.get("is_masked")
     if is_masked is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing is_masked boolean field"
+            detail="Missing is_masked boolean field",
         )
-    
+
     try:
         policy = await admin_service.update_abac_policy(policy_id, is_masked)
         return {
-            "id": str(policy.id),
-            "role": policy.role,
-            "resource": policy.resource,
-            "field_name": policy.field_name,
-            "is_masked": policy.is_masked
+            "id": str(policy.id) if hasattr(policy, "id") else str(policy.get("id")),
+            "role": getattr(policy, "role", policy.get("role") if isinstance(policy, dict) else None),
+            "resource": getattr(policy, "resource", policy.get("resource") if isinstance(policy, dict) else None),
+            "field_name": getattr(policy, "field_name", policy.get("field_name") if isinstance(policy, dict) else None),
+            "is_masked": getattr(policy, "is_masked", policy.get("is_masked") if isinstance(policy, dict) else None),
         }
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 # ----------------------------------------------------
 # ACTIVE SESSION ROUTES
@@ -117,10 +123,11 @@ async def list_sessions(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+
 @router.post("/sessions/{jti}/revoke")
 async def revoke_session(
     jti: str,
-    admin_service: Annotated[AdminService, Depends(get_admin_service)]
+    admin_service: Annotated[AdminService, Depends(get_admin_service)],
 ):
     try:
         success = await admin_service.revoke_session(jti)
@@ -131,6 +138,7 @@ async def revoke_session(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 # ----------------------------------------------------
 # AI & VECTOR ROUTES
@@ -143,6 +151,7 @@ async def get_ai_metrics(
         return await admin_service.get_ai_analytics_metrics()
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 @router.get("/analytics/ai/timeseries")
 async def get_ai_timeseries(
@@ -164,6 +173,7 @@ async def trigger_reindex(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+
 # ----------------------------------------------------
 # INFRASTRUCTURE ROUTES
 # ----------------------------------------------------
@@ -176,6 +186,7 @@ async def get_infra_metrics(
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+
 # ----------------------------------------------------
 # AUDIT LOG ROUTES
 # ----------------------------------------------------
@@ -183,7 +194,7 @@ async def get_infra_metrics(
 async def list_audit_logs(
     admin_service: Annotated[AdminService, Depends(get_admin_service)],
     query: str | None = None,
-    limit: int = 50
+    limit: int = 50,
 ):
     try:
         return await admin_service.get_audit_logs(query, limit)

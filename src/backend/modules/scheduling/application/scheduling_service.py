@@ -3,6 +3,10 @@ from typing import Optional
 
 import structlog
 
+from modules.scheduling.domain.errors import (
+    CandidateContactMissingError,
+    SlotNotFoundError,
+)
 from modules.scheduling.domain.models import (
     ConfirmedSlot,
     FreeBusyInterval,
@@ -12,13 +16,16 @@ from modules.scheduling.domain.models import (
 from modules.scheduling.domain.repo_interface import ISchedulingRepo
 from modules.scheduling.infra.google_calendar_service import GoogleCalendarService
 from modules.scheduling.infra.calendar_event_service import CalendarEventService
-from modules.scheduling.infra.email_notifier import EmailNotifier
+from modules.scheduling.infra.email_notifier import EmailNotifier, to_local_tz
 from modules.scheduling.infra.slack_notifier import SlackNotifier
 from modules.scheduling.application.sweep_line_service import SweepLineService
 
 from modules.scheduling.infra.google_oauth_service import GoogleOAuthService
 
 logger = structlog.get_logger(__name__)
+
+#: How many slot suggestions the panel search returns at most.
+MAX_SUGGESTED_SLOTS = 5
 
 
 class SchedulingService:
@@ -44,6 +51,42 @@ class SchedulingService:
 
     async def list_interviewers(self) -> list[Interviewer]:
         return self._repo.get_interviewers()
+
+    async def get_interviewer(self, interviewer_id: str) -> Optional[Interviewer]:
+        return self._repo.get_interviewer(interviewer_id)
+
+    async def send_interview_details(
+        self, slot_id: str, room: str, address: str
+    ) -> str:
+        """Gửi phòng và địa chỉ phỏng vấn cho ứng viên. Trả về email đã gửi tới.
+
+        `room` và `address` do người gọi truyền vào, không có giá trị mặc định:
+        trước đây cả route lẫn frontend đều tự điền "Conference Room A" nên HR
+        có thể gửi đi một địa chỉ mà họ chưa từng nhìn thấy.
+        """
+        slot = self._repo.get_confirmed_slot(slot_id)
+        if slot is None:
+            raise SlotNotFoundError(slot_id)
+
+        contact = self._repo.get_candidate_contact(slot.candidate_id)
+        if contact is None:
+            raise CandidateContactMissingError(slot.candidate_id)
+
+        # Giờ địa phương chứ không phải UTC: ứng viên đọc thư rồi đi họp thật.
+        local_start = to_local_tz(slot.start_time, self._email_notifier.timezone)
+        slot_time = local_start.strftime("%A, %B %d, %Y at %I:%M %p (%Z)")
+
+        await self._email_notifier.send_room_details(
+            candidate_name=contact.full_name,
+            candidate_email=contact.email,
+            slot_time=slot_time,
+            room=room,
+            address=address,
+        )
+        logger.info(
+            "scheduling.details_sent", slot_id=slot_id, candidate_id=slot.candidate_id
+        )
+        return contact.email
 
     async def update_calendar_key(
         self, interviewer_id: str, api_key: str, refresh_token: Optional[str] = None
@@ -128,6 +171,12 @@ class SchedulingService:
         slots = self._sweepline.find_slots(
             interviewer_freebusy=freebusy_map,
             min_slot_minutes=config.min_slot_minutes,
+            # Passed explicitly so the cap is visible here rather than hidden in
+            # a default. `limit` used to be ignored entirely, so a free working
+            # day returned every 45-minute block in it — the UI header reads
+            # "Available Slots (N)", and N in the dozens is noise, not choice.
+            # Raise this if recruiters ask for more options.
+            limit=MAX_SUGGESTED_SLOTS,
         )
 
         return slots

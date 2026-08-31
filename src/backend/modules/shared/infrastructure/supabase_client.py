@@ -4,9 +4,12 @@ Provides Supabase client instances for database operations
 """
 
 import os
-from typing import Optional
+from typing import Annotated, Optional
+
+from fastapi import Depends
 from supabase import create_client, Client
-from modules.shared.infrastructure.config import Settings
+
+from modules.shared.infrastructure.config import Settings, get_settings
 
 
 class SupabaseClientManager:
@@ -129,3 +132,29 @@ def get_supabase_client(settings: Settings, use_admin: bool = False) -> Client:
     """
     manager = get_supabase_manager(settings)
     return manager.get_client(use_admin)
+
+
+# ---------------------------------------------------------------------------
+# FastAPI dependencies
+#
+# These replace `src/backend/app/dependencies.py`, which was the LAST thing the
+# live `modules/` code still imported from the legacy `app/` tree. With it gone,
+# `app/` is fully detached from the running application.
+#
+# The old version called `create_client(...)` inline, so every authenticated
+# request built a brand-new Supabase client and its HTTP session. These reuse
+# the cached manager above.
+# ---------------------------------------------------------------------------
+
+def get_supabase_client_dep(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Client:
+    """Anon-key client, subject to row-level security."""
+    return get_supabase_client(settings, use_admin=False)
+
+
+def get_supabase_admin_client(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Client:
+    """Service-role client. Bypasses RLS — only for server-side work."""
+    return get_supabase_client(settings, use_admin=True)

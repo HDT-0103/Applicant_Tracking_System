@@ -83,6 +83,11 @@ class EnrichedProfile(BaseModel):
     github_username: str | None = None
     linkedin_url: str | None = None
     full_name: str | None = None
+    #: Requirement breakdown from the CV pipeline: which required skills the
+    #: candidate has, which are missing, and what they bring beyond the posting.
+    #: Lives on `enrichment_profiles.skill_matrix`; carried here so the UI can
+    #: explain a match score instead of only stating it.
+    skill_matrix: dict | None = None
 
 
 class CandidateEnrichment(BaseModel):

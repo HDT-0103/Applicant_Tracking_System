@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import String, text, TIMESTAMP, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from app.models.base import Base
+from src.backend.app.models.base import Base
 
 class AbacPolicy(Base):
     __tablename__ = "abac_policies"

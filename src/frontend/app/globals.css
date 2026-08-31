@@ -7,26 +7,45 @@
    Design tokens + layout system + component styles
    ============================================================ */
 
+/* Các biến dưới đây phải khớp TỪNG GIÁ TRỊ với object `D` trong
+   lib/shared.tsx. Hai hệ tồn tại song song vì app dùng cả Tailwind lẫn inline
+   style; `lib/__tests__/tokens.test.ts` canh không cho chúng lệch nhau. */
 :root {
-  --background: #f8f9fb;
+  --background: #f7f8fa;
   --foreground: #0f1117;
   --card: #ffffff;
   --card-foreground: #0f1117;
   --primary: #4f46e5;
+  --primary-hover: #4338ca;
   --primary-foreground: #ffffff;
+  /* Cùng hai màu trên nhưng tách kênh RGB. Tailwind cần dạng này mới ghép được
+     độ mờ (`bg-primary/10`): nó dựng `rgb(var(--primary-rgb) / 0.1)`, điều
+     không làm được nếu biến là chuỗi hex. Đổi màu thì phải sửa CẢ HAI dòng —
+     tokens.test.ts kiểm tra chúng khớp nhau. */
+  --primary-rgb: 79 70 229;
+  --primary-hover-rgb: 67 56 202;
   --muted: #f1f2f6;
   --muted-foreground: #6b7280;
   --accent: #ede9fe;
   --accent-foreground: #4f46e5;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: rgba(15, 17, 23, 0.09);
+  --border: #e4e6eb;
   --sidebar: #ffffff;
   --sidebar-foreground: #0f1117;
   --sidebar-primary: #4f46e5;
   --sidebar-accent: #eef0f6;
-  --sidebar-border: rgba(15, 17, 23, 0.09);
+  --sidebar-border: #e4e6eb;
   --sidebar-ring: #4f46e5;
+
+  /* Bo góc và đổ bóng — dùng chung với D.r* / D.sh* */
+  --radius-1: 6px;
+  --radius-2: 10px;
+  --radius-3: 14px;
+  --shadow-1: 0 1px 2px rgba(15, 17, 23, 0.04);
+  --shadow-2: 0 2px 8px rgba(15, 17, 23, 0.06);
+  --shadow-3: 0 8px 24px rgba(15, 17, 23, 0.08);
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ---------- Reset & Base ---------- */
@@ -41,18 +60,58 @@
 html,
 body {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+  /* --font-inter do next/font gắn vào <html> (app/layout.tsx). Trước đây khai
+     Inter trong token nhưng không nơi nào nạp, app chạy bằng font hệ thống. */
+  font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
-  color: #111827;
-  background: #f9fafb;
+  color: var(--foreground);
+  background: var(--background);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button {
   cursor: pointer;
   font-family: inherit;
   font-size: 13px;
+}
+
+/* ---------- Nền tảng tương tác ----------
+   Ba thứ dưới đây trước giờ thiếu hẳn: toàn app chỉ có 3 câu @media, 24 thuộc
+   tính aria trên 80 nút, và hiệu ứng hover phải viết tay bằng onMouseEnter
+   trong JS ở 11 chỗ. */
+
+/* 1. Vòng focus — điều kiện cần để dùng được bằng bàn phím.
+      Dùng :focus-visible nên chuột bấm không hiện vòng, chỉ hiện khi tab tới. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+
+/* 2. Vùng bấm tối thiểu trên cảm ứng. 24px là quá nhỏ để ngón tay bấm trúng. */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  a[href] {
+    min-height: 40px;
+    min-width: 40px;
+  }
+}
+
+/* 3. Tôn trọng thiết lập giảm chuyển động của hệ điều hành.
+      Không chỉ là tuỳ chọn thẩm mỹ — chuyển động mạnh gây khó chịu thực sự
+      với người bị rối loạn tiền đình. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---------- Layout: Split Screen ---------- */

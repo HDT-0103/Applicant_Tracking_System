@@ -3,9 +3,13 @@ from typing import Annotated, Optional
 import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from modules.scheduling.application.scheduling_service import SchedulingService
+from modules.scheduling.domain.errors import (
+    CandidateContactMissingError,
+    SlotNotFoundError,
+)
 from modules.scheduling.domain.models import (
     ConfirmedSlot,
     Interviewer,
@@ -13,7 +17,7 @@ from modules.scheduling.domain.models import (
 )
 from modules.scheduling.infra.google_calendar_service import GoogleCalendarService
 from modules.scheduling.infra.calendar_event_service import CalendarEventService
-from modules.scheduling.infra.email_notifier import EmailNotifier, to_local_tz
+from modules.scheduling.infra.email_notifier import EmailNotifier
 from modules.scheduling.infra.slack_notifier import SlackNotifier
 from modules.scheduling.infra.impl_supabase import SupabaseSchedulingRepo
 from modules.scheduling.application.sweep_line_service import SweepLineService
@@ -130,7 +134,7 @@ async def calendar_status(
     user: AuthUser = Depends(require_operational_roles()),
 ):
     """Check if the current user has a valid calendar connection"""
-    interviewer = service._repo.get_interviewer(user.id)
+    interviewer = await service.get_interviewer(user.id)
     connected = bool(
         interviewer
         and (interviewer.calendar_api_key or interviewer.calendar_refresh_token)
@@ -178,12 +182,15 @@ async def google_auth_callback(
     """Receive code from Frontend, exchange for tokens and save to DB"""
     access_token, refresh_token = await oauth_service.exchange_code(body.code)
     if not access_token:
-        raise HTTPException(status_code=400, detail="Failed to exchange code for tokens")
+        raise HTTPException(status_code=400, detail="Failed to exchange the authorization code for a token")
 
-    # If Google did not return a new refresh token, preserve the existing one in DB
-    existing_iv = scheduling_service._repo.get_interviewer(user.id)
-    if not refresh_token and existing_iv and existing_iv.calendar_refresh_token:
-        refresh_token = existing_iv.calendar_refresh_token
+    # Google chỉ trả refresh_token ở lần cấp quyền ĐẦU TIÊN. Những lần kết nối
+    # lại sau đó chỉ có access_token, ghi đè thẳng sẽ xoá mất refresh_token cũ
+    # và lịch của HR đó chết ngay khi access_token hết hạn sau 1 giờ.
+    if not refresh_token:
+        existing = await scheduling_service.get_interviewer(user.id)
+        if existing and existing.calendar_refresh_token:
+            refresh_token = existing.calendar_refresh_token
 
     await scheduling_service.update_calendar_key(user.id, access_token, refresh_token)
     return {"status": "success", "message": "Google Calendar connected successfully"}
@@ -267,7 +274,7 @@ async def confirm_slot(
             detail="A valid candidate must be selected for scheduling. Please select a candidate from the dashboard.",
         )
 
-    interviewer = service._repo.get_interviewer(user.id)
+    interviewer = await service.get_interviewer(user.id)
     api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else ""
     refresh_token = interviewer.calendar_refresh_token if interviewer else None
 
@@ -299,8 +306,12 @@ async def confirm_slot(
         raise e
 
 class SendDetailsRequest(BaseModel):
-    room: str = ""
-    address: str = ""
+    #: Bắt buộc: HR phải nhìn thấy đúng phòng và địa chỉ mình gửi đi. Trước
+    #: đây cả hai đều có mặc định nên một request thiếu trường vẫn gửi cho ứng
+    #: viên một địa chỉ do code bịa ra.
+    room: str = Field(min_length=1, max_length=200)
+    address: str = Field(min_length=1, max_length=500)
+
 
 @router.post("/{slot_id}/send-details")
 async def send_interview_details(
@@ -309,32 +320,16 @@ async def send_interview_details(
     service: ServiceDep,
     _user: AuthUser = Depends(require_roles("hr")),
 ):
-    """Send room and location details to candidate via email"""
-    res = service._repo._supabase.table("confirmed_slots").select("*").eq("id", slot_id).execute()
-    if not res.data:
+    """Gửi phòng và địa chỉ phỏng vấn cho ứng viên."""
+    try:
+        email = await service.send_interview_details(
+            slot_id=slot_id, room=body.room, address=body.address
+        )
+    except SlotNotFoundError:
         raise HTTPException(status_code=404, detail="Confirmed slot not found")
-    slot_row = res.data[0]
-
-    cand_id = slot_row["candidate_uuid"]
-    cand_res = service._repo._supabase.table("candidates").select("full_name, email").eq("uuid", cand_id).execute()
-    if not cand_res.data or not cand_res.data[0].get("email"):
-        raise HTTPException(status_code=400, detail="Candidate email not found")
-
-    cand_name = cand_res.data[0].get("full_name") or "Candidate"
-    cand_email = cand_res.data[0].get("email")
-
-    start_dt = datetime.fromisoformat(slot_row["start_time"])
-    local_start = to_local_tz(start_dt, service._email_notifier._app_timezone)
-    slot_time = local_start.strftime("%A, %B %d, %Y at %I:%M %p (GMT+7)")
-
-    room = body.room or "Conference Room A - 3rd Floor"
-    address = body.address or "SmartATS HQ, 123 Tech Blvd"
-
-    await service._email_notifier.send_room_details(
-        candidate_name=cand_name,
-        candidate_email=cand_email,
-        slot_time=slot_time,
-        room=room,
-        address=address,
-    )
-    return {"status": "success", "message": "Interview room and location details sent to candidate successfully"}
+    except CandidateContactMissingError:
+        raise HTTPException(
+            status_code=400,
+            detail="This candidate has no email address on file, so the details could not be sent.",
+        )
+    return {"status": "success", "message": f"Interview details sent to {email}"}

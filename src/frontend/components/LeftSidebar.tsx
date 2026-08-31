@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { D, Badge } from "../lib/shared";
 import { 
   Layers, 
-  FileText, 
   BarChart3, 
   Sparkles, 
   Calendar,
@@ -17,9 +16,23 @@ import {
   PlayCircle,
   Pencil,
   ExternalLink,
-  Copy
+  Copy,
+  Pin
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import {
+  deleteJobPosting,
+  duplicateJobPosting,
+  listJobPostings,
+  setJobPostingStatus,
+} from "../services/catalogService";
+import { ConfirmDialog } from "./ConfirmDialog";
+
+/** Bề rộng rail khi thu gọn — vừa đủ cho vùng bấm 36px và lề hai bên. */
+const RAIL_WIDTH = 56;
+/** Bề rộng khi bung. Giữ đúng 280 như cũ để nội dung bên trong không phải sửa. */
+const PANEL_WIDTH = 280;
+/** Ghi nhớ lựa chọn ghim giữa các lần mở lại trang. */
+const PIN_STORAGE_KEY = "smartats.sidebar.pinned";
 
 interface JobPosting {
   id: string;
@@ -30,12 +43,34 @@ interface JobPosting {
 
 export const LeftSidebar: React.FC = () => {
   const router = useRouter();
+  const pathname = usePathname();
   const [activeJobId, setActiveJobId] = useState<string>("");
   const [jobPostings, setJobPostings] = useState<JobPosting[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [hoveredJobId, setHoveredJobId] = useState<string | null>(null);
   const [openMenuJobId, setOpenMenuJobId] = useState<string | null>(null);
+  /** Tin tuyển dụng đang chờ xác nhận xoá. `null` = hộp thoại đóng. */
+  const [deletingJob, setDeletingJob] = useState<JobPosting | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
 
+  // Đọc trạng thái ghim sau khi mount, không đọc lúc khởi tạo state:
+  // localStorage không tồn tại khi Next render phía server, và nếu server dựng
+  // ra "thu gọn" còn client dựng ra "đã ghim" thì React báo lỗi hydration.
+  useEffect(() => {
+    setPinned(window.localStorage.getItem(PIN_STORAGE_KEY) === "true");
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(PIN_STORAGE_KEY, String(pinned));
+  }, [pinned]);
+
+  // "CV Ingestion & Screening" đã được gỡ: nó trỏ về "/" — đúng chỗ mà
+  // "Dashboard Overview" ngay trên đó dẫn tới. Hai mục dẫn về cùng một trang
+  // thì người dùng phải bấm cả hai mới biết, và mục thứ hai hứa một màn hình
+  // không tồn tại. Việc nạp CV thực tế do ứng viên làm qua trang /careers.
   const workspaceItems = [
     {
       icon: <Layers size={15} />,
@@ -49,41 +84,28 @@ export const LeftSidebar: React.FC = () => {
       badge: "AI Live",
       path: "/analytics",
     },
-    {
-      icon: <FileText size={15} />,
-      label: "CV Ingestion & Screening",
-      badge: null,
-      path: "/",
-    },
   ];
+
+  /** Mục đang mở, xét theo URL thật.
+   *
+   *  Trước đây phần tô sáng so khớp nhãn với chuỗi "CV Analysis" — một nhãn
+   *  không còn mục nào mang, nên KHÔNG BAO GIỜ có mục nào sáng lên và người
+   *  dùng không đọc được mình đang ở đâu. */
+  const isCurrent = (path: string) =>
+    path === "/" ? pathname === "/" : pathname?.startsWith(path) ?? false;
 
   useEffect(() => {
     const loadJobPostings = async () => {
       try {
-        const { data, error } = await supabase
-          .from('jobs_posting')
-          .select('id, job_title, status')
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        const { data: appCounts, error: appError } = await supabase
-          .from('applications')
-          .select('job_posting_id')
-          .not('job_posting_id', 'is', null);
-
-        if (appError) throw appError;
-
-        const countMap: Record<string, number> = {};
-        (appCounts || []).forEach((a) => {
-          countMap[a.job_posting_id] = (countMap[a.job_posting_id] || 0) + 1;
-        });
-
-        const mapped: JobPosting[] = (data || []).map((job) => ({
+        // Qua backend: sidebar hiện ở MỌI trang, nên nó là truy vấn chạy nhiều
+        // nhất trong app. Trước đây nó đọc thẳng Supabase bằng anon key và tự
+        // đếm hồ sơ ứng tuyển ở phía trình duyệt.
+        const jobs = await listJobPostings();
+        const mapped: JobPosting[] = jobs.map((job) => ({
           id: job.id,
           title: job.job_title,
           status: job.status,
-          applicant_count: countMap[job.id] || 0,
+          applicant_count: job.applicant_count,
         }));
 
         setJobPostings(mapped);
@@ -106,19 +128,18 @@ export const LeftSidebar: React.FC = () => {
   const handleToggleStatus = async (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
     const newStatus = job.status === 'PUBLISHED' ? 'CLOSED' : 'PUBLISHED';
+    setJobError(null);
     try {
-      const { error } = await supabase
-        .from('jobs_posting')
-        .update({ status: newStatus })
-        .eq('id', job.id);
-
-      if (error) throw error;
-
+      await setJobPostingStatus(job.id, newStatus);
       setJobPostings((prev) =>
         prev.map((j) => (j.id === job.id ? { ...j, status: newStatus } : j))
       );
     } catch (err) {
-      console.error('Failed to update job status:', err);
+      // Mở lại một tin chưa có hội đồng bị backend từ chối — người dùng cần
+      // đọc được lý do, không phải thấy menu đóng lại và không có gì xảy ra.
+      setJobError(
+        err instanceof Error ? err.message : 'Could not change the posting status.',
+      );
     } finally {
       setOpenMenuJobId(null);
     }
@@ -126,75 +147,163 @@ export const LeftSidebar: React.FC = () => {
 
   const handleDuplicateJob = async (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
+    setJobError(null);
     try {
-      const { data: original, error: fetchErr } = await supabase
-        .from('jobs_posting')
-        .select('*')
-        .eq('id', job.id)
-        .single();
-
-      if (fetchErr || !original) throw fetchErr;
-
-      const { id, created_at, last_saved_at, ...rest } = original;
-      const copyPayload = {
-        ...rest,
-        job_title: `${original.job_title} (Copy)`,
-        status: 'DRAFT',
-        created_at: new Date().toISOString(),
-        last_saved_at: new Date().toISOString(),
-      };
-
-      const { data: inserted, error: insertErr } = await supabase
-        .from('jobs_posting')
-        .insert(copyPayload)
-        .select('id, job_title, status')
-        .single();
-
-      if (insertErr || !inserted) throw insertErr;
-
+      const copy = await duplicateJobPosting(job.id);
       setJobPostings((prev) => [
-        { id: inserted.id, title: inserted.job_title, status: inserted.status, applicant_count: 0 },
+        { id: copy.id, title: copy.job_title, status: copy.status, applicant_count: 0 },
         ...prev,
       ]);
     } catch (err) {
-      console.error('Failed to duplicate job posting:', err);
+      setJobError(
+        err instanceof Error ? err.message : 'Could not duplicate this posting.',
+      );
     } finally {
       setOpenMenuJobId(null);
     }
   };
 
-  const handleDeleteJob = async (e: React.MouseEvent, job: JobPosting) => {
+  const askDeleteJob = (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
-    if (!window.confirm(`Are you sure you want to delete the job posting "${job.title}"?`)) {
-      return;
-    }
+    setJobError(null);
+    setDeletingJob(job);
+    setOpenMenuJobId(null);
+  };
+
+  const handleDeleteJob = async () => {
+    const job = deletingJob;
+    if (!job) return;
+    setDeleting(true);
+    setJobError(null);
     try {
-      const { error } = await supabase
-        .from('jobs_posting')
-        .delete()
-        .eq('id', job.id);
-
-      if (error) throw error;
-
+      await deleteJobPosting(job.id);
       setJobPostings((prev) => prev.filter((j) => j.id !== job.id));
+      setDeletingJob(null);
     } catch (err) {
-      console.error('Failed to delete job posting:', err);
+      // Trước đây chỉ console.error: tin tuyển dụng vẫn nằm nguyên trong danh
+      // sách và người dùng không có cách nào biết lệnh xoá đã hỏng.
+      setJobError(
+        err instanceof Error ? err.message : 'Could not delete this job posting.',
+      );
     } finally {
-      setOpenMenuJobId(null);
+      setDeleting(false);
     }
   };
+
+  // Panel bung ra ĐÈ LÊN nội dung thay vì đẩy nó sang phải: rail 56px luôn giữ
+  // chỗ trong luồng layout, nên trang không nhảy mỗi lần chuột lướt qua.
+  const expanded = isOpen || pinned;
 
   return (
-    <div style={{ 
-      display: "flex", 
-      flexDirection: "column", 
-      height: "100%", 
-      overflow: "hidden", 
+    <>
+    <ConfirmDialog
+      open={deletingJob !== null}
+      title="Delete this job posting?"
+      message={
+        <>
+          <strong style={{ color: D.ink }}>{deletingJob?.title}</strong> will be removed
+          permanently. Applications already submitted to it are not deleted, but they
+          will no longer point at a posting.
+        </>
+      }
+      confirmLabel="Delete posting"
+      busy={deleting}
+      onCancel={() => setDeletingJob(null)}
+      onConfirm={handleDeleteJob}
+    />
+    <div
+      style={{
+        width: RAIL_WIDTH,
+        flexShrink: 0,
+        height: "100%",
+        position: "relative",
+        zIndex: 40,
+      }}
+    >
+    <div
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+      // focus-within: người dùng bàn phím không có "hover". Không có nhánh này
+      // thì tab vào sidebar sẽ đi qua các mục vô hình.
+      onFocus={() => setIsOpen(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsOpen(false);
+      }}
+      style={{
+      display: "flex",
+      flexDirection: "column",
+      height: "100%",
+      overflow: "hidden",
       background: D.canvas,
       borderRight: `1px solid ${D.line}`,
-      width: 280,
+      width: expanded ? PANEL_WIDTH : RAIL_WIDTH,
+      position: "absolute",
+      insetBlock: 0,
+      insetInlineStart: 0,
+      boxShadow: expanded && !pinned ? D.sh3 : "none",
+      transition: `width 180ms ${D.ease}, box-shadow 180ms ${D.ease}`,
       flexShrink: 0
     }}>
+      {/* Rail thu gọn — chỉ icon. Bấm ghim để khoá mở, dành cho người dùng
+          bàn phím và màn hình cảm ứng (nơi không tồn tại khái niệm hover). */}
+      {!expanded && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "16px 0", alignItems: "center" }}>
+          {workspaceItems.map((item, index) => (
+            <button
+              type="button"
+              key={index}
+              onClick={() => router.push(item.path)}
+              aria-label={item.label}
+              aria-current={isCurrent(item.path) ? "page" : undefined}
+              title={item.label}
+              style={{
+                width: 36, height: 36, display: "grid", placeItems: "center",
+                borderRadius: D.r1, border: "none",
+                background: isCurrent(item.path) ? D.blueSoft : "transparent",
+                color: isCurrent(item.path) ? D.blue : D.sub,
+                transition: `background 140ms ${D.ease}`,
+              }}
+            >
+              {item.icon}
+            </button>
+          ))}
+          <div style={{ width: 20, height: 1, background: D.lineSoft, margin: "6px 0" }} />
+          <button
+            type="button"
+            onClick={() => router.push("/job-postings/create")}
+            aria-label="Job postings"
+            title="Job postings"
+            style={{
+              width: 36, height: 36, display: "grid", placeItems: "center",
+              borderRadius: D.r1, border: "none", background: "transparent", color: D.sub,
+            }}
+          >
+            <Briefcase size={15} strokeWidth={1.8} />
+          </button>
+        </div>
+      )}
+
+      {/* Nội dung đầy đủ — chỉ dựng khi mở, để rail thu gọn không có phần tử
+          nào nhận được tab focus trong lúc bị ẩn. */}
+      {expanded && (
+      <>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 8px 0" }}>
+        <button
+          type="button"
+          onClick={() => setPinned((v) => !v)}
+          aria-label={pinned ? "Unpin sidebar" : "Keep sidebar open"}
+          aria-pressed={pinned}
+          title={pinned ? "Unpin" : "Keep open"}
+          style={{
+            display: "grid", placeItems: "center", width: 26, height: 26,
+            borderRadius: D.r1, border: "none",
+            background: pinned ? D.blueSoft : "transparent",
+            color: pinned ? D.blue : D.dim,
+          }}
+        >
+          <Pin size={13} strokeWidth={2} />
+        </button>
+      </div>
       {/* Scrollable content */}
       <div style={{ 
         flex: 1, 
@@ -223,6 +332,7 @@ export const LeftSidebar: React.FC = () => {
               <div
                 key={index}
                 onClick={() => router.push(item.path)}
+                aria-current={isCurrent(item.path) ? "page" : undefined}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -231,28 +341,28 @@ export const LeftSidebar: React.FC = () => {
                   borderRadius: 6,
                   cursor: "pointer",
                   transition: "all 0.15s ease",
-                  background: item.label.includes("Analytics") ? `${D.purple}08` : "transparent",
-                  border: item.label.includes("Analytics") ? `1px solid ${D.purple}20` : "1px solid transparent"
+                  background: isCurrent(item.path) ? D.blueSoft : "transparent",
+                  border: `1px solid ${isCurrent(item.path) ? `${D.blue}20` : "transparent"}`,
                 }}
               >
-                <div style={{ 
-                  width: 28, 
-                  height: 28, 
-                  borderRadius: 6, 
-                  background: item.label === "CV Analysis" ? D.blue : D.surface,
-                  display: "flex", 
-                  alignItems: "center", 
+                <div style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  background: isCurrent(item.path) ? D.blue : D.surface,
+                  display: "flex",
+                  alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0
                 }}>
-                  <div style={{ color: item.label === "CV Analysis" ? "#fff" : D.sub }}>
+                  <div style={{ color: isCurrent(item.path) ? "#fff" : D.sub }}>
                     {item.icon}
                   </div>
                 </div>
-                <span style={{ 
-                  fontSize: 12.5, 
-                  fontWeight: 500, 
-                  color: item.label === "CV Analysis" ? D.blue : D.sub,
+                <span style={{
+                  fontSize: 12.5,
+                  fontWeight: isCurrent(item.path) ? 600 : 500,
+                  color: isCurrent(item.path) ? D.blue : D.sub,
                   flex: 1
                 }}>
                   {item.label}
@@ -283,6 +393,23 @@ export const LeftSidebar: React.FC = () => {
           }}>
             JOB POSTINGS
           </div>
+          {jobError && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: 8,
+                padding: "7px 9px",
+                borderRadius: 5,
+                background: `${D.red}0D`,
+                border: `1px solid ${D.red}28`,
+                color: D.red,
+                fontSize: 11,
+                lineHeight: 1.5,
+              }}
+            >
+              {jobError}
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {jobPostings.map((job) => {
               const isHovered = hoveredJobId === job.id;
@@ -379,9 +506,17 @@ export const LeftSidebar: React.FC = () => {
                         justifyContent: "center",
                         flexShrink: 0
                       }}
+                      // `title` shows a tooltip on hover but is NOT a reliable
+                      // accessible name — a screen reader may ignore it, and a
+                      // touch user never hovers. aria-label is what actually
+                      // names the control; aria-expanded tells assistive tech
+                      // whether the menu is currently open.
                       title="Job options"
+                      aria-label={`Options for ${job.title}`}
+                      aria-haspopup="menu"
+                      aria-expanded={openMenuJobId === job.id}
                     >
-                      <MoreVertical size={14} />
+                      <MoreVertical size={14} aria-hidden="true" />
                     </button>
                   )}
 
@@ -531,7 +666,7 @@ export const LeftSidebar: React.FC = () => {
                       {/* Option 5: Delete Job Posting */}
                       <button
                         type="button"
-                        onClick={(e) => handleDeleteJob(e, job)}
+                        onClick={(e) => askDeleteJob(e, job)}
                         style={{
                           display: "flex",
                           alignItems: "center",
@@ -569,6 +704,7 @@ export const LeftSidebar: React.FC = () => {
         background: D.canvas
       }}>
         <button
+          type="button"
           onClick={() => router.push('/job-postings/create')}
           style={{
             width: "100%",
@@ -601,6 +737,10 @@ export const LeftSidebar: React.FC = () => {
           <span>Create Job Posting</span>
         </button>
       </div>
+      </>
+      )}
     </div>
+    </div>
+    </>
   );
 };

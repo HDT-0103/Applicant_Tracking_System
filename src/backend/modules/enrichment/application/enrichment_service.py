@@ -38,7 +38,58 @@ active_websockets: Dict[str, List] = {}
 
 
 
+def _social_links_from_supabase(candidate_uuid: str) -> CandidateSocialLinks | None:
+    """Đọc link mạng xã hội của ứng viên từ Supabase.
+
+    Đây là NGUỒN CHÍNH. `candidate_repository.get_candidate()` chỉ đọc từ dict
+    `candidate_store` nằm trong RAM, nên sau mỗi lần khởi động lại backend nó
+    luôn rỗng — worker enrich báo "candidate không tồn tại" dù hàng dữ liệu vẫn
+    nằm nguyên trong bảng `candidates`. Hệ quả: bỏ qua hẳn bước lấy GitHub và
+    LinkedIn, điểm khớp ra 0. Chạy nhiều worker cũng hỏng y hệt, vì mỗi tiến
+    trình có một dict riêng.
+    """
+    try:
+        client = get_supabase_client(get_settings(), use_admin=True)
+        if client is None:
+            return None
+        res = (
+            client.table("candidates")
+            .select("github_username, linkedin_url")
+            .eq("uuid", candidate_uuid)
+            .limit(1)
+            .execute()
+        )
+        row = res.data[0] if res.data else None
+        if not row:
+            return None
+        if not (row.get("github_username") or row.get("linkedin_url")):
+            return None
+        return CandidateSocialLinks(
+            github_username=row.get("github_username"),
+            linkedin_url=row.get("linkedin_url"),
+        )
+    except Exception as exc:
+        logger.error(
+            "enrichment.social_links.supabase_failed",
+            uuid=candidate_uuid,
+            error=str(exc),
+        )
+        return None
+
+
 def get_candidate_social_links(candidate_uuid: str) -> CandidateSocialLinks:
+    # Supabase trước, bộ nhớ sau. Bộ nhớ chỉ còn giá trị trong đúng một tình
+    # huống: CV vừa upload xong trong cùng tiến trình và chưa kịp ghi xuống DB.
+    from_db = _social_links_from_supabase(candidate_uuid)
+    if from_db is not None:
+        logger.info(
+            "enrichment.social_links.found_in_supabase",
+            uuid=candidate_uuid,
+            github_username=from_db.github_username,
+            linkedin_url=from_db.linkedin_url,
+        )
+        return from_db
+
     candidate = get_candidate(candidate_uuid)
     if candidate and (candidate.github_username or candidate.linkedin_url):
         logger.info(
@@ -632,6 +683,148 @@ def generate_analytics(
     )
 
 
+def load_enrichment_from_db(
+    candidate_uuid: str,
+    settings: Settings,
+) -> "CandidateEnrichment | None":
+    """Rebuild a candidate's enrichment from `enrichment_profiles`.
+
+    The status endpoint reads `candidate_enrichments`, a dict held in memory.
+    After a restart that dict is empty, so a candidate whose enrichment finished
+    days ago reports `QUEUED` forever and the UI sits on a spinner — even though
+    every value is sitting in the database. Running several workers has the same
+    effect, since each process keeps its own dict.
+
+    Returns ``None`` when the database genuinely has nothing, so the caller can
+    keep reporting `QUEUED` for work that has not run yet.
+    """
+    # Acquiring the client is inside the try as well: it builds a connection and
+    # can raise on a bad URL or key. Reading a cache must never be able to take
+    # down the request that asked for it.
+    try:
+        client = get_supabase_client(settings, use_admin=True)
+        if client is None:
+            return None
+        res = (
+            client.table("enrichment_profiles")
+            .select("enrichment_status, match_confidence_score, score_increase,"
+                    " semantic_tags, skill_matrix")
+            .eq("candidate_uuid", candidate_uuid)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error(
+            "enrichment.load_from_db.failed",
+            candidate_uuid=candidate_uuid,
+            error=str(exc),
+        )
+        return None
+
+    row = res.data[0] if res.data else None
+    if not row or row.get("match_confidence_score") is None:
+        # A row with no score means the worker never finished; treating that as
+        # ENRICHED would show the recruiter an empty profile as if it were done.
+        return None
+
+    stored_matrix = row.get("skill_matrix") or {}
+    # `skill_matrix` holds two unrelated things depending on who wrote it: the
+    # radar arrays (pre/post enrichment) and the requirement breakdown. Only the
+    # latter belongs on the profile.
+    requirement_breakdown = (
+        stored_matrix
+        if isinstance(stored_matrix, dict) and "must_have" in stored_matrix
+        else None
+    )
+
+    matrix = TechnicalSkillMatrix(
+        pre_enrichment=list(stored_matrix.get("pre_enrichment", []) or []),
+        post_enrichment=list(stored_matrix.get("post_enrichment", []) or []),
+    ) if isinstance(stored_matrix, dict) else TechnicalSkillMatrix(
+        pre_enrichment=[], post_enrichment=[]
+    )
+
+    return CandidateEnrichment(
+        candidate_uuid=candidate_uuid,
+        enrichment_status=EnrichmentStatus.ENRICHED,
+        enriched_profile=EnrichedProfile(
+            analytics=MockAnalytics(
+                match_confidence_score=row["match_confidence_score"],
+                score_increase=row.get("score_increase") or 0,
+                semantic_tags=row.get("semantic_tags") or [],
+                technical_skill_matrix=matrix,
+            ),
+            skill_matrix=requirement_breakdown,
+        ),
+    )
+
+
+def persist_analytics(
+    candidate_uuid: str,
+    analytics: "MockAnalytics | None",
+    settings: Settings,
+) -> None:
+    """Lưu kết quả phân tích xuống bảng `enrichment_profiles`.
+
+    Trước đây toàn bộ analytics chỉ nằm trong dict `candidate_enrichments` trên
+    RAM. Ba hệ quả:
+
+      * `enrichment_profiles.match_confidence_score` rỗng ở mọi hàng, nên danh
+        sách ứng viên không bao giờ hiện được điểm khớp;
+      * khởi động lại backend là mất sạch, phải enrich lại từ đầu;
+      * chạy nhiều worker thì mỗi worker thấy một bộ dữ liệu khác nhau.
+
+    Lỗi ở đây không được làm hỏng lượt enrich: dữ liệu vẫn còn trong RAM và
+    WebSocket vẫn phải bắn đi được.
+    """
+    if analytics is None:
+        return
+
+    client = get_supabase_client(settings, use_admin=True)
+    if client is None:
+        logger.warning("enrichment.persist.no_client", candidate_uuid=candidate_uuid)
+        return
+
+    matrix = analytics.technical_skill_matrix
+    payload = {
+        "match_confidence_score": analytics.match_confidence_score,
+        "score_increase": analytics.score_increase,
+        "semantic_tags": analytics.semantic_tags or [],
+        "skill_matrix": {
+            "pre_enrichment": matrix.pre_enrichment if matrix else [],
+            "post_enrichment": matrix.post_enrichment if matrix else [],
+        },
+        "enrichment_status": EnrichmentStatus.ENRICHED.value,
+    }
+
+    try:
+        # Hàng enrichment_profiles có thể chưa tồn tại nếu ứng viên vào bằng
+        # đường upload CV (đường đó chỉ tạo bản ghi `candidates`). Thử update
+        # trước, không trúng hàng nào thì insert.
+        result = (
+            client.table("enrichment_profiles")
+            .update(payload)
+            .eq("candidate_uuid", candidate_uuid)
+            .execute()
+        )
+        if not result.data:
+            client.table("enrichment_profiles").insert(
+                {**payload, "candidate_uuid": candidate_uuid}
+            ).execute()
+
+        logger.info(
+            "enrichment.persist.ok",
+            candidate_uuid=candidate_uuid,
+            score=analytics.match_confidence_score,
+        )
+    except Exception as exc:
+        logger.error(
+            "enrichment.persist.failed",
+            candidate_uuid=candidate_uuid,
+            error=str(exc),
+        )
+
+
 def idempotent_merge(existing: EnrichedProfile | None, new_data: EnrichedProfile) -> EnrichedProfile:
     if existing is None:
         return new_data
@@ -944,7 +1137,12 @@ async def enrichment_worker(
             enrichment_status=EnrichmentStatus.ENRICHED,
             enriched_profile=merged_profile
         )
-        
+
+        # Ghi xuống DB để kết quả sống sót qua lần khởi động lại và để danh
+        # sách ứng viên đọc được điểm khớp. Dùng bản đã merge, không dùng bản
+        # mới, vì lượt enrich sau có thể chỉ bổ sung một phần.
+        persist_analytics(candidate_uuid, merged_profile.analytics, settings)
+
         logger.info(
             "enrichment.worker.completed",
             candidate_uuid=candidate_uuid,

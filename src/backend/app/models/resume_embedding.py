@@ -1,41 +1,57 @@
-import uuid
-from typing import Optional, List, TYPE_CHECKING
+from __future__ import annotations
+
 from datetime import datetime
-from sqlalchemy import String, text, TIMESTAMP, ForeignKey, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
+
+from sqlalchemy import DateTime, Enum as SQLEnum, ForeignKey, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from src.backend.app.models.base import Base
+from src.backend.app.models.enums import EmbeddingSource
+
 try:
     from pgvector.sqlalchemy import Vector
-except ImportError:
-    from sqlalchemy import TYPES
-    Vector = TYPES.UserDefinedType
+except ImportError:  # pragma: no cover - fallback for environments without pgvector installed
+    from sqlalchemy.types import UserDefinedType
+
+    class Vector(UserDefinedType):
+        def __init__(self, dimensions: int):
+            self.dimensions = dimensions
+
 
 if TYPE_CHECKING:
-    from models.resume import Resume
+    from src.backend.app.models.enrichment_profile import EnrichmentProfile
 
-class ResumeEmbedding(Base):
-    __tablename__ = "resume_embeddings"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    resume_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False, index=True
+class Embedding(Base):
+    __tablename__ = "embeddings"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    enrichment_profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("enrichment_profiles.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
     )
-    
-    # Chia 3 vector và set kích thước 768 cho model E5
-    summary_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
-    skills_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
-    experience_embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
-    
-    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("now()"))
-
-    __table_args__ = (
-        UniqueConstraint("resume_id", "model_name", name="uq_resume_model_embedding"),
+    source_type: Mapped[EmbeddingSource] = mapped_column(
+        SQLEnum(EmbeddingSource, native_enum=True),
+        nullable=False,
+    )
+    text_content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(768), nullable=False)
+    model_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="intfloat/multilingual-e5-base",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
     )
 
-    resume: Mapped["Resume"] = relationship(back_populates="embeddings")
+    enrichment_profile: Mapped[EnrichmentProfile] = relationship()
 
-    def __repr__(self) -> str:
-        return f"<ResumeEmbedding id={self.id} model={self.model_name}>"
+
+ResumeEmbedding = Embedding
+

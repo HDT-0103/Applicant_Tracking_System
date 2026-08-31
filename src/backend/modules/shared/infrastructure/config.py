@@ -23,10 +23,27 @@ if ENV_PATH.exists():
 
 
 class Settings(BaseSettings):
+    # MỘT khai báo duy nhất. Trước đây lớp này gán `model_config` hai lần và
+    # lần sau ghi đè lần đầu, nên `populate_by_name=True` bị mất im lặng —
+    # `Settings.model_config["populate_by_name"]` trả về None. Hiện chưa gây
+    # lỗi vì mọi field trùng tên đều trỏ về cùng biến môi trường, nhưng field
+    # tiếp theo dựa vào việc gán được bằng tên Python sẽ hỏng mà không báo.
     model_config = SettingsConfigDict(
+        env_file=".env",
         extra="ignore",
         populate_by_name=True,
     )
+
+    # Bốn biến BẮT BUỘC — thiếu là app không khởi động được, đúng như mong đợi.
+    # Chúng dùng tên viết hoa vì đó cũng chính là tên biến môi trường; các
+    # field bên dưới dùng tên Python thường kèm `alias`. Hai lối đặt tên trong
+    # cùng một lớp là nợ kỹ thuật, nhưng gộp lại phải sửa cả nơi gọi nên để
+    # riêng một lượt.
+    SUPABASE_URL: str
+    SUPABASE_ANON_KEY: str
+    SUPABASE_SERVICE_ROLE_KEY: str
+    JWT_SECRET: str
+    JWT_ALGORITHM: str = "HS256"
 
     app_name: str = Field(default="SmartATS", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
@@ -52,11 +69,16 @@ class Settings(BaseSettings):
     admin_emails: str = Field(default="", alias="ADMIN_EMAILS")
     recruiter_email_domains: str = Field(default="", alias="RECRUITER_EMAIL_DOMAINS")
 
-    upload_dir: str = Field(default="uploads", alias="UPLOAD_DIR")
-    max_upload_mb: int = Field(default=25, alias="MAX_UPLOAD_MB")
 
     github_api_token: str = Field(default="", alias="GITHUB_API_TOKEN")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    # Tên model bị hardcode "gemini-2.0-flash" ở 3 chỗ trong code, trong khi
+    # GEMINI_MODEL trong .env bị `extra="ignore"` nuốt mất — đổi trong .env
+    # không có tác dụng gì. Google đã gỡ 2.0-flash, nên mọi lượt phân tích CV
+    # đều trả 404 và ứng viên được tạo ra rỗng không.
+    # Ghim phiên bản cụ thể thay vì dùng alias `-latest`: alias có thể đổi hành
+    # vi ngay giữa chừng mà không ai deploy gì.
+    gemini_model: str = Field(default="gemini-3.6-flash", alias="GEMINI_MODEL")
     apify_api_token: str = Field(default="", alias="APIFY_API_TOKEN")
 
     # Embedding cho job posting (modules/scoring). "local-e5" = sentence-transformers

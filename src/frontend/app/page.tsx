@@ -2,14 +2,19 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AppHeader } from "../components/AppHeader";
-import { LeftSidebar } from "../components/LeftSidebar";
+import { AppShell } from "../components/AppShell";
 import { D } from "../lib/shared";
-import { supabase } from "../lib/supabase";
-import { BarChart3, CalendarDays, Loader2, Send } from "lucide-react";
+import {
+  readMustHave,
+  topLanguages,
+  candidateContext,
+} from "../lib/candidateSummary";
+import { getDashboard } from "../services/catalogService";
+import { BarChart3, CalendarDays, Loader2, Send, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { getReviewStatus, ReviewStatus } from "../services/reviewService";
+import { getReviewStatuses, ReviewStatus } from "../services/reviewService";
 import { sendInterviewDetails } from "../services/schedulingService";
+import { SendDetailsModal } from "../components/SendDetailsModal";
 
 interface ExtendedCandidate {
   uuid: string;
@@ -20,6 +25,13 @@ interface ExtendedCandidate {
   time: string;
   scheduledSlot: any | null;
   reviewStatus: ReviewStatus | null;
+  /** "Công ty · Địa điểm" — bỏ trống vế nào thiếu, không hiện dấu chấm mồ côi. */
+  context: string | null;
+  /** Ngôn ngữ dùng nhiều nhất trên GitHub, tối đa 3. */
+  languages: string[];
+  repoCount: number | null;
+  /** Khớp bao nhiêu trên tổng số kỹ năng BẮT BUỘC của tin tuyển dụng. */
+  mustHave: { matched: number; total: number } | null;
 }
 
 export default function Dashboard() {
@@ -27,48 +39,54 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [candidates, setCandidates] = useState<ExtendedCandidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [detailsFor, setDetailsFor] = useState<ExtendedCandidate | null>(null);
+  /** Băng thông báo sau khi gửi. `alert()` chặn cả tab và không khớp với phần còn lại của app. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** Đọc trạng thái duyệt hỏng. Hồ sơ vẫn hiện, nhưng phân nhóm sẽ không chính xác. */
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      // 1. Fetch recent candidates
-      const { data: cData, error } = await supabase
-        .from("candidates")
-        .select(`
-          uuid,
-          full_name,
-          email,
-          created_at,
-          applications!left (
-            job_posting_id,
-            jobs_posting!left (job_title)
-          ),
-          enrichment_profiles!left (
-            match_confidence_score
-          )
-        `)
-        .order("created_at", { ascending: false })
-        .limit(30);
-
-      if (!mounted) return;
-      if (error || !cData) {
+      // Một request duy nhất, đi qua backend.
+      //
+      // Trước đây chỗ này `select` thẳng vào Supabase bằng anon key — khoá nằm
+      // trong bundle JS công khai, nên toàn bộ bảng `candidates` đọc được mà
+      // không cần đăng nhập, và tầng che PII ở backend bị đi vòng hoàn toàn.
+      // Endpoint mới lọc theo hội đồng của người đang đăng nhập và che PII
+      // theo role trước khi trả về.
+      let dashboard;
+      try {
+        dashboard = await getDashboard();
+      } catch (err) {
+        if (!mounted) return;
         setLoading(false);
+        setNotice(null);
+        setSendError(err instanceof Error ? err.message : "Could not load candidates.");
         return;
       }
+      if (!mounted) return;
 
-      // 2. Fetch confirmed slots
-      const { data: sData } = await supabase
-        .from("confirmed_slots")
-        .select("*");
-        
-      const slots = sData || [];
+      const slots = dashboard.slots;
 
-      // 3. Map candidates and fetch their review status
-      const mapped = await Promise.all(cData.map(async (c: any) => {
-        const app = c.applications?.[0];
-        const ep = c.enrichment_profiles?.[0];
-        
+      // Hỏng ở đây KHÔNG được làm hồ sơ biến mất — hồ sơ vẫn hiện, chỉ là
+      // chưa biết trạng thái duyệt. Nhưng phải nói ra: nuốt lỗi rồi để danh
+      // sách trống là cách hỏng tệ nhất, vì trông y hệt "không có ứng viên nào".
+      let reviewByUuid: Record<string, ReviewStatus> = {};
+      let reviewFailed: string | null = null;
+      try {
+        reviewByUuid = await getReviewStatuses(
+          dashboard.candidates.map((c) => c.candidate_uuid),
+        );
+      } catch (err) {
+        reviewFailed =
+          err instanceof Error ? err.message : "Could not load review status.";
+      }
+
+      const now = new Date().toISOString();
+      const mapped = dashboard.candidates.map((c) => {
         const ts = c.created_at ? new Date(c.created_at).getTime() : Date.now();
         const elapsed = Date.now() - ts;
         let time: string;
@@ -77,31 +95,29 @@ export default function Dashboard() {
         else if (elapsed < 86400000) time = `${Math.floor(elapsed / 3600000)}h ago`;
         else time = `${Math.floor(elapsed / 86400000)}d ago`;
 
-        // Find a future slot for this candidate
-        const now = new Date().toISOString();
-        const futureSlot = slots.find((s: any) => s.candidate_uuid === c.uuid && s.start_time > now);
-        
-        let reviewStatus: ReviewStatus | null = null;
-        try {
-           reviewStatus = await getReviewStatus(c.uuid);
-        } catch {
-           // ignore if not reviewed
-        }
+        const futureSlot = slots.find(
+          (s) => s.candidate_uuid === c.candidate_uuid && s.start_time > now,
+        );
 
         return {
-          uuid: c.uuid,
+          uuid: c.candidate_uuid,
           name: c.full_name || "Unknown Candidate",
           email: c.email || undefined,
-          role: app?.jobs_posting?.job_title || "General Application",
-          score: ep?.match_confidence_score ?? null,
+          role: c.title || "General Application",
+          score: c.match_confidence_score ?? null,
           time,
           scheduledSlot: futureSlot || null,
-          reviewStatus,
+          reviewStatus: reviewByUuid[c.candidate_uuid] ?? null,
+          context: candidateContext(c.company, c.current_location),
+          languages: topLanguages(c.top_languages),
+          repoCount: c.public_repos_count ?? null,
+          mustHave: readMustHave(c.skills_matrix),
         };
-      }));
+      });
 
       if (mounted) {
         setCandidates(mapped);
+        setReviewError(reviewFailed);
         setLoading(false);
       }
     })();
@@ -111,21 +127,27 @@ export default function Dashboard() {
     };
   }, []);
 
-  const handleSendEmail = async (e: React.MouseEvent, c: ExtendedCandidate) => {
+  const openSendDetails = (e: React.MouseEvent, c: ExtendedCandidate) => {
     e.stopPropagation();
     if (!c.scheduledSlot?.id) return;
-    setSendingEmailId(c.scheduledSlot.id);
+    setSendError(null);
+    setNotice(null);
+    setDetailsFor(c);
+  };
+
+  const handleSendDetails = async (room: string, address: string) => {
+    const c = detailsFor;
+    if (!c?.scheduledSlot?.id) return;
+    setSending(true);
+    setSendError(null);
     try {
-      await sendInterviewDetails(
-        c.scheduledSlot.id,
-        "Conference Room A - 3rd Floor",
-        "SmartATS HQ, 123 Tech Blvd"
-      );
-      alert(`Interview room & location details sent to ${c.name} successfully!`);
-    } catch (err: any) {
-      alert("Failed to send email: " + (err?.message || "Unknown error"));
+      await sendInterviewDetails(c.scheduledSlot.id, room, address);
+      setDetailsFor(null);
+      setNotice(`Interview details sent to ${c.name}.`);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Could not send the email.");
     } finally {
-      setSendingEmailId(null);
+      setSending(false);
     }
   };
 
@@ -147,7 +169,7 @@ export default function Dashboard() {
     >
       <div style={{
         width: 40, height: 40, borderRadius: "50%",
-        background: `linear-gradient(135deg, ${D.blue} 0%, #4F46E5 100%)`,
+        background: `linear-gradient(135deg, ${D.blue} 0%, ${D.blueDeep} 100%)`,
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 14, fontWeight: 600, color: "#fff", flexShrink: 0,
       }}>
@@ -158,10 +180,61 @@ export default function Dashboard() {
         <div style={{ fontSize: 14, fontWeight: 500, color: D.ink, marginBottom: 2 }}>
           {c.name}
         </div>
-        <div style={{ fontSize: 12, color: D.muted }}>
-          {c.role}
+        <div style={{ fontSize: 12, color: D.muted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span>{c.role}</span>
+          {c.context && (
+            <>
+              <span style={{ color: D.dim }}>•</span>
+              <span>{c.context}</span>
+            </>
+          )}
         </div>
+
+        {/* Bằng chứng kỹ thuật rút từ GitHub. Hiện ngay ở danh sách để người
+            tuyển dụng không phải mở từng hồ sơ mới biết ứng viên làm gì. */}
+        {(c.languages.length > 0 || c.repoCount !== null) && (
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5, flexWrap: "wrap" }}>
+            {c.languages.map((lang) => (
+              <span
+                key={lang}
+                style={{
+                  padding: "1px 6px",
+                  borderRadius: D.r1,
+                  background: D.surface,
+                  border: `1px solid ${D.lineSoft}`,
+                  fontSize: 10.5,
+                  color: D.sub,
+                }}
+              >
+                {lang}
+              </span>
+            ))}
+            {c.repoCount !== null && (
+              <span style={{ fontSize: 10.5, color: D.dim }}>{c.repoCount} repo</span>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Khớp bao nhiêu kỹ năng BẮT BUỘC — phần "vì sao" đứng sau điểm số.
+          Một con số trần trụi thì không ai dám tin. */}
+      {c.mustHave && (
+        <div
+          title={`Matches ${c.mustHave.matched} of ${c.mustHave.total} required skills`}
+          style={{
+            padding: "4px 10px",
+            borderRadius: 99,
+            fontSize: 11,
+            fontWeight: 600,
+            fontFamily: D.mono,
+            background:
+              c.mustHave.matched === c.mustHave.total ? `${D.mint}10` : `${D.amber}10`,
+            color: c.mustHave.matched === c.mustHave.total ? D.mint : D.amber,
+          }}
+        >
+          {c.mustHave.matched}/{c.mustHave.total} skills
+        </div>
+      )}
 
       {c.score !== null && (
         <div style={{
@@ -180,20 +253,15 @@ export default function Dashboard() {
            </div>
            {user?.role === "hr" && (
              <button
-               onClick={(e) => handleSendEmail(e, c)}
-               disabled={sendingEmailId === c.scheduledSlot.id}
+               type="button"
+               onClick={(e) => openSendDetails(e, c)}
                style={{
                  padding: "6px 12px", borderRadius: 6, background: D.blue, color: "#fff",
                  fontSize: 12, fontWeight: 500, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-                 opacity: sendingEmailId === c.scheduledSlot.id ? 0.7 : 1,
                  transition: "background 0.15s ease",
                }}
              >
-                {sendingEmailId === c.scheduledSlot.id ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Send size={14} />
-                )}
+                <Send size={14} />
                 Send Details
              </button>
            )}
@@ -206,28 +274,109 @@ export default function Dashboard() {
     </div>
   );
 
-  // Filter candidates based on Role
+  // Phân nhóm ứng viên.
+  //
+  // Quy tắc: mọi ứng viên PHẢI rơi vào đúng một nhóm. Bản trước lọc theo
+  // `overall_status` cho cả ba nhóm của HR, nên bất cứ hồ sơ nào có
+  // reviewStatus null — chưa ai chấm, hoặc lượt gọi trạng thái hỏng — đều
+  // không khớp nhóm nào và BIẾN MẤT khỏi màn hình, không kèm lời giải thích.
+  // Đúng một lỗi như thế đã làm cả trang HR trống trơn trong khi Analytics vẫn
+  // đếm ra 17 người.
   let hrNeedsApproval: ExtendedCandidate[] = [];
   let toReviewOrSchedule: ExtendedCandidate[] = [];
+  let inTechnicalReview: ExtendedCandidate[] = [];
   let scheduled: ExtendedCandidate[] = [];
 
+  const unscheduled = candidates.filter((c) => !c.scheduledSlot);
+  scheduled = candidates.filter((c) => c.scheduledSlot !== null);
+
   if (user?.role === "hr") {
-    hrNeedsApproval = candidates.filter((c) => !c.scheduledSlot && c.reviewStatus?.overall_status === "waiting_for_hr");
-    toReviewOrSchedule = candidates.filter((c) => !c.scheduledSlot && c.reviewStatus?.overall_status === "ready_to_schedule");
-    scheduled = candidates.filter((c) => c.scheduledSlot !== null);
+    hrNeedsApproval = unscheduled.filter(
+      (c) => c.reviewStatus?.overall_status === "waiting_for_hr",
+    );
+    toReviewOrSchedule = unscheduled.filter(
+      (c) => c.reviewStatus?.overall_status === "ready_to_schedule",
+    );
+    // Nhóm hứng phần còn lại: chưa qua vòng kỹ thuật, đã bị từ chối, hoặc
+    // không đọc được trạng thái. HR vẫn nhìn thấy hồ sơ tồn tại.
+    inTechnicalReview = unscheduled.filter(
+      (c) =>
+        c.reviewStatus?.overall_status !== "waiting_for_hr" &&
+        c.reviewStatus?.overall_status !== "ready_to_schedule",
+    );
   } else {
-    // Tech Lead: Pending review
-    toReviewOrSchedule = candidates.filter((c) => !c.scheduledSlot && (c.reviewStatus?.overall_status === "waiting_for_tls" || !c.reviewStatus));
+    toReviewOrSchedule = unscheduled.filter(
+      (c) => c.reviewStatus?.overall_status === "waiting_for_tls" || !c.reviewStatus,
+    );
+    inTechnicalReview = unscheduled.filter(
+      (c) => c.reviewStatus && c.reviewStatus.overall_status !== "waiting_for_tls",
+    );
   }
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <AppHeader />
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        <LeftSidebar />
-        
-        <div style={{ flex: 1, overflow: "hidden", background: D.bg }}>
-          <div style={{ padding: "32px 40px", height: "100%", overflowY: "auto" }}>
+    <AppShell>
+      <SendDetailsModal
+        open={detailsFor !== null}
+        candidateName={detailsFor?.name ?? ""}
+        slotTime={
+          detailsFor?.scheduledSlot
+            ? new Date(detailsFor.scheduledSlot.start_time).toLocaleString("en-US")
+            : ""
+        }
+        sending={sending}
+        error={sendError}
+        onCancel={() => setDetailsFor(null)}
+        onSend={handleSendDetails}
+      />
+
+      {reviewError && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: `1px solid ${D.amber}40`,
+            background: `${D.amber}10`,
+            color: D.amber,
+            fontSize: 12.5,
+            lineHeight: 1.5,
+          }}
+        >
+          Review status could not be loaded, so candidates below are not sorted by
+          review stage. {reviewError}
+        </div>
+      )}
+
+      {notice && (
+        <div
+          role="status"
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: `1px solid ${D.mint}40`,
+            background: `${D.mint}10`,
+            color: D.mint,
+            fontSize: 12.5,
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="Dismiss"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0 }}
+          >
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
             <div style={{ marginBottom: 32 }}>
               <h1 style={{ fontSize: 28, fontWeight: 700, color: D.ink, marginBottom: 8 }}>
                 Dashboard Overview
@@ -290,6 +439,17 @@ export default function Dashboard() {
                   </div>
                 </div>
 
+                {inTechnicalReview.length > 0 && (
+                  <div>
+                    <h2 style={{ fontSize: 18, fontWeight: 600, color: D.sub, marginBottom: 16 }}>
+                      {user?.role === "hr" ? "In Technical Review" : "Already Decided"}
+                    </h2>
+                    <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }}>
+                      {inTechnicalReview.map((c) => renderCandidateRow(c, false))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Table 2: Scheduled Interviews for HR */}
                 {user?.role === "hr" && (
                   <div>
@@ -307,9 +467,6 @@ export default function Dashboard() {
                 )}
               </div>
             )}
-          </div>
-        </div>
-      </div>
-    </div>
+    </AppShell>
   );
 }

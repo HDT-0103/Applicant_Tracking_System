@@ -2,21 +2,25 @@ from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import Client
 
-from app.database.connection import get_db_session
 from modules.auth.application.auth_service import AuthService
 from modules.auth.domain.models import (
     AuthTokenResponse,
     GoogleLoginRequest,
+    LoginRequest,
     RefreshTokenRequest,
     RefreshTokenResponse,
-    LoginRequest,
     RegisterRequest,
 )
 from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
 from modules.shared.infrastructure.config import Settings, get_settings
+from modules.shared.infrastructure.rate_limit import (
+    login_rate_limit,
+    register_rate_limit,
+)
+from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
 
 logger = structlog.get_logger(__name__)
 
@@ -25,13 +29,13 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 def get_auth_service(
     settings: Annotated[Settings, Depends(get_settings)],
-    db: Annotated[AsyncSession, Depends(get_db_session)],
+    client: Annotated[Client, Depends(get_supabase_admin_client)],
 ) -> AuthService:
     return AuthService(
         settings=settings,
         google_verifier=GoogleTokenVerifier(settings),
         jwt_service=JwtService(settings),
-        db=db,
+        client=client,
     )
 
 
@@ -55,7 +59,11 @@ async def google_login(
         ) from exc
 
 
-@router.post("/login", response_model=AuthTokenResponse)
+@router.post(
+    "/login",
+    response_model=AuthTokenResponse,
+    dependencies=[Depends(login_rate_limit)],
+)
 async def email_password_login(
     payload: LoginRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
@@ -75,7 +83,11 @@ async def email_password_login(
         ) from exc
 
 
-@router.post("/register", response_model=AuthTokenResponse)
+@router.post(
+    "/register",
+    response_model=AuthTokenResponse,
+    dependencies=[Depends(register_rate_limit)],
+)
 async def email_password_register(
     payload: RegisterRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],

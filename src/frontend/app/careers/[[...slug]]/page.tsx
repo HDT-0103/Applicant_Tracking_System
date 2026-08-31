@@ -2,7 +2,17 @@
 
 import React, { useState, useEffect, useRef, useCallback, KeyboardEvent } from "react";
 import { useRouter, useParams } from 'next/navigation';
+import Link from "next/link";
 import { D } from "../../../lib/shared";
+// Deliberately the RAW client, not `lib/db`.
+//
+// This is the public job board. A candidate arriving through a shared link has
+// no account and never will, so these queries must run anonymously and must
+// keep working with no session. Routing them through `db()` would sign in
+// nobody and reject everybody.
+//
+// Every OTHER screen goes through `lib/db` so that it shares the session
+// lifecycle. If you are adding an authenticated screen, use that instead.
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { buildJobPath, parseJobId } from "../../../lib/jobUrl";
@@ -81,7 +91,7 @@ function cn(...classes: (string | undefined | false | null)[]) {
 function SectionHeading({ label }: { label: string }) {
   return (
     <div className="mb-6">
-      <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-[#4f46e5]">{label}</p>
+      <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-primary">{label}</p>
       <div className="mt-2 h-px bg-border" />
     </div>
   );
@@ -111,9 +121,9 @@ function MicroLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-const baseCls = "h-10 rounded-md border text-sm transition-all outline-none focus:ring-2 focus:ring-[#4f46e5]/25 focus:border-[#4f46e5]";
+const baseCls = "h-10 rounded-md border text-sm transition-all outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary";
 const inputCls = (err?: string) => cn(baseCls, "w-full px-3", err ? "border-destructive bg-red-50" : "border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)] bg-white");
-const textareaCls = "rounded-md border border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)] focus:ring-2 focus:ring-[#4f46e5]/25 focus:border-[#4f46e5] text-sm transition-all outline-none w-full px-3 py-2 bg-white resize-none";
+const textareaCls = "rounded-md border border-[rgba(15,17,23,0.15)] hover:border-[rgba(15,17,23,0.3)] focus:ring-2 focus:ring-primary/25 focus:border-primary text-sm transition-all outline-none w-full px-3 py-2 bg-white resize-none";
 
 interface JobPosting {
   id: string;
@@ -157,24 +167,25 @@ async function loadExistingApplication(jobId: string): Promise<ExistingApplicati
   const ref = readStoredApplication(jobId);
   if (!ref) return null;
 
-  const { data, error } = await supabase
-    .from('applications')
-    .select(
-      'id, job_posting_id, candidate_uuid, resume_id, submitted_at, ' +
-      'expected_salary_min, expected_salary_max, salary_basis, work_mode_pref, ' +
-      'availability_bucket, availability_date, skill_ratings, motivation_reason, ' +
-      'motivation_other, work_style, consent_data_sharing, resumes(filename)'
-    )
-    .eq('id', ref.applicationId)
-    .maybeSingle();
-
-  if (error) {
-    // Transient fetch problem: keep the stored ref, fall back to a fresh form.
-    console.error('Failed to load previous application:', error);
+  // Qua backend: endpoint chỉ trả CÂU TRẢ LỜI của chính ứng viên, không kèm
+  // `status` hay điểm chấm nội bộ. Đọc thẳng bảng thì cả hai đi ra cùng nhau.
+  let row: Record<string, unknown> | null = null;
+  try {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}` +
+        `/api/v1/applications/${ref.applicationId}/screening` +
+        `?candidate_uuid=${encodeURIComponent(ref.candidateUuid)}`,
+    );
+    if (response.ok) {
+      row = (await response.json()) as Record<string, unknown>;
+    } else if (response.status !== 404) {
+      // Trục trặc tạm thời: giữ lại ref, quay về form trắng.
+      return null;
+    }
+  } catch {
     return null;
   }
-  // supabase-js cannot infer types from a concatenated select string.
-  const row = data as unknown as Record<string, unknown> | null;
+
   if (!row || row.job_posting_id !== jobId || row.candidate_uuid !== ref.candidateUuid) {
     // The application was removed (or the ref is corrupt) — forget it.
     clearStoredApplication(jobId);
@@ -229,7 +240,7 @@ function ChoiceGroup({
               type="button"
               onClick={() => pick(o.value)}
               aria-pressed={on}
-              className="flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-left text-sm transition-all outline-none focus:ring-2 focus:ring-[#4f46e5]/25"
+              className="flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-left text-sm transition-all outline-none focus:ring-2 focus:ring-primary/25"
               style={{
                 borderColor: on ? D.blue : error ? D.red : D.line,
                 background: on ? D.blueSoft : D.canvas,
@@ -349,9 +360,9 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
       <input ref={fileRef} type="file" accept=".pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onChange(f); }} />
       {file ? (
-        <div className="flex items-center gap-3 p-3 rounded-md border border-[#4f46e5]/30 bg-[#f5f3ff]">
-          <div className="w-9 h-9 rounded-lg bg-[#4f46e5]/10 flex items-center justify-center shrink-0">
-            <FileText className="w-4 h-4 text-[#4f46e5]" />
+        <div className="flex items-center gap-3 p-3 rounded-md border border-primary/30 bg-[#f5f3ff]">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <FileText className="w-4 h-4 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
@@ -367,17 +378,17 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
           onDrop={handleDrop} onClick={() => fileRef.current?.click()}
           className={cn(
             "flex items-center gap-4 rounded-md border-2 border-dashed px-5 py-5 cursor-pointer transition-all",
-            drag ? "border-[#4f46e5] bg-[#f5f3ff]" : error
+            drag ? "border-primary bg-[#f5f3ff]" : error
               ? "border-destructive bg-red-50"
-              : "border-[rgba(15,17,23,0.15)] bg-[#fafafa] hover:border-[#4f46e5]/50 hover:bg-[#faf9ff]"
+              : "border-[rgba(15,17,23,0.15)] bg-[#fafafa] hover:border-primary/50 hover:bg-[#faf9ff]"
           )}>
           <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
-            drag ? "bg-[#4f46e5]/10" : "bg-white border border-border shadow-sm")}>
-            <Upload className={cn("w-4 h-4", drag ? "text-[#4f46e5]" : "text-muted-foreground")} />
+            drag ? "bg-primary/10" : "bg-white border border-border shadow-sm")}>
+            <Upload className={cn("w-4 h-4", drag ? "text-primary" : "text-muted-foreground")} />
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">{drag ? "Release to upload" : "Attach resume / CV"}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">PDF only · Max 10 MB · <span className="text-[#4f46e5]">Browse files</span></p>
+            <p className="text-xs text-muted-foreground mt-0.5">PDF only · Max 10 MB · <span className="text-primary">Browse files</span></p>
           </div>
         </div>
       )}
@@ -390,8 +401,8 @@ function LoadingScreen({ updating = false }: { updating?: boolean }) {
   if (updating) {
     return (
       <div className="flex flex-col items-center justify-center py-32 gap-6">
-        <div className="w-14 h-14 rounded-2xl bg-[#4f46e5]/10 flex items-center justify-center">
-          <Loader2 className="w-7 h-7 text-[#4f46e5] animate-spin" />
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <Loader2 className="w-7 h-7 text-primary animate-spin" />
         </div>
         <div className="text-center">
           <p className="font-semibold text-foreground">Saving your changes…</p>
@@ -404,8 +415,8 @@ function LoadingScreen({ updating = false }: { updating?: boolean }) {
   }
   return (
     <div className="flex flex-col items-center justify-center py-32 gap-6">
-      <div className="w-14 h-14 rounded-2xl bg-[#4f46e5]/10 flex items-center justify-center">
-        <Loader2 className="w-7 h-7 text-[#4f46e5] animate-spin" />
+      <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+        <Loader2 className="w-7 h-7 text-primary animate-spin" />
       </div>
       <div className="text-center">
         <p className="font-semibold text-foreground">Processing your application…</p>
@@ -417,7 +428,7 @@ function LoadingScreen({ updating = false }: { updating?: boolean }) {
         {["Parsing resume", "Fetching GitHub activity", "Scanning LinkedIn profile"].map((step, i) => (
           <div key={step} className="flex items-center gap-2.5">
             <div className={cn("w-4 h-4 rounded-full flex items-center justify-center shrink-0",
-              i === 0 ? "bg-emerald-500" : i === 1 ? "bg-[#4f46e5] animate-pulse" : "bg-[rgba(15,17,23,0.1)]")}>
+              i === 0 ? "bg-emerald-500" : i === 1 ? "bg-primary animate-pulse" : "bg-[rgba(15,17,23,0.1)]")}>
               {i === 0 && <CheckCircle2 className="w-3 h-3 text-white" />}
             </div>
             <span className={cn("text-xs", i <= 1 ? "text-foreground" : "text-muted-foreground")}>{step}</span>
@@ -522,9 +533,9 @@ function ApplicationForm({ job, onSubmit, existing }: {
       {editing ? (
         <section>
           <FieldLabel>Resume / CV</FieldLabel>
-          <div className="flex items-center gap-3 p-3 rounded-md border border-[#4f46e5]/30 bg-[#f5f3ff]">
-            <div className="w-9 h-9 rounded-lg bg-[#4f46e5]/10 flex items-center justify-center shrink-0">
-              <FileText className="w-4 h-4 text-[#4f46e5]" />
+          <div className="flex items-center gap-3 p-3 rounded-md border border-primary/30 bg-[#f5f3ff]">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <FileText className="w-4 h-4 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-foreground truncate">
@@ -689,10 +700,10 @@ function ApplicationForm({ job, onSubmit, existing }: {
       <div>
         <button
           type="submit" disabled={!form.consent}
-          className="w-full h-11 rounded-md bg-[#4f46e5] text-white font-semibold text-sm
-            hover:bg-[#4338ca] active:scale-[0.99] transition-all shadow-sm
-            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#4f46e5] disabled:active:scale-100
-            focus:outline-none focus:ring-2 focus:ring-[#4f46e5] focus:ring-offset-2"
+          className="w-full h-11 rounded-md bg-primary text-white font-semibold text-sm
+            hover:bg-primary-hover active:scale-[0.99] transition-all shadow-sm
+            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100
+            focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
         >
           {editing ? "Update Application" : "Submit Application"}
         </button>
@@ -783,7 +794,7 @@ function Sidebar({ job }: { job: JobPosting | null }) {
     <aside className="w-[320px] shrink-0 flex flex-col bg-white border-r border-border overflow-y-auto">
       <div className="px-7 pt-7 pb-6 border-b border-border">
         <div className="flex items-center gap-2 mb-5">
-          <div className="w-8 h-8 rounded-lg bg-[#4f46e5] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-white font-bold text-[10px] tracking-tight">CP</span>
           </div>
           <span className="text-sm font-semibold text-foreground">Career Page</span>
@@ -811,7 +822,7 @@ function Sidebar({ job }: { job: JobPosting | null }) {
             <ul className="flex flex-col gap-1.5">
               {job.must_have_skills.map((skill) => (
                 <li key={skill} className="flex items-start gap-2">
-                  <div className="mt-[5px] w-1.5 h-1.5 rounded-full bg-[#4f46e5]/30 shrink-0" />
+                  <div className="mt-[5px] w-1.5 h-1.5 rounded-full bg-primary/30 shrink-0" />
                   <span className="text-xs text-muted-foreground leading-snug">{skill}</span>
                 </li>
               ))}
@@ -824,7 +835,7 @@ function Sidebar({ job }: { job: JobPosting | null }) {
             <ul className="flex flex-col gap-1.5">
               {job.nice_to_have_skills.map((skill) => (
                 <li key={skill} className="flex items-start gap-2">
-                  <div className="mt-[5px] w-1.5 h-1.5 rounded-full bg-[#4f46e5]/30 shrink-0" />
+                  <div className="mt-[5px] w-1.5 h-1.5 rounded-full bg-primary/30 shrink-0" />
                   <span className="text-xs text-muted-foreground leading-snug">{skill}</span>
                 </li>
               ))}
@@ -938,6 +949,17 @@ export default function CareersPortalPage() {
     loadJobData();
   }, [slug, jobId]);
 
+/** Câu duy nhất ứng viên nhìn thấy khi nộp hỏng.
+ *
+ *  Thông báo kỹ thuật mô tả bảng, cột và chính sách bên trong hệ thống. Nó vô
+ *  nghĩa với người đang nộp hồ sơ, và vẽ sơ đồ dữ liệu cho người không nên
+ *  biết. Chi tiết ở lại log máy chủ, nơi có người sửa được nó. */
+const SUBMIT_FAILED_MESSAGE =
+  "We could not submit your application. Please check your file and try again — if it keeps happening, contact us.";
+
+const UPDATE_FAILED_MESSAGE =
+  "We could not save your changes. Please try again in a moment.";
+
   /** Edit mode: the candidate already applied — update their answers in place. */
   const handleUpdate = async (form: FormData) => {
     if (!selectedJob || !existingApp) return;
@@ -946,24 +968,25 @@ export default function CareersPortalPage() {
     setPhase("loading");
 
     try {
-      const { error: applicationError } = await supabase
-        .from('applications')
-        .update(buildScreeningPayload(form, new Date().toISOString()))
-        .eq('id', existingApp.ref.applicationId);
+      // Qua backend, giống hệt lượt nộp đầu. Không còn UPDATE trực tiếp nào từ
+      // trình duyệt, nên `applications` và `candidates` khoá được hoàn toàn.
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/v1/applications/${existingApp.ref.applicationId}/screening`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            candidate_uuid: existingApp.ref.candidateUuid,
+            screening: {
+              ...buildScreeningPayload(form, new Date().toISOString()),
+              salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin),
+            },
+          }),
+        },
+      );
 
-      if (applicationError) {
-        console.error('application update error:', applicationError);
-        throw new Error(applicationError.message || 'Failed to update application');
-      }
-
-      // Keep the headline figure on the candidate row in sync (same as create).
-      const { error: candidateError } = await supabase
-        .from('candidates')
-        .update({ salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin) })
-        .eq('uuid', existingApp.ref.candidateUuid);
-      if (candidateError) {
-        // Reporting-only field — the application itself was saved, so don't fail.
-        console.error('candidate update error:', candidateError);
+      if (!response.ok) {
+        throw new Error(UPDATE_FAILED_MESSAGE);
       }
 
       const { resume: _resume, ...answers } = form;
@@ -973,7 +996,7 @@ export default function CareersPortalPage() {
       setPhase("results");
     } catch (err) {
       console.error('Application update failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update application');
+      setError(UPDATE_FAILED_MESSAGE);
       setSubmitting(false);
       setPhase("form");
     }
@@ -993,81 +1016,51 @@ export default function CareersPortalPage() {
     setError(null);
 
     try {
-      // Name, email, phone and social links are extracted from the CV by the
-      // ingest pipeline, so the form does not collect them.
+      // MỘT request duy nhất. Backend ghi candidates -> resumes ->
+      // applications bằng khoá service-role, trong cùng lượt đó.
+      //
+      // Trước đây trang này gọi /api/v1/ingest rồi TỰ chèn thêm ba dòng của
+      // riêng nó. Backend đã ghi đủ cả ba, nên mỗi hồ sơ nộp sinh ra HAI đơn
+      // ứng tuyển — và bảng `candidates` buộc phải mở quyền ghi cho anon, thứ
+      // đổ vỡ ngay khi bật RLS ("new row violates row-level security policy").
+      //
+      // Tên, email, điện thoại và link mạng xã hội do backend đọc từ CV, nên
+      // form không hỏi lại.
       const formDataUpload = new FormData();
       if (form.resume) formDataUpload.append('file', form.resume);
       formDataUpload.append('job_id', selectedJob.id);
       formDataUpload.append('job_title', selectedJob.job_title);
+      formDataUpload.append(
+        'screening',
+        JSON.stringify({
+          ...buildScreeningPayload(form, new Date().toISOString()),
+          salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin),
+        }),
+      );
 
       setPhase("loading");
 
-      const ingestResponse = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/v1/ingest`, {
-        method: 'POST',
-        body: formDataUpload,
-      });
+      const ingestResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/v1/ingest`,
+        { method: 'POST', body: formDataUpload },
+      );
 
       if (!ingestResponse.ok) {
-        const errorData = await ingestResponse.json().catch(() => ({}));
-        throw new Error(errorData.detail || errorData.message || 'Failed to upload CV');
+        throw new Error(SUBMIT_FAILED_MESSAGE);
       }
 
       const ingestData = await ingestResponse.json();
-      const candidateUuid = ingestData.candidate_uuid;
-      const storageUrl = ingestData.storage_url;
-
-      if (!candidateUuid) {
-        throw new Error('No candidate UUID returned from ingest API');
+      const candidateUuid = ingestData.candidate_uuid as string | undefined;
+      const applicationId = ingestData.application_id as string | undefined;
+      if (!candidateUuid || !applicationId) {
+        throw new Error(SUBMIT_FAILED_MESSAGE);
       }
 
-      // Only what the CV cannot provide. The ingest pipeline fills in the rest.
-      const { error: candidateError } = await supabase
-        .from('candidates')
-        .upsert({
-          uuid: candidateUuid,
-          // Headline figure for ABAC-governed reporting; the full range lives on
-          // the application row, since expectations differ per role.
-          salary_expectation: toAmount(form.salaryMax) ?? toAmount(form.salaryMin),
-          cv_file_path: storageUrl || null,
-        }, { onConflict: 'uuid' });
-
-      if (candidateError) {
-        console.error('candidate upsert error:', candidateError);
-        throw new Error(candidateError.message || 'Failed to save candidate');
-      }
-
-      // Create resume record
-      const { data: resumeData, error: resumeError } = await supabase
-        .from('resumes')
-        .insert({
-          candidate_uuid: candidateUuid,
-          filename: form.resume?.name || 'resume.pdf',
-          file_path: storageUrl || null,
-        })
-        .select('id')
-        .single();
-
-      if (resumeError) {
-        console.error('resume insert error:', resumeError);
-        throw new Error(resumeError.message || 'Failed to save resume');
-      }
-
-      // Create application record
-      const { data: applicationData, error: applicationError } = await supabase
-        .from('applications')
-        .insert({
-          candidate_uuid: candidateUuid,
-          job_posting_id: selectedJob.id,
-          resume_id: resumeData.id,
-          ...buildScreeningPayload(form, new Date().toISOString()),
-        })
-        .select('id, submitted_at')
-        .single();
-
-      if (applicationError) {
-        console.error('application insert error:', applicationError);
-        throw new Error(applicationError.message || 'Failed to save application');
-      }
+      const applicationData = {
+        id: applicationId,
+        submitted_at: new Date().toISOString(),
+      };
+      const resumeData = { id: ingestData.resume_id as string };
 
       // Remember this submission so a return visit becomes an edit, not a duplicate.
       const submittedAt = (applicationData.submitted_at as string | null) ?? new Date().toISOString();
@@ -1091,8 +1084,13 @@ export default function CareersPortalPage() {
       setPhase("results");
 
     } catch (err) {
+      // Ứng viên chỉ thấy MỘT câu. Thông báo lỗi kỹ thuật ở đây mô tả bảng,
+      // cột và chính sách bên trong hệ thống — ví dụ "new row violates
+      // row-level security policy for table candidates" — vừa vô nghĩa với
+      // người đang nộp hồ sơ, vừa vẽ ra sơ đồ dữ liệu cho người không nên biết.
+      // Chi tiết ở lại log của máy chủ, nơi có người sửa được nó.
       console.error('Application submission failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit application');
+      setError(SUBMIT_FAILED_MESSAGE);
       setSubmitting(false);
       setPhase("form");
     }
@@ -1112,7 +1110,7 @@ export default function CareersPortalPage() {
       {/* Preview banner — internal only. Candidates reach this page with no
           session and must never see HR chrome. */}
       {isAuthenticated && (
-        <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-2 bg-[#4f46e5] text-white text-xs shadow-lg">
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-2 bg-primary text-white text-xs shadow-lg">
           <div className="flex items-center gap-2">
             <span className="font-medium">Candidate Portal Preview</span>
             <span className="opacity-60">— viewing as a job applicant</span>
@@ -1130,7 +1128,7 @@ export default function CareersPortalPage() {
         isAuthenticated && "mt-8",
       )}>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-[#4f46e5] flex items-center justify-center">
+          <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
             <span className="text-white font-bold text-[9px] tracking-tight">CP</span>
           </div>
           <span className="text-sm font-semibold text-foreground">Career Page</span>
@@ -1138,7 +1136,7 @@ export default function CareersPortalPage() {
         <div className="w-px h-3.5 bg-border mx-1" />
         <span className="text-sm text-muted-foreground">{selectedJob?.job_title || "Careers"}</span>
         <div className="ml-auto">
-          <a href="#" className="text-sm text-[#4f46e5] hover:underline font-medium">Go to Home Page</a>
+          <a href="#" className="text-sm text-primary hover:underline font-medium">Go to Home Page</a>
         </div>
       </header>
 
@@ -1167,14 +1165,14 @@ export default function CareersPortalPage() {
               <StatusPanel tone="amber" icon={Clock} title="Applications are closed">
                 <strong style={{ color: D.ink }}>{selectedJob?.job_title}</strong> is no longer
                 accepting applications. Browse our other open roles at{" "}
-                <a href="/careers" className="font-medium" style={{ color: D.blue }}>/careers</a>.
+                <Link href="/careers" className="font-medium" style={{ color: D.blue }}>/careers</Link>.
               </StatusPanel>
             )}
 
             {resolution === "notfound" && (
               <StatusPanel tone="muted" icon={Search} title="Position not found">
                 This link may be outdated or the posting was removed. See our{" "}
-                <a href="/careers" className="font-medium" style={{ color: D.blue }}>open positions</a>.
+                <Link href="/careers" className="font-medium" style={{ color: D.blue }}>open positions</Link>.
               </StatusPanel>
             )}
 

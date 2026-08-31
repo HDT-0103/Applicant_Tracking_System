@@ -37,6 +37,8 @@ class AzureIngestionService:
         github_url: str = None,
         job_id: str = None,
         filename: str = None,
+        screening: dict = None,
+        salary_expectation: float = None,
     ) -> IngestionResponse:
         candidate_uuid = str(uuid.uuid4())
 
@@ -58,6 +60,8 @@ class AzureIngestionService:
             linkedin_url=linkedin_url,
             github_username=github_url,
             job_id=job_id,
+            screening=screening,
+            salary_expectation=salary_expectation,
         )
 
         # Parse PDF to extract social links immediately
@@ -103,6 +107,8 @@ class AzureIngestionService:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
+        # Bỏ qua lặng lẽ nếu Service Bus chưa cấu hình — publisher tự ghi log.
+        # Hồ sơ đã lưu xong ở bước trên; enrichment do route chạy nền.
         self._service_bus_service.publish_cv_received_event(
             candidate_uuid=candidate_uuid, storage_url=storage_url
         )
@@ -117,7 +123,9 @@ class AzureIngestionService:
             status="Accepted",
             candidate_uuid=candidate_uuid,
             storage_url=storage_url,
-            message="CV successfully ingested and processing event published",
+            # Không hứa "event published" nữa: câu đó sai khi Service Bus chưa
+            # bật, và nó là thứ người vận hành đọc để tin rằng sự kiện đã đi.
+            message="CV successfully ingested.",
             resume_id=resume_id,
             application_id=application_id,
         )
@@ -133,6 +141,8 @@ class AzureIngestionService:
         linkedin_url: str = None,
         github_username: str = None,
         job_id: str = None,
+        screening: dict = None,
+        salary_expectation: float = None,
     ) -> tuple:
         """
         Write candidates -> resumes -> applications inside the request, so a
@@ -162,6 +172,7 @@ class AzureIngestionService:
                 phone=phone,
                 linkedin_url=linkedin_url,
                 github_username=github_username,
+                salary_expectation=salary_expectation,
             )
             if not candidate_ok:
                 raise RuntimeError(f"candidates upsert failed for {candidate_uuid}")
@@ -172,7 +183,7 @@ class AzureIngestionService:
             application_id = None
             if job_id:
                 application_id = repository.create_application(
-                    candidate_uuid, job_id, resume_id
+                    candidate_uuid, job_id, resume_id, screening=screening
                 )
 
             return resume_id, application_id

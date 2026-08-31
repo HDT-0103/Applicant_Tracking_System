@@ -27,27 +27,47 @@ Dưới đây là nội dung CV dạng văn bản. Hãy phân tích và trả v�
 Chỉ trả về JSON, không thêm giải thích hay markdown."""
 
 
-def _extract_embedded_links(page: pypdf._page.PageObject) -> list[str]:
-    """Extract hidden hyperlink URLs from PDF annotations (/Annots -> /Link -> /A -> /URI)."""
+def _extract_embedded_links(page: pypdf._page.PageObject, page_number: int = 0) -> list[str]:
+    """Lấy URL ẩn trong annotation của PDF (/Annots -> /Link -> /A -> /URI).
+
+    Rất nhiều CV chỉ để chữ "GitHub" gắn hyperlink, không viết URL ra dạng chữ.
+    Bỏ sót annotation đồng nghĩa với việc pipeline kết luận ứng viên không có
+    GitHub — rồi chấm điểm họ trên kết luận đó.
+
+    Vì vậy lỗi ở đây được GHI LẠI chứ không nuốt. Vẫn không ném ra ngoài: một
+    trang hỏng không đáng làm hỏng cả lượt xử lý CV, nhưng phải để lại dấu vết
+    thì mới phân biệt được "CV không có link" với "đọc link không được".
+    """
     urls: list[str] = []
     try:
         annots = page.get("/Annots")
-        if not annots:
-            return urls
-        for ref in annots:
-            try:
-                annot = ref.get_object()
-                if annot.get("/Subtype") != "/Link":
-                    continue
-                action = annot.get("/A")
-                if action and "/URI" in action:
-                    url = str(action["/URI"]).strip()
-                    if url:
-                        urls.append(url)
-            except Exception:
+    except Exception as exc:
+        logger.warning(
+            "ingestion.pdf.annots_unreadable", page=page_number, error=str(exc)
+        )
+        return urls
+
+    if not annots:
+        return urls
+
+    skipped = 0
+    for ref in annots:
+        try:
+            annot = ref.get_object()
+            if annot.get("/Subtype") != "/Link":
                 continue
-    except Exception:
-        pass
+            action = annot.get("/A")
+            if action and "/URI" in action:
+                url = str(action["/URI"]).strip()
+                if url:
+                    urls.append(url)
+        except Exception:
+            skipped += 1
+
+    if skipped:
+        logger.warning(
+            "ingestion.pdf.annotations_skipped", page=page_number, skipped=skipped
+        )
     return urls
 
 
@@ -56,11 +76,11 @@ def extract_text_and_links_from_pdf(pdf_path: str) -> tuple[str | None, list[str
         reader = pypdf.PdfReader(pdf_path)
         pages = []
         all_links = []
-        for page in reader.pages:
+        for page_number, page in enumerate(reader.pages, start=1):
             text = page.extract_text()
             if text:
                 pages.append(text)
-            embedded = _extract_embedded_links(page)
+            embedded = _extract_embedded_links(page, page_number)
             if embedded:
                 pages.append("--- EMBEDDED SOCIAL LINKS ---")
                 pages.extend(embedded)
@@ -120,7 +140,7 @@ async def parse_cv_with_gemini(resume_text: str, settings: Settings) -> dict | N
     try:
         genai.configure(api_key=settings.gemini_api_key)
         model = genai.GenerativeModel(
-            "gemini-2.0-flash",
+            settings.gemini_model,
             generation_config={
                 "response_mime_type": "application/json",
                 "temperature": 0.1,

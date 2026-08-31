@@ -4,7 +4,11 @@
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
-    "strict": false,
+    // Đây là tsconfig DUY NHẤT của repo. Trước đây còn một file ở gốc map
+    // `@/*` sang `src/frontend/src/*` — thư mục rỗng — nên sinh ra 21 lỗi ảo,
+    // trong khi `next build` vẫn xanh vì nó chỉ đọc file này. Hai nguồn sự
+    // thật, không nguồn nào đáng tin.
+    "strict": true,
     "noEmit": true,
     "incremental": true,
     "module": "esnext",

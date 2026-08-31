@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "../../components/AppHeader";
 import { api } from "../../services/httpClient";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAuth } from "../../contexts/AuthContext";
 import { ALL_ROLES, ROLE_LABELS, type UserRole } from "../../lib/rbac";
 import { D } from "../../lib/shared";
@@ -77,8 +78,15 @@ interface AuditLog {
   user_email: string | null;
   action: string;
   candidate_uuid: string | null;
-  ip_address: string;
-  user_agent: string;
+  /**
+   * `null` khi bản ghi không ghi nhận được nguồn gốc.
+   *
+   * Backend từng điền "127.0.0.1" và "Browser" cho những dòng thiếu. Một nhật
+   * ký kiểm toán nói dối về nguồn gốc còn tệ hơn một dòng thừa nhận là không
+   * biết: "127.0.0.1" không phân biệt nổi với một truy cập thật từ máy chủ.
+   */
+  ip_address: string | null;
+  user_agent: string | null;
   details: unknown;
   created_at: string;
 }
@@ -94,11 +102,18 @@ interface LLMMetrics {
 interface InfraMetrics {
   azure_service_bus: {
     queue_name: string;
-    status: string;
-    active_message_count: number;
-    deadletter_message_count: number;
-    failed_ingestions: number;
-    retry_status: string;
+    status: "healthy" | "degraded" | "unavailable" | "not_configured";
+    /**
+     * `null` nghĩa là KHÔNG đọc được, khác hẳn với 0.
+     *
+     * Backend từng trả 0 cứng kèm status "healthy", nên một Service Bus chết
+     * hiện lên đây y hệt một hàng đợi rỗng đang chạy tốt. Kiểu `| null` là để
+     * không thể vô tình quay lại chỗ đó.
+     */
+    active_message_count: number | null;
+    deadletter_message_count: number | null;
+    /** Vì sao không phải healthy. */
+    detail: string | null;
   };
   api_rate_limits: {
     provider: string;
@@ -155,6 +170,9 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("users");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Phiên đang chờ xác nhận thu hồi. `null` = hộp thoại đóng. */
+  const [revokingJti, setRevokingJti] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState(false);
 
   const [users, setUsers] = useState<UserRow[]>([]);
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
@@ -225,7 +243,7 @@ export default function AdminDashboard() {
         return next;
       });
     } catch (err) {
-      alert("Failed to update user: " + (err instanceof Error ? err.message : "Error"));
+      setError("Failed to update user: " + (err instanceof Error ? err.message : "Error"));
     } finally {
       setSavingId(null);
     }
@@ -236,17 +254,23 @@ export default function AdminDashboard() {
       const updated = await api.put<Policy>(`/api/admin/abac/policies/${policy.id}`, { is_masked: !policy.is_masked });
       setPolicies((prev) => prev.map((p) => (p.id === policy.id ? updated : p)));
     } catch (err) {
-      alert("Failed to toggle policy: " + (err instanceof Error ? err.message : "Error"));
+      setError("Failed to toggle policy: " + (err instanceof Error ? err.message : "Error"));
     }
   };
 
-  const handleRevokeSession = async (jti: string) => {
-    if (!window.confirm("Revoke this session? The user will be logged out immediately.")) return;
+  const handleRevokeSession = async () => {
+    const jti = revokingJti;
+    if (!jti) return;
+    setRevoking(true);
+    setError(null);
     try {
       await api.post(`/api/admin/sessions/${jti}/revoke`);
       setSessions((prev) => prev.map((s) => (s.jti === jti ? { ...s, is_revoked: true } : s)));
+      setRevokingJti(null);
     } catch (err) {
-      alert("Failed to revoke session: " + (err instanceof Error ? err.message : "Error"));
+      setError("Failed to revoke session: " + (err instanceof Error ? err.message : "Error"));
+    } finally {
+      setRevoking(false);
     }
   };
 
@@ -307,6 +331,16 @@ export default function AdminDashboard() {
 
         {/* Content */}
         <main style={{ flex: 1, overflowY: "auto", padding: "32px 36px", background: D.bg }}>
+          <ConfirmDialog
+            open={revokingJti !== null}
+            title="Revoke this session?"
+            message="The user will be signed out immediately and will have to log in again. Any work they have not saved is lost."
+            confirmLabel="Revoke session"
+            busy={revoking}
+            onCancel={() => setRevokingJti(null)}
+            onConfirm={handleRevokeSession}
+          />
+
           {error && (
             <div style={{ background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, padding: "12px 16px", color: D.red, fontSize: 13.5, marginBottom: 22 }}>
               {error}
@@ -464,7 +498,7 @@ export default function AdminDashboard() {
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
                               {!s.is_revoked && (
-                                <button onClick={() => handleRevokeSession(s.jti)} style={{ padding: "4px 10px", background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, color: D.red, cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>Kill Token</button>
+                                <button type="button" onClick={() => setRevokingJti(s.jti)} style={{ padding: "4px 10px", background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, color: D.red, cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>Kill Token</button>
                               )}
                             </td>
                           </tr>
@@ -573,18 +607,28 @@ export default function AdminDashboard() {
                   <div style={{ ...card, padding: 20 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
                       <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, display: "flex", alignItems: "center", gap: 8, margin: 0 }}><HardDrive size={17} style={{ color: D.blue }} /> Azure Service Bus</h3>
-                      <span style={{ fontSize: 11, background: D.mintSoft, color: D.mint, padding: "2px 8px", borderRadius: 99, fontWeight: 700, textTransform: "uppercase" }}>{infraMetrics.azure_service_bus.status}</span>
+                      <span style={{ fontSize: 11, background: `${queueTone(infraMetrics.azure_service_bus.status)}18`, color: queueTone(infraMetrics.azure_service_bus.status), padding: "2px 8px", borderRadius: 99, fontWeight: 700, textTransform: "uppercase" }}>{infraMetrics.azure_service_bus.status.replace("_", " ")}</span>
                     </div>
                     <InfraRow label="Queue" value={infraMetrics.azure_service_bus.queue_name} mono />
-                    <InfraRow label="Active Messages" value={infraMetrics.azure_service_bus.active_message_count} strong color={D.blue} />
-                    <InfraRow label="Deadletter" value={infraMetrics.azure_service_bus.deadletter_message_count} strong color={D.red} />
-                    <InfraRow label="Ingestion Failures" value={infraMetrics.azure_service_bus.failed_ingestions} />
-                    <InfraRow label="Retry Status" value={infraMetrics.azure_service_bus.retry_status} color={D.mint} last />
+                    <InfraRow label="Active Messages" value={countOrUnknown(infraMetrics.azure_service_bus.active_message_count)} strong color={D.blue} />
+                    <InfraRow label="Deadletter" value={countOrUnknown(infraMetrics.azure_service_bus.deadletter_message_count)} strong color={D.red} last={!infraMetrics.azure_service_bus.detail} />
+                    {infraMetrics.azure_service_bus.detail && (
+                      <div style={{ marginTop: 12, padding: "8px 10px", borderRadius: 6, background: `${queueTone(infraMetrics.azure_service_bus.status)}0D`, border: `1px solid ${queueTone(infraMetrics.azure_service_bus.status)}28`, fontSize: 12, color: D.sub, lineHeight: 1.5 }}>
+                        {infraMetrics.azure_service_bus.detail}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ ...card, padding: 20 }}>
                     <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, margin: "0 0 18px", display: "flex", alignItems: "center", gap: 8 }}><RefreshCw size={17} style={{ color: D.blue }} /> API Rate Limits</h3>
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                      {infraMetrics.api_rate_limits.length === 0 && (
+                        // Danh sách rỗng là câu trả lời thật. Trước đây chỗ này
+                        // dựng sẵn github/proxycurl với hạn mức bịa.
+                        <div style={{ fontSize: 13, color: D.muted, padding: "12px 0" }}>
+                          No provider has reported a rate limit yet.
+                        </div>
+                      )}
                       {infraMetrics.api_rate_limits.map((l, i) => {
                         const pct = l.rate_limit_total ? (l.rate_limit_remaining / l.rate_limit_total) : 0;
                         return (
@@ -647,8 +691,14 @@ export default function AdminDashboard() {
                             <span style={{ fontSize: 11, background: D.blueSoft, color: D.blue, padding: "2px 7px", borderRadius: 4, fontWeight: 600, fontFamily: D.mono }}>{log.action}</span>
                           </td>
                           <td style={tdStyle}>
-                            <div>{log.ip_address}</div>
-                            <div style={{ fontSize: 10, color: D.dim, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.user_agent}</div>
+                            {log.ip_address ? (
+                              <div style={{ fontFamily: D.mono }}>{log.ip_address}</div>
+                            ) : (
+                              <div style={{ color: D.dim, fontStyle: "italic" }}>not recorded</div>
+                            )}
+                            {log.user_agent && (
+                              <div style={{ fontSize: 10, color: D.dim, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={log.user_agent}>{log.user_agent}</div>
+                            )}
                           </td>
                           <td style={tdStyle}>
                             <pre style={{ margin: 0, fontSize: 11, background: D.surface, padding: 8, borderRadius: 6, overflowX: "auto", maxWidth: 300, color: D.sub, fontFamily: D.mono, border: `1px solid ${D.lineSoft}` }}>{JSON.stringify(log.details, null, 2)}</pre>
@@ -656,7 +706,11 @@ export default function AdminDashboard() {
                         </tr>
                       ))}
                       {auditLogs.length === 0 && (
-                        <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: D.muted, padding: 28 }}>No audit trails found.</td></tr>
+                        <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: D.muted, padding: 28 }}>
+                          {auditSearch
+                            ? `No audit trail matches “${auditSearch}”.`
+                            : "No audit trails recorded yet."}
+                        </td></tr>
                       )}
                     </tbody>
                   </table>
@@ -684,6 +738,16 @@ const StatCard: React.FC<{ label: string; value: string; color: string }> = ({ l
     <div style={{ fontSize: 25, fontWeight: 800, color, marginTop: 6 }}>{value}</div>
   </div>
 );
+
+/** Bộ đếm không đọc được thì hiện dấu gạch, không hiện 0. */
+const countOrUnknown = (n: number | null) =>
+  n === null ? <span style={{ color: D.dim }}>—</span> : n;
+
+const queueTone = (status: InfraMetrics["azure_service_bus"]["status"]): string => {
+  if (status === "healthy") return D.mint;
+  if (status === "degraded") return D.amber;
+  return D.red; // unavailable | not_configured — cả hai đều là "không giám sát được"
+};
 
 const InfraRow: React.FC<{ label: string; value: React.ReactNode; strong?: boolean; color?: string; mono?: boolean; last?: boolean }> = ({ label, value, strong, color, mono, last }) => (
   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: last ? "none" : `1px solid ${D.lineSoft}` }}>

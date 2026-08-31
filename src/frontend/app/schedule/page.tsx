@@ -9,14 +9,14 @@ import {
 } from "lucide-react";
 import { D, Dot, Badge, SectionLabel, Divider } from "../../lib/shared";
 import { useAuth } from "../../contexts/AuthContext";
-import { AppHeader } from "../../components/AppHeader";
+import { AppShell } from "../../components/AppShell";
 import {
   checkCalendarStatus, getGoogleAuthUrl, exchangeGoogleCode,
   fetchConnectedInterviewers, querySlots, confirmSlot,
   type Interviewer, type TimeSlot, type ConfirmedSlot,
 } from "../../services/schedulingService";
 
-import { supabase } from "../../lib/supabase";
+import { listCandidateOptions } from "../../services/catalogService";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -143,13 +143,15 @@ export default function SchedulePage() {
 
   // Load available candidates if not provided in URL
   useEffect(() => {
-    supabase
-      .from("candidates")
-      .select("uuid, full_name")
-      .order("created_at", { ascending: false })
-      .limit(30)
-      .then(({ data }) => {
-        if (data && data.length > 0) {
+    // Qua backend chứ không hỏi thẳng Supabase: danh sách này chỉ được chứa
+    // ứng viên mà người đang đăng nhập có quyền xem.
+    listCandidateOptions()
+      .then((options) => {
+        const data = options.map((o) => ({
+          uuid: o.candidate_uuid,
+          full_name: o.full_name || "Candidate",
+        }));
+        if (data.length > 0) {
           setCandidatesList(data);
           const initialUuid = searchParams.get("uuid");
           const initialName = searchParams.get("name");
@@ -162,6 +164,10 @@ export default function SchedulePage() {
             setCandidateName(data[0].full_name || "Candidate");
           }
         }
+      })
+      .catch(() => {
+        // Danh sách rỗng vẫn dùng được: HR tới đây từ hồ sơ ứng viên thì uuid
+        // đã có sẵn trong URL.
       });
   }, [searchParams]);
 
@@ -299,22 +305,20 @@ export default function SchedulePage() {
   // Show Google Connect screen if not connected
   if (calendarConnected === null || connecting) {
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-        <AppHeader candidateName={candidateName} />
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
+      <AppShell candidateName={candidateName} scroll={false} padded={false}>
+        <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12 }}>
           <Loader2 size={32} strokeWidth={1.5} color={D.blue} style={{ animation: "spin 1s linear infinite" }} />
           <span style={{ fontSize: 13, color: D.muted }}>{connecting ? "Connecting Google Calendar..." : "Checking calendar status..."}</span>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
+      </AppShell>
     );
   }
 
   if (calendarConnected === false) {
     return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-        <AppHeader candidateName={candidateName} />
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, padding: 40 }}>
+      <AppShell candidateName={candidateName} scroll={false} padded={false}>
+        <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, padding: 40 }}>
           <div style={{ width: 64, height: 64, borderRadius: "50%", background: D.blueSoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Calendar size={28} strokeWidth={1.5} color={D.blue} />
           </div>
@@ -349,15 +353,16 @@ export default function SchedulePage() {
           </div>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
+      </AppShell>
     );
   }
 
   // Main scheduling UI (connected)
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <AppHeader candidateName={candidateName} />
-
+    <AppShell candidateName={candidateName} scroll={false} padded={false}>
+      {/* Split panes manage their own scrolling, so the shell hands over the
+          full height untouched (scroll=false, padded=false). */}
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Sub-header */}
       <div style={{ height: 38, background: D.canvas, borderBottom: `1px solid ${D.line}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 6, flexShrink: 0 }}>
         <Calendar size={12} strokeWidth={1.8} color={D.muted} />
@@ -695,6 +700,7 @@ export default function SchedulePage() {
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
-    </div>
+      </div>
+    </AppShell>
   );
 }

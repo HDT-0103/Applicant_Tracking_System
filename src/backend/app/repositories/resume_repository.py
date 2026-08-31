@@ -1,49 +1,100 @@
-import uuid
-from typing import List, Optional
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.resume import Resume
-from app.models.resume_analysis import ResumeAnalysis
-from app.models.resume_embedding import ResumeEmbedding
+from __future__ import annotations
 
-class ResumeRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+from uuid import UUID
 
-    async def create_resume(self, user_id: uuid.UUID, raw_text: str, file_path: str) -> Resume:
-        new_resume = Resume(user_id=user_id, raw_text=raw_text, file_path=file_path)
-        self.session.add(new_resume)
-        return new_resume
+from src.backend.app.models.resume import Resume
+from src.backend.app.repositories.base import BaseRepository
 
-    async def get_by_id(self, resume_id: uuid.UUID) -> Optional[Resume]:
-        return await self.session.get(Resume, resume_id)
 
-    async def get_by_user_id(self, user_id: uuid.UUID) -> List[Resume]:
-        statement = select(Resume).where(Resume.user_id == user_id)
-        result = await self.session.scalars(statement)
-        return result.all()
+class ResumeRepository(BaseRepository):
+    """Repository responsible for CRUD operations on resumes."""
 
-    async def get_resume_with_all_data(self, resume_id: uuid.UUID) -> Optional[Resume]:
-        """Lấy CV kèm theo cả kết quả phân tích AI và Vector Embedding (Giải quyết triệt để N+1 query)"""
-        statement = (
-            select(Resume)
-            .where(Resume.id == resume_id)
-            .options(
-                selectinload(Resume.analyses),
-                selectinload(Resume.embeddings)
+    @staticmethod
+    def _to_resume(row: dict | None) -> Resume | None:
+        if not row:
+            return None
+        return Resume(**row)
+
+    async def create_resume(
+        self,
+        candidate_uuid: str,
+        filename: str,
+        file_path: str,
+        text_content: str,
+    ) -> Resume:
+        response = (
+            self.client.table("resumes")
+            .insert(
+                {
+                    "candidate_uuid": candidate_uuid,
+                    "filename": filename,
+                    "file_path": file_path,
+                    "text_content": text_content,
+                }
             )
+            .select("*")
+            .execute()
         )
-        return await self.session.scalar(statement)
-    
-    async def get_all_with_embeddings(self) -> List[tuple]:
-        """
-        Query lấy tất cả Resume kèm theo Embedding và Analysis tương ứng.
-        Trả về danh sách các tuple (Embedding, Analysis)
-        """
-        stmt = (
-            select(ResumeEmbedding, ResumeAnalysis)
-            .join(ResumeAnalysis, ResumeEmbedding.resume_id == ResumeAnalysis.resume_id)
+        row = response.data[0] if response.data else None
+        if row is None:
+            raise ValueError("Failed to create resume record.")
+        return Resume(**row)
+
+    async def get_resume_by_id(
+        self,
+        resume_id: UUID,
+    ) -> Resume | None:
+        response = (
+            self.client.table("resumes")
+            .select("*")
+            .eq("id", str(resume_id))
+            .limit(1)
+            .execute()
         )
-        result = await self.session.execute(stmt)
-        return result.all()
+        row = response.data[0] if response.data else None
+        return self._to_resume(row)
+
+    async def get_resume_by_candidate(
+        self,
+        candidate_uuid: str,
+    ) -> Resume | None:
+        response = (
+            self.client.table("resumes")
+            .select("*")
+            .eq("candidate_uuid", candidate_uuid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        row = response.data[0] if response.data else None
+        return self._to_resume(row)
+
+    async def update_resume_text(
+        self,
+        resume_id: UUID,
+        text_content: str,
+    ) -> Resume:
+        response = (
+            self.client.table("resumes")
+            .update({"text_content": text_content})
+            .eq("id", str(resume_id))
+            .select("*")
+            .execute()
+        )
+        row = response.data[0] if response.data else None
+        if row is None:
+            raise ValueError(f"Resume with ID '{resume_id}' not found.")
+        return Resume(**row)
+
+    async def delete_resume(
+        self,
+        resume_id: UUID,
+    ) -> bool:
+        response = (
+            self.client.table("resumes")
+            .delete()
+            .eq("id", str(resume_id))
+            .select("id")
+            .execute()
+        )
+        return bool(response.data)

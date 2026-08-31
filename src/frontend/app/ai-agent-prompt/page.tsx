@@ -201,7 +201,7 @@ function EnrichmentPanel() {
         }}>
           <div style={{
             width: 36, height: 36, borderRadius: "50%",
-            background: `linear-gradient(135deg, ${D.blue} 0%, #4F46E5 100%)`,
+            background: `linear-gradient(135deg, ${D.blue} 0%, ${D.blueDeep} 100%)`,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0,
           }}>AM</div>
@@ -394,7 +394,7 @@ function MatchConfidence() {
             <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 10, color: D.muted, width: 96, flexShrink: 0 }}>{item.label}</span>
               <div style={{ flex: 1, height: 3, background: D.line, borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ width: `${item.pct}%`, height: "100%", background: `linear-gradient(90deg, ${D.blue}, #4F46E5)`, borderRadius: 99 }} />
+                <div style={{ width: `${item.pct}%`, height: "100%", background: `linear-gradient(90deg, ${D.blue}, ${D.blueDeep})`, borderRadius: 99 }} />
               </div>
               <span style={{ fontSize: 9.5, fontFamily: D.mono, fontWeight: 600, color: D.sub, width: 28, textAlign: "right", flexShrink: 0 }}>{item.pct}%</span>
             </div>

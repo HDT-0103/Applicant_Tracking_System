@@ -1,13 +1,14 @@
 from sentence_transformers import SentenceTransformer
 
-from app.schemas.resume_analysis import ResumeAnalysis
-from app.schemas.requirement_analysis import RequirementAnalysis
+from src.backend.app.schemas.resume_analysis import ResumeAnalysis
+from src.backend.app.schemas.requirement_analysis import RequirementAnalysis
 
-from app.schemas.resume_embedding import ResumeEmbedding
-from app.schemas.requirement_embedding import RequirementEmbedding
+from src.backend.app.schemas.resume_embedding import ResumeEmbedding
+from src.backend.app.schemas.requirement_embedding import RequirementEmbedding
 class EmbeddingService:
-    def __init__(self):
-        self.model = SentenceTransformer('intfloat/multilingual-e5-base')
+    def __init__(self, model_name = 'intfloat/multilingual-e5-base'):
+        self.model_name = model_name
+        self.model = SentenceTransformer(model_name)
         
     def embed_text(
         self,
@@ -49,7 +50,8 @@ class EmbeddingService:
         return ResumeEmbedding(
             summary_embedding=summary_embedding,
             skills_embedding=skills_embedding,
-            experience_embedding=experience_embedding
+            experience_embedding=experience_embedding,
+            model_name=self.model_name
         )
         
     def embed_requirement(
@@ -78,6 +80,7 @@ class EmbeddingService:
         )
 
         return RequirementEmbedding(
+            model_name=self.model_name,
             summary_embedding=summary_embedding,
             skills_embedding=skills_embedding,
             experience_embedding=experience_embedding

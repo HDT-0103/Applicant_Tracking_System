@@ -11,9 +11,13 @@ mới đi qua, mọi field khác bị che. Trước đây policy là blacklist (
 cần che) nên field PII mới thêm vào schema sẽ tự động lọt ra ngoài.
 """
 
+import threading
+import time
 from typing import Any
 
 import structlog
+
+from modules.shared.domain.roles import normalise_role
 
 logger = structlog.get_logger(__name__)
 
@@ -28,6 +32,10 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "enrichment_status",
         "enriched_profile",
         "updated_at",
+        # Mốc thời gian, không định danh ai. `updated_at` đã ở đây từ trước;
+        # thiếu `created_at` thì cột "2 giờ trước" trên danh sách ứng viên hiện
+        # ra dấu sao, mà đó là thông tin điều phối công việc chứ không phải PII.
+        "created_at",
         "status",
         "data",
         "skills_matrix",
@@ -82,62 +90,149 @@ OPAQUE_FIELDS: frozenset[str] = frozenset({"top_languages"})
 _ROLE_VISIBLE_FIELDS: dict[str, frozenset[str] | None] = {
     "hr": None,  # None = thấy tất cả
     "admin": None,
-    "tech_lead": frozenset(), # Sẽ được nạp từ DB
+    "tech_lead": TECH_LEAD_VISIBLE_FIELDS,
 }
 
-import time
-_CACHE_TTL = 300  # Cập nhật cache mỗi 5 phút
-_last_fetch_time = 0
+#: Bảng `abac_policies` liệt kê field CẦN CHE (``strategy='redact'``), tức là
+#: một deny-list. Whitelist ở trên mới là nguồn quyết định field nào đi qua.
+#: Ta chỉ TRỪ deny-list của DB khỏi whitelist — DB vì vậy chỉ có thể che THÊM,
+#: không bao giờ mở khoá được field mà code chưa cho phép.
+#:
+#: Hệ quả có chủ đích: dòng ``strategy='passthrough'`` trong DB bị BỎ QUA.
+#: Nếu tôn trọng nó thì bất kỳ ai ghi được bảng này đều tự mở được PII ứng
+#: viên mà không qua code review — biến DB thành đường leo thang đặc quyền.
+#: Muốn cho tech_lead thấy thêm field thì sửa TECH_LEAD_VISIBLE_FIELDS.
+_CACHE_TTL_SECONDS = 300
+
+#: role đã chuẩn hoá -> tên field bị DB che thêm.
+_db_deny_overrides: dict[str, frozenset[str]] = {}
+_last_fetch_time: float = 0.0
+
+#: FastAPI phục vụ nhiều request đồng thời; cache dưới đây là biến module dùng
+#: chung nên mọi thao tác đọc-ghi phải nằm trong khoá, tránh một request đọc
+#: được cache đang vá dở.
+_cache_lock = threading.Lock()
+
+def _leaf_field_name(row: dict) -> str | None:
+    """Lấy TÊN field từ một dòng policy.
+
+    `_filter` so khớp theo tên field ở mọi độ sâu, không theo đường dẫn có dấu
+    chấm. Dòng ``field_path='resume.email'`` vì thế phải quy về ``email``, nếu
+    giữ nguyên cả chuỗi thì không bao giờ khớp key nào và policy thành vô hiệu.
+    """
+    raw = row.get("field_name") or row.get("field_path")
+    if not raw:
+        return None
+    return str(raw).rsplit(".", maxsplit=1)[-1].strip() or None
+
+
+def _parse_policy_rows(rows: list[dict]) -> dict[str, frozenset[str]]:
+    """Quy các dòng `abac_policies` thành deny-list theo role đã chuẩn hoá.
+
+    Tách khỏi phần gọi mạng để test được luật diễn giải mà không cần Supabase.
+    """
+    overrides: dict[str, set[str]] = {}
+    for row in rows or []:
+        # Chỉ dòng yêu cầu CHE mới có hiệu lực. `passthrough` bị bỏ qua có chủ
+        # đích — xem ghi chú ở _db_deny_overrides.
+        if row.get("strategy") != "redact" and row.get("is_masked") is not True:
+            continue
+        field = _leaf_field_name(row)
+        if not field:
+            continue
+        # Quy đổi từ vựng cũ ('interviewer') về role chuẩn, nếu không thì policy
+        # ghi bằng từ vựng trước V005 sẽ không bao giờ được tra tới.
+        canonical = normalise_role(row.get("role"))
+        if canonical is None:
+            logger.warning("abac.policy_unknown_role", role=row.get("role"))
+            continue
+        overrides.setdefault(canonical, set()).add(field)
+
+    return {r: frozenset(f) for r, f in overrides.items()}
+
+
+def _fetch_deny_overrides() -> dict[str, frozenset[str]]:
+    """Đọc deny-list từ bảng `abac_policies`. Ném lỗi cho caller xử lý."""
+    from modules.shared.infrastructure.config import get_settings
+    from modules.shared.infrastructure.supabase_client import get_supabase_client
+
+    client = get_supabase_client(get_settings(), use_admin=True)
+    if client is None:
+        return {}
+
+    res = client.table("abac_policies").select(
+        "role, field_path, field_name, strategy, is_masked"
+    ).execute()
+    return _parse_policy_rows(res.data)
+
+
+#: Sau khi nạp hỏng thì chờ bấy nhiêu giây mới thử lại.
+#: Không có mốc lùi này, một Supabase đang chậm sẽ khiến MỌI request đi mạng
+#: lại từ đầu — mỗi lượt che dữ liệu tốn thêm một vòng khứ hồi, nối đuôi nhau.
+_RETRY_BACKOFF_SECONDS = 30
+
+
+def _refresh_deny_overrides() -> None:
+    """Nạp lại cache nếu đã quá hạn. Lỗi mạng/DB không làm nới lỏng quyền.
+
+    Ba điều quan trọng về khoá ở đây, vì hàm này nằm trên đường đi của MỌI
+    response có che dữ liệu:
+
+    1. Đường nhanh không giành khoá. Đọc một biến float là thao tác nguyên tử
+       trong CPython, mà FastAPI chạy handler đồng bộ trên threadpool — bắt mọi
+       request xếp hàng chỉ để đọc một mốc thời gian là tự tạo nút cổ chai.
+    2. Lượt gọi mạng nằm NGOÀI khoá. Giữ khoá suốt một vòng khứ hồi ~400ms sẽ
+       chặn hết các request khác đúng bằng ngần ấy thời gian.
+    3. Hỏng thì lùi lại. Trước đây lỗi không dời mốc thời gian, nên request kế
+       tiếp lại đi mạng — Supabase chậm biến thành app chậm toàn diện.
+    """
+    global _last_fetch_time, _db_deny_overrides
+
+    # (1) đường nhanh, không khoá
+    if time.monotonic() - _last_fetch_time <= _CACHE_TTL_SECONDS:
+        return
+
+    # (2) gọi mạng ngoài khoá
+    try:
+        overrides = _fetch_deny_overrides()
+    except Exception as exc:
+        # (3) lùi lại: coi như vừa nạp, nhưng chỉ giữ trong _RETRY_BACKOFF_SECONDS.
+        # Cache cũ chỉ có thể che NHIỀU hơn whitelist nên giữ lại vẫn an toàn.
+        with _cache_lock:
+            _last_fetch_time = (
+                time.monotonic() - _CACHE_TTL_SECONDS + _RETRY_BACKOFF_SECONDS
+            )
+        logger.error("abac.load_policies_failed", error=str(exc))
+        return
+
+    # Chỉ giữ khoá đúng lúc tráo kết quả vào. Hai luồng cùng nạp thì cùng ra một
+    # kết quả, nên lượt thừa chỉ tốn công chứ không sai.
+    with _cache_lock:
+        _db_deny_overrides = overrides
+        _last_fetch_time = time.monotonic()
+
+    logger.info(
+        "abac.deny_overrides_loaded",
+        roles={r: sorted(f) for r, f in overrides.items()},
+    )
+
 
 def _get_dynamic_policy(role: str) -> frozenset[str] | None:
-    if role in ("hr", "admin"):
-        return None
-        
-    global _last_fetch_time, _ROLE_VISIBLE_FIELDS
-    now = time.time()
-    
-    # Refresh cache nếu đã quá hạn hoặc policy đang rỗng
-    if now - _last_fetch_time > _CACHE_TTL or not _ROLE_VISIBLE_FIELDS.get(role):
-        try:
-            from modules.shared.infrastructure.config import get_settings
-            from modules.shared.infrastructure.supabase_client import get_supabase_client
-            
-            settings = get_settings()
-            client = get_supabase_client(settings, use_admin=True)
-            
-            if client:
-                res = client.table("abac_policies").select("role, field_path, strategy, is_masked").execute()
-                
-                new_policies: dict[str, set[str]] = {}
-                for row in res.data:
-                    r = row["role"]
-                    f = row.get("field_path") or row.get("field_name")
-                    if not f:
-                        continue
-                    
-                    # Policy rule: strategy='passthrough' HOẶC is_masked=false
-                    if row.get("strategy") == "passthrough" or row.get("is_masked") is False:
-                        if r not in new_policies:
-                            new_policies[r] = set()
-                        new_policies[r].add(f)
-                
-                # Cập nhật global cache
-                for r, fields in new_policies.items():
-                    _ROLE_VISIBLE_FIELDS[r] = frozenset(fields)
-                    
-                _last_fetch_time = now
-                logger.info("abac.policies_loaded_from_db", roles=list(new_policies.keys()))
-        except Exception as e:
-            logger.error("abac.load_policies_failed", error=str(e))
-            
-    # Fallback to hardcoded list if fetch fails or role is unknown
-    cached_fields = _ROLE_VISIBLE_FIELDS.get(role)
-    if not cached_fields:
-        logger.warning("abac.using_fallback_hardcoded_policy", role=role)
-        return TECH_LEAD_VISIBLE_FIELDS
-        
-    return cached_fields
+    """Whitelist hiệu lực của *role* = whitelist cứng TRỪ deny-list trong DB."""
+    # Role lạ (kể cả None) quy về `tech_lead` — policy che nhiều nhất.
+    canonical = normalise_role(role) or "tech_lead"
+    if canonical != role:
+        logger.debug("abac.role_normalised", raw=role, canonical=canonical)
 
+    base = _ROLE_VISIBLE_FIELDS.get(canonical, TECH_LEAD_VISIBLE_FIELDS)
+    if base is None:  # hr / admin: không che gì, khỏi cần đụng tới DB
+        return None
+
+    _refresh_deny_overrides()
+    with _cache_lock:
+        extra_hidden = _db_deny_overrides.get(canonical, frozenset())
+
+    return base - extra_hidden
 
 
 
@@ -163,6 +258,39 @@ def _mask_value(value: Any) -> Any:
     return _REDACTED
 
 
+#: Dữ liệu nhân khẩu học phục vụ báo cáo đa dạng (EEO). Che với MỌI role, kể
+#: cả `hr` và `admin` — đây là ngoại lệ duy nhất đứng trên policy theo role.
+#:
+#: Lý do không phải kỹ thuật mà là pháp lý và đạo đức: cho người sàng lọc nhìn
+#: thấy chủng tộc, giới tính, tình trạng khuyết tật hay tình trạng quân ngũ của
+#: ứng viên là tạo thiên kiến ngay tại điểm ra quyết định, và ở nhiều nơi là vi
+#: phạm luật tuyển dụng. `hr` mới là role nguy hiểm nhất ở đây vì chính họ đi
+#: sàng lọc — che `tech_lead` mà để hở `hr` thì gần như vô nghĩa.
+#:
+#: Các trường này vẫn nằm nguyên trong DB. Chúng chỉ không được đi ra qua API
+#: hồ sơ ứng viên. Báo cáo đa dạng phải truy vấn riêng ở dạng TỔNG HỢP, không
+#: gắn với một ứng viên cụ thể.
+ALWAYS_REDACTED_FIELDS: frozenset[str] = frozenset(
+    {
+        "race",
+        "ethnicity",
+        "gender_identity",
+        "gender",
+        "pronouns",
+        "custom_pronouns",
+        "disability_status",
+        "military_status",
+        "veteran_status",
+        "age_group",
+        "date_of_birth",
+        "marital_status",
+        "religion",
+        "sexual_orientation",
+        "national_origin",
+    }
+)
+
+
 def apply_abac(data: dict, role: str) -> dict:
     """Trả về BẢN SAO của *data* đã che field theo policy của *role*.
 
@@ -170,11 +298,35 @@ def apply_abac(data: dict, role: str) -> dict:
     nhớ, che tại chỗ sẽ làm HR cũng mất dữ liệu vĩnh viễn.
 
     Role lạ được xử lý như `tech_lead` (che nhiều nhất) — fail closed.
+    Trường trong ALWAYS_REDACTED_FIELDS bị che bất kể role.
     """
     visible = _get_dynamic_policy(role)
     if visible is None:
-        return data
-    return _filter(data, visible)
+        # `hr` / `admin` thấy mọi thứ NGOẠI TRỪ nhân khẩu học EEO.
+        return _filter_always_redacted(data)
+    # Với role bị giới hạn, trừ thêm EEO khỏi whitelist để dù ai đó lỡ thêm
+    # `race` vào TECH_LEAD_VISIBLE_FIELDS thì nó vẫn không lọt ra.
+    return _filter(data, visible - ALWAYS_REDACTED_FIELDS)
+
+
+def _filter_always_redacted(data: dict) -> dict:
+    """Che riêng nhóm EEO, giữ nguyên phần còn lại. Đệ quy theo tên field."""
+    result: dict = {}
+    for key, value in data.items():
+        if key in ALWAYS_REDACTED_FIELDS:
+            result[key] = _mask_value(value)
+        elif key in OPAQUE_FIELDS:
+            result[key] = value
+        elif isinstance(value, dict):
+            result[key] = _filter_always_redacted(value)
+        elif isinstance(value, list):
+            result[key] = [
+                _filter_always_redacted(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        else:
+            result[key] = value
+    return result
 
 
 def _filter(data: dict, visible: frozenset[str]) -> dict:

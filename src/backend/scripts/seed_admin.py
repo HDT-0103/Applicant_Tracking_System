@@ -21,9 +21,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT / "src" / "backend"))
 
-from app.database.connection import async_session_factory  # noqa: E402
-from app.models.enums import RoleType  # noqa: E402
-from app.models.user import User  # noqa: E402
+from src.backend.app.database.connection import async_session_factory  # noqa: E402
+from src.backend.app.models.enums import RoleType  # noqa: E402
+from src.backend.app.models.user import User  # noqa: E402
 from modules.auth.infra.password_service import PasswordService  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
