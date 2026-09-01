@@ -6,6 +6,7 @@ import { D, Badge } from "../lib/shared";
 import { 
   Layers, 
   BarChart3, 
+  Search,
   Sparkles, 
   Calendar,
   Briefcase,
@@ -77,6 +78,12 @@ export const LeftSidebar: React.FC = () => {
       label: "Dashboard Overview",
       badge: null,
       path: "/",
+    },
+    {
+      icon: <Search size={15} />,
+      label: "Find Candidates",
+      badge: null,
+      path: "/search",
     },
     {
       icon: <BarChart3 size={15} />,
