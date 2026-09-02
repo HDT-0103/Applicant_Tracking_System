@@ -147,22 +147,91 @@ jobs:
         exit 1
 
   # ==========================================
-  # JOB 4: TRIỂN KHAI
+  # JOB 4: TRIỂN KHAI LÊN AZURE CONTAINER APPS
   # ==========================================
+  # Chỉ chạy khi push vào main VÀ đã cấu hình đủ secret. Thiếu secret thì job
+  # bị bỏ qua chứ không đỏ — người chưa dựng hạ tầng Azure không phải nhìn CI
+  # đỏ vì một thứ họ chưa định làm.
+  #
+  # Xem docs/DEPLOY_AZURE.md cho các lệnh dựng hạ tầng lần đầu.
   deploy:
     needs: [docker-build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    environment: production
 
     steps:
-    - name: CHƯA CẤU HÌNH TRIỂN KHAI
+    - name: Kiểm tra đã cấu hình Azure chưa
+      id: guard
+      env:
+        AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
       run: |
-        echo "::warning title=Chưa có bước triển khai::CI đã pass, nhưng repo"
-        echo "::warning::chưa có bước đẩy lên môi trường nào. Đây KHÔNG phải là"
-        echo "::warning::một lần deploy — image chỉ được build và kiểm tra."
-        echo ""
-        echo "Muốn bật triển khai thật, cần thêm ở job này:"
-        echo "  1. azure/login@v2 với secret AZURE_CREDENTIALS"
-        echo "  2. Đẩy image lên registry (ACR / GHCR)"
-        echo "  3. azure/webapps-deploy@v3 hoặc tương đương"
-        echo "  4. Nạp biến môi trường production từ secret, KHÔNG dùng .env"
+        if [ -z "$AZURE_CREDENTIALS" ]; then
+          echo "::warning title=Chưa cấu hình triển khai::Thiếu secret AZURE_CREDENTIALS — bỏ qua bước deploy. Xem docs/DEPLOY_AZURE.md."
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Checkout Source Code
+      if: steps.guard.outputs.configured == 'true'
+      uses: actions/checkout@v4
+
+    - name: Đăng nhập Azure
+      if: steps.guard.outputs.configured == 'true'
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Đăng nhập Container Registry
+      if: steps.guard.outputs.configured == 'true'
+      run: az acr login --name ${{ secrets.ACR_NAME }}
+
+    - name: Build và đẩy image
+      if: steps.guard.outputs.configured == 'true'
+      run: |
+        REGISTRY="${{ secrets.ACR_NAME }}.azurecr.io"
+        IMAGE="$REGISTRY/smartats-backend"
+        # Gắn cả SHA lẫn latest: SHA để quay lui về đúng một bản build, latest
+        # để người vận hành gõ tay cho nhanh.
+        docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+        docker push "$IMAGE:${{ github.sha }}"
+        docker push "$IMAGE:latest"
+
+    - name: Triển khai lên Container Apps
+      if: steps.guard.outputs.configured == 'true'
+      run: |
+        REGISTRY="${{ secrets.ACR_NAME }}.azurecr.io"
+        # Chỉ đổi image. Biến môi trường và secret đã đặt sẵn trên Container
+        # App lúc dựng hạ tầng — CI không được cầm chúng, và cũng không nên
+        # ghi đè cấu hình runtime mỗi lần deploy.
+        az containerapp update \
+          --name ${{ secrets.AZURE_CONTAINER_APP }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --image "$REGISTRY/smartats-backend:${{ github.sha }}"
+
+    - name: Chờ revision mới trả lời /health
+      if: steps.guard.outputs.configured == 'true'
+      run: |
+        FQDN=$(az containerapp show \
+          --name ${{ secrets.AZURE_CONTAINER_APP }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --query properties.configuration.ingress.fqdn -o tsv)
+
+        # `az containerapp update` trả về ngay khi Azure NHẬN yêu cầu, không
+        # phải khi revision mới đã phục vụ được. Không chờ ở đây thì CI báo
+        # xanh trong khi bản deploy có thể đang crash-loop.
+        for i in $(seq 1 40); do
+          if curl -sf "https://$FQDN/health" > /dev/null; then
+            echo "Đã lên: https://$FQDN"
+            exit 0
+          fi
+          sleep 15
+        done
+
+        echo "::error title=Deploy không phản hồi::Revision mới không trả lời /health sau 10 phút."
+        az containerapp logs show \
+          --name ${{ secrets.AZURE_CONTAINER_APP }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --tail 60
+        exit 1
