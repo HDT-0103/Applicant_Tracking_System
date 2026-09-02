@@ -162,25 +162,40 @@ class SupabaseReviewRepo(IReviewRepo):
         return {row["candidate_uuid"] for row in apps.data or []}
 
     async def get_panel(self, job_posting_id: str) -> List[PanelMember]:
-        res = (
+        rows = (
             self._client.table("job_posting_reviewers")
-            .select("reviewer_id, invited_at, users!job_posting_reviewers_reviewer_id_fkey(name, email)")
+            .select("reviewer_id, invited_at")
             .eq("job_posting_id", job_posting_id)
             .execute()
-        )
+        ).data or []
+        if not rows:
+            return []
 
-        members = []
-        for row in res.data or []:
-            user = row.get("users") or {}
-            members.append(
-                PanelMember(
-                    reviewer_id=row["reviewer_id"],
-                    name=user.get("name") or "Unknown",
-                    email=user.get("email") or "",
-                    invited_at=row["invited_at"],
-                )
+        # Hai truy vấn thay vì một join lồng.
+        #
+        # PostgREST cần GỢI Ý tên ràng buộc để nhúng quan hệ, vì bảng này có
+        # hai khoá ngoại cùng trỏ sang `users` (`reviewer_id` và `invited_by`).
+        # Mà tên ràng buộc thì phụ thuộc vào migration đã chạy ở môi trường đó
+        # — đoán sai là 500 "Could not find a relationship", đúng lỗi vừa xảy
+        # ra trên môi trường thật. Hai truy vấn không đoán gì cả.
+        ids = [r["reviewer_id"] for r in rows]
+        users = (
+            self._client.table("users")
+            .select("id, name, email")
+            .in_("id", ids)
+            .execute()
+        ).data or []
+        by_id = {u["id"]: u for u in users}
+
+        return [
+            PanelMember(
+                reviewer_id=r["reviewer_id"],
+                name=(by_id.get(r["reviewer_id"]) or {}).get("name") or "Unknown",
+                email=(by_id.get(r["reviewer_id"]) or {}).get("email") or "",
+                invited_at=r["invited_at"],
             )
-        return members
+            for r in rows
+        ]
 
     async def list_available_reviewers(self) -> List[PanelMember]:
         res = (

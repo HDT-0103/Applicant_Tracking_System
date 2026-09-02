@@ -121,6 +121,13 @@ class SupabaseSchedulingRepo(ISchedulingRepo):
 
         return slot
 
+    def update_slot_notifications(self, slot: ConfirmedSlot) -> None:
+        self._supabase.table("confirmed_slots").update({
+            "calendar_event_id": slot.calendar_event_id,
+            "slack_notified": slot.slack_notified,
+            "email_notified": slot.email_notified,
+        }).eq("id", slot.id).execute()
+
     def get_confirmed_slot(self, slot_id: str) -> Optional[ConfirmedSlot]:
         res = (
             self._supabase.table("confirmed_slots")

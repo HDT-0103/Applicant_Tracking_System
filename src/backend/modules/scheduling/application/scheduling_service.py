@@ -4,6 +4,7 @@ from typing import Optional
 import structlog
 
 from modules.scheduling.domain.errors import (
+    CalendarUnavailableError,
     CandidateContactMissingError,
     NotificationNotSentError,
     SlotNotFoundError,
@@ -123,15 +124,29 @@ class SchedulingService:
 
         freebusy_map: dict[str, list] = {}
         for interviewer in selected:
-            # 1. Attempt fetching freebusy using interviewer's own token
-            fbs = await self._calendar.fetch_freebusy(
-                interviewer=interviewer,
-                date_from=date_from,
-                date_to=date_to,
-                work_start=config.work_start,
-                work_end=config.work_end,
-                override_api_key="",  # Always use interviewer's own calendar token
-            )
+            # 1. Đọc lịch bằng token của chính người đó.
+            #
+            # Bọc try/except vì `fetch_freebusy` NÉM khi Google trả 401, chứ
+            # không trả về rỗng. Trước đây lỗi đó bay thẳng ra ngoài thành HTTP
+            # 500, và nhánh làm mới token ngay bên dưới KHÔNG BAO GIỜ chạy tới
+            # — token hết hạn là cả tính năng đặt lịch chết.
+            try:
+                fbs = await self._calendar.fetch_freebusy(
+                    interviewer=interviewer,
+                    date_from=date_from,
+                    date_to=date_to,
+                    work_start=config.work_start,
+                    work_end=config.work_end,
+                    override_api_key="",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "scheduling.freebusy_failed",
+                    interviewer_id=interviewer.id,
+                    name=interviewer.name,
+                    error=str(exc),
+                )
+                fbs = []
 
             # 2. If no free intervals returned or token expired, and interviewer has refresh token, try refreshing
             if not fbs and interviewer.calendar_refresh_token and self._oauth_service:
@@ -148,14 +163,36 @@ class SchedulingService:
                         interviewer.id, new_token, interviewer.calendar_refresh_token
                     )
                     interviewer.calendar_api_key = new_token
-                    fbs = await self._calendar.fetch_freebusy(
-                        interviewer=interviewer,
-                        date_from=date_from,
-                        date_to=date_to,
-                        work_start=config.work_start,
-                        work_end=config.work_end,
-                        override_api_key=new_token,
-                    )
+                    try:
+                        fbs = await self._calendar.fetch_freebusy(
+                            interviewer=interviewer,
+                            date_from=date_from,
+                            date_to=date_to,
+                            work_start=config.work_start,
+                            work_end=config.work_end,
+                            override_api_key=new_token,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "scheduling.freebusy_failed_after_refresh",
+                            interviewer_id=interviewer.id,
+                            error=str(exc),
+                        )
+                        fbs = []
+
+            # 2b. Có kết nối lịch mà vẫn không đọc được -> DỪNG, đừng đoán.
+            #
+            # Nhánh dự phòng bên dưới (quy về giờ làm việc tiêu chuẩn) chỉ đúng
+            # cho người CHƯA kết nối lịch. Áp nó cho người đã kết nối mà token
+            # chết nghĩa là coi họ rảnh cả ngày — hệ thống sẽ đề xuất khe giờ
+            # họ đang bận, đúng thứ SRS cấm ("zero false-positive overlaps").
+            if not fbs and (interviewer.calendar_api_key or interviewer.calendar_refresh_token):
+                logger.error(
+                    "scheduling.calendar_unreadable",
+                    interviewer_id=interviewer.id,
+                    name=interviewer.name,
+                )
+                raise CalendarUnavailableError(interviewer.name)
 
             # 3. Fallback to standard working hours if interviewer has no calendar connected
             if not fbs:
@@ -276,5 +313,22 @@ class SchedulingService:
             candidate_email=candidate_email,
         )
         slot.email_notified = email_sent
+
+        # GHI LẠI kết quả. Ba dòng gán ở trên chỉ sửa đối tượng trong bộ nhớ:
+        # phản hồi HTTP trả về đúng, nhưng bảng `confirmed_slots` giữ nguyên
+        # giá trị mặc định từ lúc insert. Hệ quả là `slack_notified` và
+        # `email_notified` trong cơ sở dữ liệu LUÔN LUÔN false, kể cả khi thông
+        # báo đã gửi thành công — và `calendar_event_id` luôn null, nên không
+        # có cách nào tra ngược ra sự kiện lịch đã tạo.
+        try:
+            self._repo.update_slot_notifications(slot)
+        except Exception as exc:
+            # Cuộc phỏng vấn đã được chốt và thông báo đã đi. Ghi cờ hỏng là
+            # sai sổ sách, không phải hỏng nghiệp vụ — đừng ném lỗi vào mặt HR.
+            logger.error(
+                "scheduling.notification_flags_not_saved",
+                slot_id=slot.id,
+                error=str(exc),
+            )
 
         return slot

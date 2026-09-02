@@ -368,3 +368,219 @@ async def test_tc8_interview_booking_and_multi_channel_notification():
     mock_calendar_event.create_event.assert_awaited_once()
     mock_slack.notify.assert_awaited_once()
     mock_email.notify_interviewers.assert_awaited_once()
+
+
+class TestCalendarTokenExpiry:
+    """Token Google hết hạn KHÔNG được làm sập cả tính năng đặt lịch.
+
+    `GoogleCalendarService.fetch_freebusy` NÉM khi Google trả 401 chứ không
+    trả về rỗng. `query_slots` lại chỉ kiểm `if not fbs` để quyết định làm mới
+    token, nên ngoại lệ bay thẳng ra ngoài thành HTTP 500 và nhánh làm mới
+    không bao giờ chạy tới — smoke test trên môi trường thật bắt được đúng lỗi
+    này, còn bộ unit test thì không, vì nó mock lịch bằng giá trị trả về.
+    """
+
+    @staticmethod
+    def _service(calendar, oauth, interviewer):
+        from modules.scheduling.application.scheduling_service import SchedulingService
+        from modules.scheduling.application.sweep_line_service import SweepLineService
+
+        repo = MagicMock(spec=ISchedulingRepo)
+        repo.get_interviewers.return_value = [interviewer]
+        repo.get_config.return_value = SchedulingConfig()
+        return SchedulingService(
+            repo=repo,
+            calendar=calendar,
+            sweepline=SweepLineService(),
+            slack=MagicMock(),
+            calendar_event=MagicMock(),
+            email_notifier=MagicMock(),
+            oauth_service=oauth,
+        ), repo
+
+    @staticmethod
+    def _interviewer(**kw):
+        from modules.scheduling.domain.models import Interviewer
+
+        defaults = dict(
+            id="iv-1", name="An", email="an@smartats.com", role="tech_lead",
+            initials="A", color="#3B82F6",
+            calendar_api_key="stale-token", calendar_refresh_token="refresh-me",
+        )
+        defaults.update(kw)
+        return Interviewer(**defaults)
+
+    @pytest.mark.asyncio
+    async def test_a_401_triggers_a_refresh_instead_of_a_500(self):
+        from datetime import datetime, timedelta, timezone
+
+        from modules.scheduling.domain.models import FreeBusyInterval
+
+        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+        free = [
+            FreeBusyInterval(
+                interviewer_id="iv-1", start_time=start, end_time=start + timedelta(hours=3)
+            )
+        ]
+
+        calendar = MagicMock()
+        # Lần đầu ném 401, lần sau (sau khi làm mới) thành công.
+        calendar.fetch_freebusy = AsyncMock(side_effect=[RuntimeError("401"), free])
+        oauth = MagicMock()
+        oauth.refresh_access_token = AsyncMock(return_value="fresh-token")
+
+        service, repo = self._service(calendar, oauth, self._interviewer())
+        slots = await service.query_slots(
+            interviewer_ids=["iv-1"],
+            date_from=start,
+            date_to=start + timedelta(days=1),
+        )
+
+        oauth.refresh_access_token.assert_awaited_once_with("refresh-me")
+        # Token mới phải được lưu lại, nếu không lần sau lại hỏng y hệt.
+        repo.update_calendar_key.assert_called_once()
+        assert slots, "làm mới token thành công mà vẫn không có khe giờ nào"
+
+    @pytest.mark.asyncio
+    async def test_an_unreadable_calendar_is_reported_not_guessed(self):
+        from datetime import datetime, timedelta, timezone
+
+        from modules.scheduling.domain.errors import CalendarUnavailableError
+
+        calendar = MagicMock()
+        calendar.fetch_freebusy = AsyncMock(side_effect=RuntimeError("401"))
+        oauth = MagicMock()
+        oauth.refresh_access_token = AsyncMock(return_value=None)  # làm mới cũng hỏng
+
+        service, _ = self._service(calendar, oauth, self._interviewer())
+        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+
+        # KHÔNG quy về giờ làm việc tiêu chuẩn. Người này CÓ lịch mà hệ thống
+        # không đọc được; coi họ rảnh cả ngày sẽ đề xuất khe giờ họ đang bận —
+        # đúng thứ SRS gọi là false-positive overlap và cấm tuyệt đối.
+        with pytest.raises(CalendarUnavailableError) as exc:
+            await service.query_slots(
+                interviewer_ids=["iv-1"], date_from=start, date_to=start + timedelta(days=1)
+            )
+        assert exc.value.interviewer_name == "An"
+
+    @pytest.mark.asyncio
+    async def test_someone_with_no_calendar_still_falls_back(self):
+        from datetime import datetime, timedelta, timezone
+
+        calendar = MagicMock()
+        calendar.fetch_freebusy = AsyncMock(return_value=[])
+
+        service, _ = self._service(
+            calendar, MagicMock(),
+            self._interviewer(calendar_api_key=None, calendar_refresh_token=None),
+        )
+        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+
+        # Chưa kết nối lịch là chuyện khác hẳn: ở đây quy về giờ làm việc tiêu
+        # chuẩn là lựa chọn sản phẩm có chủ đích, không phải đoán bừa.
+        slots = await service.query_slots(
+            interviewer_ids=["iv-1"], date_from=start, date_to=start + timedelta(days=2)
+        )
+        assert slots, "người chưa kết nối lịch phải vẫn có khe giờ dự phòng"
+
+
+class TestNotificationFlagsArePersisted:
+    """Kết quả gửi thông báo phải được GHI LẠI vào cơ sở dữ liệu.
+
+    `confirm_slot` lưu lịch TRƯỚC rồi mới gọi Slack / Calendar / email — đúng,
+    vì đợi gửi xong mới lưu thì một lần Slack treo là mất luôn cuộc phỏng vấn
+    vừa chốt. Nhưng ba dòng gán kết quả sau đó chỉ sửa đối tượng trong bộ nhớ.
+    Phản hồi HTTP trả về đúng, còn bảng `confirmed_slots` giữ nguyên giá trị
+    mặc định — nên `slack_notified` trong DB LUÔN là false, kể cả khi tin đã
+    gửi thành công, và `calendar_event_id` luôn null.
+
+    Người vận hành tra `slack_notified` để biết nhóm tuyển dụng đã được báo
+    chưa. Một cột luôn nói "chưa" thì vô dụng đúng vào lúc cần nó nhất.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_flags_are_written_back_after_sending(self):
+        from datetime import datetime, timedelta, timezone
+
+        from modules.scheduling.application.scheduling_service import SchedulingService
+        from modules.scheduling.application.sweep_line_service import SweepLineService
+        from modules.scheduling.domain.models import Interviewer, SchedulingConfig
+
+        interviewer = Interviewer(
+            id="iv-1", name="An", email="an@smartats.com", role="tech_lead",
+            initials="A", color="#3B82F6", calendar_api_key="token",
+        )
+        repo = MagicMock(spec=ISchedulingRepo)
+        repo.get_interviewers.return_value = [interviewer]
+        repo.get_config.return_value = SchedulingConfig()
+        repo.get_candidate_email.return_value = "bao@example.com"
+        repo.save_confirmed_slot.side_effect = lambda s: s
+
+        slack = MagicMock()
+        slack.notify = AsyncMock(return_value=True)
+        email = MagicMock()
+        email.notify_interviewers = AsyncMock(return_value=True)
+        calendar_event = MagicMock()
+        calendar_event.create_event = AsyncMock(return_value="gcal-event-1")
+
+        service = SchedulingService(
+            repo=repo,
+            calendar=MagicMock(),
+            sweepline=SweepLineService(),
+            slack=slack,
+            calendar_event=calendar_event,
+            email_notifier=email,
+            slack_webhook_url="https://hooks.slack.com/services/T/B/X",
+        )
+
+        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+        slot = await service.confirm_slot(
+            candidate_id="cand-1",
+            candidate_name="Trần Bảo",
+            start_time=start,
+            end_time=start + timedelta(minutes=45),
+            interviewer_ids=["iv-1"],
+        )
+
+        assert slot.slack_notified is True
+        repo.update_slot_notifications.assert_called_once()
+        saved = repo.update_slot_notifications.call_args[0][0]
+        assert saved.slack_notified is True
+        assert saved.email_notified is True
+        assert saved.calendar_event_id == "gcal-event-1"
+
+    @pytest.mark.asyncio
+    async def test_a_write_back_failure_does_not_lose_the_interview(self):
+        from datetime import datetime, timedelta, timezone
+
+        from modules.scheduling.application.scheduling_service import SchedulingService
+        from modules.scheduling.application.sweep_line_service import SweepLineService
+        from modules.scheduling.domain.models import SchedulingConfig
+
+        repo = MagicMock(spec=ISchedulingRepo)
+        repo.get_interviewers.return_value = []
+        repo.get_config.return_value = SchedulingConfig()
+        repo.get_candidate_email.return_value = None
+        repo.save_confirmed_slot.side_effect = lambda s: s
+        repo.update_slot_notifications.side_effect = RuntimeError("DB đang bận")
+
+        slack = MagicMock()
+        slack.notify = AsyncMock(return_value=False)
+        email = MagicMock()
+        email.notify_interviewers = AsyncMock(return_value=False)
+
+        service = SchedulingService(
+            repo=repo, calendar=MagicMock(), sweepline=SweepLineService(),
+            slack=slack, calendar_event=MagicMock(), email_notifier=email,
+        )
+        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+
+        # Lịch đã chốt và thông báo đã đi. Ghi cờ hỏng là sai sổ sách, không
+        # phải hỏng nghiệp vụ — không được ném lỗi vào mặt HR.
+        slot = await service.confirm_slot(
+            candidate_id="cand-1", candidate_name="Trần Bảo",
+            start_time=start, end_time=start + timedelta(minutes=45),
+            interviewer_ids=[],
+        )
+        assert slot is not None
