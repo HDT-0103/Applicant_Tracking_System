@@ -20,7 +20,29 @@ dụng:
 | Fly.io free machine | 256 MB | ✗ |
 | Koyeb Free | 512 MB | ✗ |
 | Vercel Functions | — | ✗ (không có tiến trình thường trú) |
-| **Hugging Face Spaces** | **16 GB** | ✓ |
+| Hugging Face Spaces | 16 GB | ✗ — **đòi nạp credit cho SDK Docker** |
+
+> **Cập nhật:** Hugging Face Spaces từng là lựa chọn tốt nhất ở đây, nhưng SDK
+> Docker hiện yêu cầu nạp credit trước. Phần hướng dẫn HF bên dưới giữ lại
+> phòng khi chính sách đổi, nhưng **không còn là phương án chính**.
+
+## Phương án thực tế: Azure Container Apps bằng credit sinh viên
+
+Các bạn **đã dùng Azure Blob** để lưu CV, nghĩa là đã có subscription. Azure for
+Students cấp **100 USD credit không cần thẻ tín dụng** — đủ chạy 2 vCPU/4 GiB
+liên tục khoảng hai tháng, thừa cho một kỳ bảo vệ.
+
+Đây không phải "free tier vĩnh viễn", nhưng là **0 đồng tiền túi**, và nó chạy
+được mô hình mà không phải sửa dòng code nào.
+
+Lệnh cụ thể: [DEPLOY_AZURE.md](DEPLOY_AZURE.md). Nhớ `az containerapp delete`
+sau khi bảo vệ xong để khỏi đốt credit.
+
+### Nếu muốn free thật sự vĩnh viễn
+
+Cách duy nhất là **bỏ mô hình nhúng chạy cục bộ** — xem mục cuối tài liệu này.
+RAM tụt về ~256 MB và Render Free (512 MB) dùng được. Đổi lại phải viết một
+provider mới và reindex toàn bộ vector.
 
 Và ba thứ trong mã nguồn loại bỏ serverless hoàn toàn: mô hình cache trong tiến
 trình, WebSocket `/api/enrichment/ws/...`, và `BackgroundTasks` chạy enrichment
@@ -31,7 +53,7 @@ trình, WebSocket `/api/enrichment/ws/...`, và `BackgroundTasks` chạy enrichm
 | Thành phần | Nền tảng | Giá |
 |---|---|---|
 | Frontend | Vercel Hobby | 0đ |
-| Backend | **Hugging Face Spaces (Docker)** | 0đ |
+| Backend | **Azure Container Apps** (credit sinh viên) | 0đ tiền túi |
 | Database | Supabase Free | 0đ |
 | File CV | Azure Blob (credit sinh viên) | 0đ |
 | Bóc tách CV | Gemini API free tier | 0đ |
