@@ -522,3 +522,32 @@ class TestPanelSizeIsFrozen:
         assert body["required_tl_approvals"] == 0
         assert body["overall_status"] == "waiting_for_tls"
         assert "chưa có hội đồng" in body["panel_rule"]
+
+
+class TestPanelLookupDoesNotGuessConstraintNames:
+    """`get_panel` từng nhúng quan hệ bằng GỢI Ý tên khoá ngoại.
+
+    Bảng `job_posting_reviewers` có hai khoá ngoại cùng trỏ sang `users`
+    (`reviewer_id` và `invited_by`), nên PostgREST đòi gợi ý để phân biệt. Tên
+    ràng buộc lại phụ thuộc migration đã chạy ở môi trường đó — đoán sai là
+    500 "Could not find a relationship", và đó chính là lỗi smoke test bắt được
+    trên môi trường thật trong khi bộ test chạy qua repo giả thì không.
+    """
+
+    def test_the_panel_is_read_without_an_embedded_join(self, client, as_role, repo):
+        as_role("hr")
+        repo.panel["job-1"] = [
+            PanelMember(
+                reviewer_id="tl-1",
+                name="An",
+                email="an@smartats.com",
+                invited_at="2026-09-01T00:00:00Z",
+            )
+        ]
+        body = client.get("/api/review/panels/job-1").json()
+
+        assert [m["name"] for m in body] == ["An"]
+
+    def test_an_empty_panel_is_an_empty_list(self, client, as_role):
+        as_role("hr")
+        assert client.get("/api/review/panels/job-empty").json() == []

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from modules.scheduling.application.scheduling_service import SchedulingService
 from modules.scheduling.domain.errors import (
+    CalendarUnavailableError,
     CandidateContactMissingError,
     NotificationNotSentError,
     SlotNotFoundError,
@@ -229,11 +230,23 @@ async def query_slots(
             detail="At least one interviewer_id is required",
         )
 
-    return await service.query_slots(
-        interviewer_ids=body.interviewer_ids,
-        date_from=date_from,
-        date_to=date_to,
-    )
+    try:
+        return await service.query_slots(
+            interviewer_ids=body.interviewer_ids,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    except CalendarUnavailableError as exc:
+        # 503 kèm TÊN người cần kết nối lại, không phải 500 trống rỗng. HR đọc
+        # câu này là biết phải làm gì; trước đây họ chỉ thấy "Internal Server
+        # Error" và không có cách nào đoán ra token của ai đã hết hạn.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Could not read {exc.interviewer_name}'s calendar — their Google "
+                "connection has expired. Ask them to reconnect it, then try again."
+            ),
+        )
 
 
 @router.post("/confirm", response_model=ConfirmedSlot)
