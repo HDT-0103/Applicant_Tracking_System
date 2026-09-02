@@ -41,9 +41,13 @@ COPY . .
 # Bước 8: Mở cổng 8000 của container để bên ngoài gọi vào được
 EXPOSE 8000
 
-# Bước 9: Lệnh mặc định để khởi chạy FastAPI bằng Uvicorn khi container bật lên
-# Entrypoint là `apps.main:app` với --app-dir src/backend. Trước đây ghi
-# `app.main:app` — module đó KHÔNG tồn tại, container build xong là chết ngay.
-# Bỏ --reload: đó là cờ dành cho lúc dev, chạy production sẽ tự restart âm thầm
-# và ăn thêm RAM cho tiến trình theo dõi file.
-CMD ["uvicorn", "apps.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src/backend"]
+# Bước 9: Lệnh khởi chạy.
+#
+# Cổng đọc từ biến $PORT, mặc định 8000. MỌI nền tảng PaaS đều tự tiêm biến
+# này và mỗi nơi một giá trị — Hugging Face Spaces dùng 7860, Cloud Run và
+# Render dùng 8080. Ghi cứng 8000 thì container chạy bình thường nhưng nền tảng
+# gọi vào cổng khác và kết luận là app chết.
+#
+# Dùng dạng shell (không phải dạng exec/JSON) vì dạng exec KHÔNG khai triển
+# biến môi trường — `${PORT}` sẽ được truyền nguyên văn cho uvicorn.
+CMD uvicorn apps.main:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir src/backend
