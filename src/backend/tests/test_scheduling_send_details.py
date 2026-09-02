@@ -14,6 +14,7 @@ import pytest
 from modules.scheduling.application.scheduling_service import SchedulingService
 from modules.scheduling.domain.errors import (
     CandidateContactMissingError,
+    NotificationNotSentError,
     SlotNotFoundError,
 )
 from modules.scheduling.domain.models import CandidateContact, ConfirmedSlot
@@ -113,3 +114,58 @@ async def test_a_candidate_without_an_email_is_reported(service, repo, notifier)
             slot_id=SLOT_ID, room="Phòng 4.02", address="227 Nguyễn Văn Cừ"
         )
     notifier.send_room_details.assert_not_awaited()
+
+
+class TestEmailNotConfigured:
+    """Chưa cấu hình SMTP thì KHÔNG được báo là đã gửi.
+
+    `EmailNotifier.send_room_details` từng trả về True ở nhánh chưa cấu hình,
+    nên route báo với HR "Interview details sent to <email>" trong khi không có
+    thư nào rời khỏi máy chủ. HR tin ứng viên đã biết phòng và địa chỉ; ứng
+    viên thì không biết gì và đến sai chỗ.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_service_refuses_to_claim_it_sent(self, service, notifier):
+        notifier.send_room_details = AsyncMock(return_value=False)
+
+        with pytest.raises(NotificationNotSentError):
+            await service.send_interview_details(
+                slot_id=SLOT_ID, room="Phòng 4.02", address="227 NVC"
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_real_send_still_reports_the_address_it_reached(
+        self, service, notifier
+    ):
+        notifier.send_room_details = AsyncMock(return_value=True)
+
+        email = await service.send_interview_details(
+            slot_id=SLOT_ID, room="Phòng 4.02", address="227 NVC"
+        )
+        assert email == "bao@example.com"
+
+
+class TestEmailNotifierHonesty:
+    """Cùng luật, ở tầng thấp hơn."""
+
+    @staticmethod
+    def _notifier(username: str = "", password: str = ""):
+        from modules.scheduling.infra.email_notifier import EmailNotifier
+
+        return EmailNotifier(smtp_username=username, smtp_password=password)
+
+    def test_it_knows_when_it_cannot_send(self):
+        assert self._notifier().enabled is False
+        assert self._notifier("user", "pass").enabled is True
+
+    @pytest.mark.asyncio
+    async def test_room_details_returns_false_without_smtp(self):
+        sent = await self._notifier().send_room_details(
+            candidate_name="Trần Bảo",
+            candidate_email="bao@example.com",
+            slot_time="Tuesday, September 01, 2026 at 09:30 AM",
+            room="Phòng 4.02",
+            address="227 NVC",
+        )
+        assert sent is False

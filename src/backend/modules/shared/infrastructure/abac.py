@@ -69,6 +69,21 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "issue_date",
         "expiration_date",
         "headline",
+        # Kết quả tìm kiếm ngữ nghĩa (modules/search). Đây đúng là thứ một
+        # tech lead được giao đọc: mức phù hợp và điểm mạnh/yếu về chuyên môn.
+        # KHÔNG có `summary`, `github_summary`, `linkedin_summary` — ba trường
+        # đó là văn bản tự do do LLM viết và gần như chắc chắn nhắc tên ứng
+        # viên, nên vẫn bị che.
+        "score",
+        "skills",
+        "strengths",
+        "weaknesses",
+        # Chức danh trong lịch sử công việc. `title` và `company` đã có ở trên;
+        # `position` là cùng khái niệm dưới tên khác, đến từ DTO của luồng tìm
+        # kiếm. Thiếu nó thì dòng kinh nghiệm hiện ra là "*** tại Acme".
+        "position",
+        "duration",
+        "highlights",
         # Analytics / chấm điểm
         "analytics",
         "match_confidence_score",

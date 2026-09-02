@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { ApiError, api, getStoredAccessToken } from "@/services/httpClient";
 import { getReviewStatus, type ReviewStatus } from "@/services/reviewService";
+import { CandidateCvPanel } from "@/components/CandidateCvPanel";
 import { EnrichmentPanel } from "./_components/EnrichmentPanel";
 import { EnrichedAnalytics } from "./_components/EnrichedAnalytics";
 import { WS_UNAUTHORIZED_CODE } from "./types";
@@ -31,6 +32,8 @@ export default function EnrichedCandidateProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus | null>(null);
+  /** Cột giữa hiện hồ sơ đã bóc tách hay CV gốc. */
+  const [middleTab, setMiddleTab] = useState<"analysis" | "document">("analysis");
   const resolvedRef = React.useRef(false);
   const hasTriggeredSyncRef = React.useRef(false);
   const isSyncingRef = React.useRef(false);
@@ -380,9 +383,53 @@ export default function EnrichedCandidateProfilePage() {
         <LeftSidebar />
         {/* Divider */}
         <div style={{ width: 1, background: D.line, flexShrink: 0 }} />
-        {/* Middle — enrichment dashboard */}
-        <div style={{ flex: "0 0 44%", minWidth: 0, overflow: "hidden" }}>
-          <EnrichmentPanel data={data} />
+        {/* Middle — hồ sơ đã bóc tách HOẶC CV gốc.
+            Dùng tab thay vì thêm cột thứ tư: mục đích của màn hình này là ĐỐI
+            CHIẾU phần AI tóm tắt với tài liệu thật, mà ba cột nội dung cạnh
+            nhau thì cột nào cũng hẹp đến mức không đọc nổi. */}
+        <div style={{ flex: "0 0 44%", minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div
+            style={{
+              height: 34,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "stretch",
+              borderBottom: `1px solid ${D.line}`,
+              background: D.canvas,
+            }}
+          >
+            {(["analysis", "document"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setMiddleTab(tab)}
+                aria-current={middleTab === tab ? "true" : undefined}
+                style={{
+                  padding: "0 16px",
+                  border: "none",
+                  borderBottom: `2px solid ${middleTab === tab ? D.blue : "transparent"}`,
+                  background: "transparent",
+                  color: middleTab === tab ? D.blue : D.muted,
+                  fontSize: 11.5,
+                  fontWeight: middleTab === tab ? 700 : 500,
+                  cursor: "pointer",
+                }}
+              >
+                {tab === "analysis" ? "Parsed profile" : "Original CV"}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+            {middleTab === "analysis" ? (
+              <EnrichmentPanel data={data} />
+            ) : (
+              <CandidateCvPanel
+                candidateUuid={candidateUuid || ""}
+                candidateName={data?.full_name}
+              />
+            )}
+          </div>
         </div>
         {/* Divider */}
         <div style={{ width: 1, background: D.line, flexShrink: 0 }} />

@@ -16,3 +16,12 @@ class SlotNotFoundError(SchedulingError):
 
 class CandidateContactMissingError(SchedulingError):
     """Ứng viên không có email nên không gửi được thông tin phỏng vấn."""
+
+
+class NotificationNotSentError(SchedulingError):
+    """Soạn xong nhưng không gửi được — thường là chưa cấu hình SMTP.
+
+    Là lỗi riêng chứ không gộp vào lỗi chung: người gọi cần phân biệt "ứng
+    viên không có email" với "hệ thống chưa gửi thư được", vì hai thứ đó cần
+    hai hành động khác nhau.
+    """

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from modules.scheduling.application.scheduling_service import SchedulingService
 from modules.scheduling.domain.errors import (
     CandidateContactMissingError,
+    NotificationNotSentError,
     SlotNotFoundError,
 )
 from modules.scheduling.domain.models import (
@@ -44,7 +45,7 @@ def _build_service(
     repo = SupabaseSchedulingRepo(get_supabase_client(settings, use_admin=True))
     calendar = GoogleCalendarService()
     sweepline = SweepLineService()
-    slack = SlackNotifier()
+    slack = SlackNotifier(app_timezone=settings.app_timezone)
     calendar_event = CalendarEventService()
     email_notifier = EmailNotifier(
         smtp_host=settings.smtp_host,
@@ -331,5 +332,14 @@ async def send_interview_details(
         raise HTTPException(
             status_code=400,
             detail="This candidate has no email address on file, so the details could not be sent.",
+        )
+    except NotificationNotSentError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Email is not configured on this server, so nothing was sent. "
+                "Contact the candidate directly, or set SMTP_USERNAME / "
+                "SMTP_PASSWORD (see docs/NOTIFICATIONS_SETUP.md)."
+            ),
         )
     return {"status": "success", "message": f"Interview details sent to {email}"}
