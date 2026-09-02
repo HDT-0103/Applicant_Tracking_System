@@ -515,6 +515,33 @@ def _flow_d_abac_scheduling(run: Runner, api: Api, state: dict) -> None:
         return f"hr thấy tên, tech_lead nhận *** ({len(tl)} hồ sơ trong hội đồng)"
     run.check("ABAC che PII đúng theo role", _abac_diff)
 
+    def _notification_flags() -> Optional[str]:
+        db = admin_db()
+        rows = (
+            db.table("confirmed_slots")
+            .select("id, slack_notified, email_notified, calendar_event_id, created_at")
+            .order("created_at", desc=True).limit(1).execute().data
+        )
+        if not rows:
+            raise Skip("chưa có lịch phỏng vấn nào để đối chiếu")
+        row = rows[0]
+
+        import os
+        has_slack = bool(os.getenv("SLACK_WEBHOOK_URL"))
+        has_smtp = bool(os.getenv("SMTP_USERNAME") and os.getenv("SMTP_PASSWORD"))
+        if not (has_slack or has_smtp):
+            raise Skip("chưa cấu hình SLACK_WEBHOOK_URL hay SMTP — không có gì để gửi")
+
+        # Cột này từng LUÔN là false: `confirm_slot` gán kết quả vào đối tượng
+        # trong bộ nhớ rồi trả về, mà không ghi lại DB. Ai tra cột này để biết
+        # nhóm tuyển dụng đã được báo chưa đều nhận câu trả lời sai.
+        return (
+            f"lịch gần nhất {row['created_at'][:16]}: "
+            f"slack={row['slack_notified']} email={row['email_notified']} "
+            f"gcal={'có' if row['calendar_event_id'] else 'không'}"
+        )
+    run.check("cờ thông báo được ghi vào DB", _notification_flags)
+
 
 def _flow_review(run: Runner, api: Api, state: dict) -> None:
     run.flow("Duyệt hồ sơ & hội đồng (V008)")

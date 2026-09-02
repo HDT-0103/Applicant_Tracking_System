@@ -483,3 +483,104 @@ class TestCalendarTokenExpiry:
             interviewer_ids=["iv-1"], date_from=start, date_to=start + timedelta(days=2)
         )
         assert slots, "người chưa kết nối lịch phải vẫn có khe giờ dự phòng"
+
+
+class TestNotificationFlagsArePersisted:
+    """Kết quả gửi thông báo phải được GHI LẠI vào cơ sở dữ liệu.
+
+    `confirm_slot` lưu lịch TRƯỚC rồi mới gọi Slack / Calendar / email — đúng,
+    vì đợi gửi xong mới lưu thì một lần Slack treo là mất luôn cuộc phỏng vấn
+    vừa chốt. Nhưng ba dòng gán kết quả sau đó chỉ sửa đối tượng trong bộ nhớ.
+    Phản hồi HTTP trả về đúng, còn bảng `confirmed_slots` giữ nguyên giá trị
+    mặc định — nên `slack_notified` trong DB LUÔN là false, kể cả khi tin đã
+    gửi thành công, và `calendar_event_id` luôn null.
+
+    Người vận hành tra `slack_notified` để biết nhóm tuyển dụng đã được báo
+    chưa. Một cột luôn nói "chưa" thì vô dụng đúng vào lúc cần nó nhất.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_flags_are_written_back_after_sending(self):
+        from datetime import datetime, timedelta, timezone
+
+        from modules.scheduling.application.scheduling_service import SchedulingService
+        from modules.scheduling.application.sweep_line_service import SweepLineService
+        from modules.scheduling.domain.models import Interviewer, SchedulingConfig
+
+        interviewer = Interviewer(
+            id="iv-1", name="An", email="an@smartats.com", role="tech_lead",
+            initials="A", color="#3B82F6", calendar_api_key="token",
+        )
+        repo = MagicMock(spec=ISchedulingRepo)
+        repo.get_interviewers.return_value = [interviewer]
+        repo.get_config.return_value = SchedulingConfig()
+        repo.get_candidate_email.return_value = "bao@example.com"
+        repo.save_confirmed_slot.side_effect = lambda s: s
+
+        slack = MagicMock()
+        slack.notify = AsyncMock(return_value=True)
+        email = MagicMock()
+        email.notify_interviewers = AsyncMock(return_value=True)
+        calendar_event = MagicMock()
+        calendar_event.create_event = AsyncMock(return_value="gcal-event-1")
+
+        service = SchedulingService(
+            repo=repo,
+            calendar=MagicMock(),
+            sweepline=SweepLineService(),
+            slack=slack,
+            calendar_event=calendar_event,
+            email_notifier=email,
+            slack_webhook_url="https://hooks.slack.com/services/T/B/X",
+        )
+
+        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+        slot = await service.confirm_slot(
+            candidate_id="cand-1",
+            candidate_name="Trần Bảo",
+            start_time=start,
+            end_time=start + timedelta(minutes=45),
+            interviewer_ids=["iv-1"],
+        )
+
+        assert slot.slack_notified is True
+        repo.update_slot_notifications.assert_called_once()
+        saved = repo.update_slot_notifications.call_args[0][0]
+        assert saved.slack_notified is True
+        assert saved.email_notified is True
+        assert saved.calendar_event_id == "gcal-event-1"
+
+    @pytest.mark.asyncio
+    async def test_a_write_back_failure_does_not_lose_the_interview(self):
+        from datetime import datetime, timedelta, timezone
+
+        from modules.scheduling.application.scheduling_service import SchedulingService
+        from modules.scheduling.application.sweep_line_service import SweepLineService
+        from modules.scheduling.domain.models import SchedulingConfig
+
+        repo = MagicMock(spec=ISchedulingRepo)
+        repo.get_interviewers.return_value = []
+        repo.get_config.return_value = SchedulingConfig()
+        repo.get_candidate_email.return_value = None
+        repo.save_confirmed_slot.side_effect = lambda s: s
+        repo.update_slot_notifications.side_effect = RuntimeError("DB đang bận")
+
+        slack = MagicMock()
+        slack.notify = AsyncMock(return_value=False)
+        email = MagicMock()
+        email.notify_interviewers = AsyncMock(return_value=False)
+
+        service = SchedulingService(
+            repo=repo, calendar=MagicMock(), sweepline=SweepLineService(),
+            slack=slack, calendar_event=MagicMock(), email_notifier=email,
+        )
+        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+
+        # Lịch đã chốt và thông báo đã đi. Ghi cờ hỏng là sai sổ sách, không
+        # phải hỏng nghiệp vụ — không được ném lỗi vào mặt HR.
+        slot = await service.confirm_slot(
+            candidate_id="cand-1", candidate_name="Trần Bảo",
+            start_time=start, end_time=start + timedelta(minutes=45),
+            interviewer_ids=[],
+        )
+        assert slot is not None

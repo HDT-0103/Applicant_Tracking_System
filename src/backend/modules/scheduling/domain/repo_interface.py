@@ -45,5 +45,17 @@ class ISchedulingRepo(ABC):
         ...
 
     @abstractmethod
+    def update_slot_notifications(self, slot: ConfirmedSlot) -> None:
+        """Ghi lại kết quả thông báo SAU khi đã gửi xong.
+
+        Lịch được lưu trước, rồi mới gọi Slack / Google Calendar / email — nếu
+        đợi gửi xong mới lưu thì một lần Slack treo là mất luôn cuộc phỏng vấn
+        vừa chốt. Nhưng vì thế phải quay lại ghi kết quả, nếu không thì cột
+        `slack_notified` trong cơ sở dữ liệu vĩnh viễn là `false` bất kể thông
+        báo có đi hay không.
+        """
+        ...
+
+    @abstractmethod
     def get_config(self) -> SchedulingConfig:
         ...

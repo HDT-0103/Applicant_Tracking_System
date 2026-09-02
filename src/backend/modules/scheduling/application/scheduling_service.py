@@ -314,4 +314,21 @@ class SchedulingService:
         )
         slot.email_notified = email_sent
 
+        # GHI LẠI kết quả. Ba dòng gán ở trên chỉ sửa đối tượng trong bộ nhớ:
+        # phản hồi HTTP trả về đúng, nhưng bảng `confirmed_slots` giữ nguyên
+        # giá trị mặc định từ lúc insert. Hệ quả là `slack_notified` và
+        # `email_notified` trong cơ sở dữ liệu LUÔN LUÔN false, kể cả khi thông
+        # báo đã gửi thành công — và `calendar_event_id` luôn null, nên không
+        # có cách nào tra ngược ra sự kiện lịch đã tạo.
+        try:
+            self._repo.update_slot_notifications(slot)
+        except Exception as exc:
+            # Cuộc phỏng vấn đã được chốt và thông báo đã đi. Ghi cờ hỏng là
+            # sai sổ sách, không phải hỏng nghiệp vụ — đừng ném lỗi vào mặt HR.
+            logger.error(
+                "scheduling.notification_flags_not_saved",
+                slot_id=slot.id,
+                error=str(exc),
+            )
+
         return slot
