@@ -1,32 +1,41 @@
-services:
-  # 1. CONTAINER DATABASE
-  db:
-    image: pgvector/pgvector:pg16
-    container_name: ats_postgres_container
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    ports:
-      - "5432:5432"
-    volumes:
-      # Đã sửa từ ./infra thành ./infrastructure đúng theo ảnh của bạn
-      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
-      - .postgres_data:/var/lib/postgresql/data
-    restart: always
+# Chạy backend trong container, dùng Supabase làm cơ sở dữ liệu.
+#
+#   cp .env.example .env   # rồi điền vào
+#   docker compose up --build
+#   curl localhost:8000/health
+#
+# Frontend KHÔNG nằm ở đây: `npm run dev` đủ nhanh và tiện hơn cho vòng lặp
+# phát triển. File này chỉ để kiểm tra rằng đúng thứ sẽ được triển khai —
+# image backend — thật sự chạy được.
 
-  # 2. CONTAINER ỨNG DỤNG (PYTHON / FASTAPI)
+services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile # Đảm bảo bạn đã rename file thành chữ f viết thường
-    container_name: ats_backend_container
+      dockerfile: Dockerfile
+    container_name: ats_backend
     env_file:
-      - .env # Đọc file .env sau khi bạn đã copy ra thư mục gốc
+      - .env
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app # Gắn thư mục backend chứa code vào trong container
-    depends_on:
-      - db
-    restart: always
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+# ĐÃ GỠ: service `db` (pgvector/pgvector:pg16).
+#
+# Ứng dụng đã chuyển sang Supabase — `modules/shared/infrastructure/`
+# nói chuyện với PostgREST, không với một Postgres cục bộ. Container kia dựng
+# lên rồi nằm không, còn `init.sql` mà nó nạp thì đã lạc hậu so với các
+# migration V002–V008.
+#
+# ĐÃ GỠ: `volumes: - ./backend:/app`.
+#
+# Thư mục `./backend` KHÔNG TỒN TẠI (code nằm ở `src/backend`). Docker sẽ tự
+# tạo nó rỗng rồi gắn đè lên `/app`, xoá sạch phần code mà Dockerfile vừa COPY
+# vào — container bật lên là trống trơn. Bind mount kiểu này chỉ hợp với vòng
+# lặp dev có --reload, mà `CMD` trong Dockerfile cố ý không bật --reload.

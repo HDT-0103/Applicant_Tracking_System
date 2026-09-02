@@ -18,9 +18,15 @@ jobs:
   # ==========================================
   backend-ci:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/backend # Chạy lệnh bên trong folder backend
+    # KHÔNG đặt working-directory: src/backend.
+    #
+    # `requirements.txt` và `conftest.py` đều nằm ở GỐC repo. Chạy từ
+    # src/backend thì bước cài thư viện chết ngay với "Could not open
+    # requirements file", nên job này chưa từng chạy qua nổi bước đầu tiên.
+    #
+    # Chạy từ gốc còn được thêm một thứ: repo có HAI thư mục test
+    # (`tests/` và `src/backend/tests/`), và pytest ở gốc gom cả hai trong một
+    # lượt. Trước đây chỉ một nửa được chạy.
 
     steps:
     - name: Checkout Source Code
@@ -30,30 +36,36 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-        cache: 'pip' # Tự động cache các thư viện để lần sau chạy nhanh hơn
-        cache-dependency-path: src/backend/requirements.txt
+        cache: 'pip'
+        cache-dependency-path: requirements.txt
 
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        # KHÔNG dùng `if [ -f requirements.txt ]` như trước: nếu file đổi chỗ
-        # thì bước này im lặng bỏ qua và job gãy tận lúc chạy pytest với một
-        # ModuleNotFoundError khó hiểu. Thiếu file thì phải fail ngay tại đây.
+        # Thiếu file thì phải fail NGAY tại đây, đừng để job đi tiếp rồi gãy ở
+        # pytest với một ModuleNotFoundError khó truy.
         pip install -r requirements.txt
 
     - name: Run Code Linter (Flake8)
       run: |
-        # Dừng build nếu có lỗi cú pháp hoặc lỗi hệ thống
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Cảnh báo các lỗi format thông thường nhưng không làm sập build
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        # Lỗi cú pháp hoặc tên chưa định nghĩa thì dừng build.
+        flake8 src/backend --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Phần định dạng chỉ cảnh báo.
+        flake8 src/backend --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-    - name: Run Backend Unit Tests (PyTest)
+    - name: Run Backend Tests (PyTest)
       env:
-        # Giả lập môi trường test, tránh kết nối thật vào DB hệ thống.
-        # Phải là `+psycopg`: project cài psycopg3, KHÔNG cài asyncpg. Chuỗi
-        # `+asyncpg` cũ làm engine (tạo ở module level) ném ModuleNotFoundError
-        # ngay lúc pytest collect, trước cả khi chạy được test nào.
+        # `Settings` đọc biến môi trường NGAY LÚC IMPORT, nên thiếu bất kỳ biến
+        # bắt buộc nào là pytest chết ở khâu THU THẬP test — không một test nào
+        # chạy, và thông báo lỗi (`SupabaseException`) không chỉ ra biến nào
+        # thiếu. Đây chính là lý do job này trước đây luôn đỏ.
+        #
+        # Giá trị giả, cố ý: CI KHÔNG được cầm khoá vào cơ sở dữ liệu thật.
+        # Test nào cần DB thật đã tự bỏ qua (xem tests/integration/conftest.py).
+        SUPABASE_URL: "https://ci-placeholder.supabase.co"
+        SUPABASE_ANON_KEY: "ci-placeholder-anon-key"
+        SUPABASE_SERVICE_ROLE_KEY: "ci-placeholder-service-role-key"
+        JWT_SECRET: "ci-placeholder-jwt-secret"
         DATABASE_URL: "postgresql+psycopg://test:test@localhost:5432/test_db"
       run: pytest -q
 
@@ -95,17 +107,62 @@ jobs:
       run: npm run build
 
   # ==========================================
-  # JOB 3: DEPLOYMENT (CHỈ CHẠY KHI MERGE VÀO MAIN VÀ CI TRÊN ĐÃ PASS)
+  # JOB 3: KIỂM TRA ĐÓNG GÓI (chạy trên MỌI nhánh)
+  # ==========================================
+  # Build image thật thay vì chỉ `echo`. Dockerfile hỏng là loại lỗi chỉ lộ ra
+  # lúc triển khai — muộn nhất có thể — nên để CI phát hiện, kể cả khi chưa có
+  # nơi nào để đẩy image lên.
+  docker-build:
+    needs: [backend-ci, frontend-ci]
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    - name: Build backend image
+      run: docker build -t smartats-backend:${{ github.sha }} .
+
+    - name: Container khởi động được và /health trả lời
+      env:
+        SUPABASE_URL: "https://ci-placeholder.supabase.co"
+        SUPABASE_ANON_KEY: "ci-placeholder-anon-key"
+        SUPABASE_SERVICE_ROLE_KEY: "ci-placeholder-service-role-key"
+        JWT_SECRET: "ci-placeholder-jwt-secret"
+      run: |
+        # Build xong không có nghĩa là chạy được: sai entrypoint, thiếu biến
+        # bắt buộc, hay một import ở tầng module đều chỉ lộ ra lúc khởi động.
+        docker run -d --name smoke -p 8000:8000 \
+          -e SUPABASE_URL -e SUPABASE_ANON_KEY -e SUPABASE_SERVICE_ROLE_KEY -e JWT_SECRET \
+          smartats-backend:${{ github.sha }}
+        for i in $(seq 1 30); do
+          if curl -sf http://localhost:8000/health; then
+            echo ""; echo "Container trả lời /health."; docker rm -f smoke; exit 0
+          fi
+          sleep 2
+        done
+        echo "Container không phản hồi /health sau 60 giây. Log:"
+        docker logs smoke
+        docker rm -f smoke
+        exit 1
+
+  # ==========================================
+  # JOB 4: TRIỂN KHAI
   # ==========================================
   deploy:
-    needs: [backend-ci, frontend-ci] # Phải pass hết test ở trên mới cho deploy
+    needs: [docker-build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
-    - name: Cloud Deployment Placeholder
+    - name: CHƯA CẤU HÌNH TRIỂN KHAI
       run: |
-        echo "Tất cả các bài test cho Ingestion Module và Frontend đã PASS!"
-        echo "Đang kích hoạt quy trình CD để đẩy container lên Azure..."
-        # Sau này khi deploy lên Azure, ông sẽ thêm các step dùng Azure login
-        # và Azure Web App deploy/Docker build vào đây.
+        echo "::warning title=Chưa có bước triển khai::CI đã pass, nhưng repo"
+        echo "::warning::chưa có bước đẩy lên môi trường nào. Đây KHÔNG phải là"
+        echo "::warning::một lần deploy — image chỉ được build và kiểm tra."
+        echo ""
+        echo "Muốn bật triển khai thật, cần thêm ở job này:"
+        echo "  1. azure/login@v2 với secret AZURE_CREDENTIALS"
+        echo "  2. Đẩy image lên registry (ACR / GHCR)"
+        echo "  3. azure/webapps-deploy@v3 hoặc tương đương"
+        echo "  4. Nạp biến môi trường production từ secret, KHÔNG dùng .env"
