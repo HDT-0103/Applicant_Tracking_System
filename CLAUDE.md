@@ -134,6 +134,23 @@ Ngưỡng 80% nằm ở **một chỗ duy nhất**: `modules/review/domain/polic
 Backend tính sẵn `required_tl_approvals` và `panel_rule` rồi trả về trong
 `ReviewStatus` — **frontend hiển thị con số nhận được, không tự nhân 0.8**.
 
+### Cấu hình frontend nằm ở `src/frontend`, không phải gốc repo
+
+`next.config.ts`, `tailwind.config.ts` và `postcss.config.mjs` đều nằm trong
+`src/frontend/`. Đừng chuyển ngược lên gốc:
+
+- Next đọc `next.config` từ **thư mục dự án** (tham số của `next build`), nên
+  bản ở gốc trước đây chưa từng được nạp.
+- PostCSS dò cấu hình theo **thư mục làm việc**. Mọi script build đều chạy
+  `npm --prefix src/frontend`, tức cwd = `src/frontend` — giống hệt cách Vercel
+  build với Root Directory = `src/frontend`.
+- Đặt sai chỗ thì Tailwind không được nạp: build vẫn XANH, chỉ là trang mất
+  sạch class tiện ích.
+
+`src/frontend/package.json` là package Next.js thật (Vercel cần nó ở Root
+Directory); `package.json` ở gốc điều phối và gọi vào đó. Thêm thư viện frontend
+thì phải khai ở **cả hai** file.
+
 ### `.gitignore` từng nuốt file test
 
 Luật `test_*.py` trước đây không neo gốc nên khớp ở mọi độ sâu — 4 file test đã
@@ -178,8 +195,7 @@ chọn.
 |---|---|
 | `docs/RLS_RUNBOOK.md` | Bật RLS trên Supabase, từng bước |
 | `docs/NOTIFICATIONS_SETUP.md` | Cấu hình Slack + SMTP |
-| `docs/DEPLOY_AZURE.md` | Lệnh `az` dựng backend |
-| `docs/DEPLOY_FREE.md` | Deploy chi phí 0đ để demo |
+| `docs/DEPLOY.md` | Triển khai backend lên Azure + frontend lên Vercel, từng bước |
 | `docs/PRODUCTION_DEPLOYMENT.md` | Toàn bộ 10 dịch vụ ngoài, kèm lý do chọn |
 | `docs/phases/*.pdf` | 4 tài liệu môn học (Proposal, SRS, Design, Testing) |
 
@@ -194,7 +210,7 @@ chọn.
 
 | Việc | Ghi chú |
 |---|---|
-| Chưa deploy | Xem `docs/DEPLOY_FREE.md`. HF Spaces đòi credit → dùng Azure student credit. |
+| Chưa deploy | Xem `docs/DEPLOY.md`. Repo đã sẵn sàng (có `.dockerignore`, frontend tách được cho Vercel); phần dựng hạ tầng phải chạy tay. |
 | `SMTP_*` chưa cấu hình | `send_room_details` trả 503 kèm lý do — cố ý, không phải lỗi |
 | Chỉ có 1 tech lead | Ngưỡng 80% thành 1/1, không minh hoạ được cơ chế hội đồng |
 | `RECRUITER_EMAIL_DOMAINS` rỗng | Đăng nhập Google **chỉ chạy cho `ADMIN_EMAILS`** |

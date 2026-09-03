@@ -1,0 +1,50 @@
+# Image backend chỉ cần src/backend + requirements.txt. Không có file này thì
+# `COPY . .` nuốt cả `venv/` (1,6 GB), `node_modules/` (955 MB) và — nghiêm
+# trọng hơn — `.env` chứa service-role key của Supabase: ai kéo được image là
+# đọc được khoá bỏ qua RLS. CI không lộ ra vì runner checkout sạch, còn build
+# ở máy thì dính đủ.
+
+# Bí mật — TUYỆT ĐỐI không đưa vào image. Biến môi trường do Container Apps
+# tiêm lúc chạy, xem docs/DEPLOY.md.
+.env
+.env.*
+!.env.example
+
+# Môi trường cài sẵn ở máy: nặng, và sai kiến trúc so với image Linux.
+venv/
+.venv/
+node_modules/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Frontend đi Vercel, backend không đọc file nào trong đó.
+src/frontend/
+.next/
+**/.next/
+out/
+
+# Lịch sử và công cụ dev
+.git/
+.github/
+.gitignore
+.claude/
+my-skills/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Test không chạy trong container production.
+tests/
+**/tests/
+conftest.py
+
+# Tài liệu, thiết kế, dữ liệu tạm
+docs/
+*.md
+!README.md
+Prototype Figma/
+.postgres_data/
+stored_data/
+shared_uploads/
+.DS_Store

@@ -6,7 +6,7 @@ là không lấy lại được, và lộ là có hậu quả pháp lý.
 
 Cần chuẩn bị: một tên miền, thẻ thanh toán, và khoảng nửa ngày.
 
-> **Đọc trước:** [DEPLOY_AZURE.md](DEPLOY_AZURE.md) có lệnh dựng backend chi
+> **Đọc trước:** [DEPLOY.md](DEPLOY.md) có lệnh dựng backend chi
 > tiết. Tài liệu này bao quát toàn hệ thống và giải thích *vì sao* chọn từng
 > nền tảng.
 
@@ -127,7 +127,7 @@ luôn lợi thế chi phí, mà vẫn phải trả tiền egress sang Azure.
 Ba replica nghĩa là hạn mức thật **gấp ba** con số cấu hình — đăng nhập 10
 lần/5 phút thành 30. Cần chính xác thì phải chuyển bộ đếm sang Redis.
 
-Lệnh cụ thể: [DEPLOY_AZURE.md](DEPLOY_AZURE.md).
+Lệnh cụ thể: [DEPLOY.md](DEPLOY.md).
 
 ---
 

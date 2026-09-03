@@ -153,7 +153,7 @@ jobs:
   # bị bỏ qua chứ không đỏ — người chưa dựng hạ tầng Azure không phải nhìn CI
   # đỏ vì một thứ họ chưa định làm.
   #
-  # Xem docs/DEPLOY_AZURE.md cho các lệnh dựng hạ tầng lần đầu.
+  # Xem docs/DEPLOY.md cho các lệnh dựng hạ tầng lần đầu.
   deploy:
     needs: [docker-build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -167,7 +167,7 @@ jobs:
         AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
       run: |
         if [ -z "$AZURE_CREDENTIALS" ]; then
-          echo "::warning title=Chưa cấu hình triển khai::Thiếu secret AZURE_CREDENTIALS — bỏ qua bước deploy. Xem docs/DEPLOY_AZURE.md."
+          echo "::warning title=Chưa cấu hình triển khai::Thiếu secret AZURE_CREDENTIALS — bỏ qua bước deploy. Xem docs/DEPLOY.md."
           echo "configured=false" >> "$GITHUB_OUTPUT"
         else
           echo "configured=true" >> "$GITHUB_OUTPUT"
