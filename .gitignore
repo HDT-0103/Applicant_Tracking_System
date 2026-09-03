@@ -89,6 +89,18 @@ context.md
 # Local Postgres data directory (không được commit)
 .postgres_data/
 
+# Dữ liệu do backend ghi ra lúc chạy.
+#
+# `modules/ingestion/domain/candidate_repository.py` gọi `os.makedirs` lên thư
+# mục này ngay khi import, nên nó LUÔN xuất hiện sau mỗi lần chạy — trước đây
+# hai file trong đó bị commit kèm một khoá Google API thật. Không code nào đọc
+# lại chúng; đây là rác runtime, không phải dữ liệu nguồn.
+stored_data/
+shared_uploads/
+
+# Worktree và log của Claude Code — cục bộ từng máy, có lúc nặng hàng chục MB.
+.claude/
+
 # Build artifact của TypeScript. Trước đây bị commit nên mỗi lần merge lại đẻ ra
 # một conflict vô nghĩa (nội dung là cache biên dịch, không ai đọc được).
 *.tsbuildinfo

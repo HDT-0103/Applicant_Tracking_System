@@ -1,6 +1,6 @@
 -- =========================================================================
 --  V004: Applicant screening questionnaire
---  Prerequisite: applications table (see "supabase guide.md")
+--  Prerequisite: applications table (xem docs/supabase_schema.md)
 --
 --  Quantitative answers become typed columns so HR can filter on them and the
 --  Fit Score can compare them against jobs_posting. Skill ratings vary per job,

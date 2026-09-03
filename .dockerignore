@@ -29,7 +29,6 @@ out/
 .github/
 .gitignore
 .claude/
-my-skills/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -43,7 +42,6 @@ conftest.py
 docs/
 *.md
 !README.md
-Prototype Figma/
 .postgres_data/
 stored_data/
 shared_uploads/

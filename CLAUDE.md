@@ -214,6 +214,8 @@ chọn.
 | `docs/NOTIFICATIONS_SETUP.md` | Cấu hình Slack + SMTP |
 | `docs/DEPLOY.md` | Triển khai backend lên Azure + frontend lên Vercel, từng bước |
 | `docs/PRODUCTION_DEPLOYMENT.md` | Toàn bộ 10 dịch vụ ngoài, kèm lý do chọn |
+| `docs/supabase_schema.md` | Bảng và cột trên Supabase |
+| `docs/database_design.md`, `docs/schema_notes.md` | Ghi chú thiết kế dữ liệu |
 | `docs/phases/*.pdf` | 4 tài liệu môn học (Proposal, SRS, Design, Testing) |
 
 ---
