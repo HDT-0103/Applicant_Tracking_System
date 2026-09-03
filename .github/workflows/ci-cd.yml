@@ -46,12 +46,20 @@ jobs:
         # pytest với một ModuleNotFoundError khó truy.
         pip install -r requirements.txt
 
-    - name: Run Code Linter (Flake8)
+    - name: Run Code Linter (Ruff)
+      # Ruff chứ không phải flake8, vì `requirements.txt` chỉ có ruff.
+      #
+      # Bước này gọi `flake8` trong khi không có gói nào cài nó, nên trên runner
+      # nó chết ngay với "command not found" — và vì `docker-build` cùng
+      # `deploy` đều khai `needs: [backend-ci]`, CẢ HAI bị skip. Job deploy
+      # chưa từng chạy một lần nào, dù secret Azure đã cấu hình đủ. Ở máy dev
+      # thì flake8 nằm sẵn trong venv nên không ai thấy gì bất thường.
       run: |
         # Lỗi cú pháp hoặc tên chưa định nghĩa thì dừng build.
-        flake8 src/backend --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Phần định dạng chỉ cảnh báo.
-        flake8 src/backend --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        ruff check src/backend --select E9,F63,F7,F82
+        # Phần định dạng và độ phức tạp chỉ cảnh báo.
+        ruff check src/backend --select C901,E501 --line-length 127 \
+          --config "lint.mccabe.max-complexity=10" --statistics --exit-zero
 
     - name: Run Backend Tests (PyTest)
       env:
