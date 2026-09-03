@@ -25,6 +25,24 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   tech_lead: "Tech Lead",
 };
 
+/**
+ * Hai role người dùng TỰ CHỌN được ở màn hình đăng ký công khai.
+ *
+ * Bản sao của `SELF_SIGNUP_ROLES` trong `modules/shared/domain/roles.py`.
+ * `admin` cố ý không có mặt và không được thêm vào: nó mở `/api/admin/*`.
+ * Backend mới là chốt chặn thật — `RegisterRequest.role` chỉ nhận hai giá trị
+ * này và trả 422 cho mọi giá trị khác; danh sách ở đây chỉ để dựng giao diện.
+ */
+export const SELF_SIGNUP_ROLES = ["hr", "tech_lead"] as const;
+
+export type SelfSignupRole = (typeof SELF_SIGNUP_ROLES)[number];
+
+/** Mô tả ngắn hiện cạnh mỗi lựa chọn ở màn hình đăng ký. */
+export const SELF_SIGNUP_ROLE_HINTS: Record<SelfSignupRole, string> = {
+  hr: "Đăng tin, sàng lọc và đặt lịch. Thấy đầy đủ thông tin ứng viên.",
+  tech_lead: "Chấm hồ sơ kỹ thuật trong hội đồng. Thông tin cá nhân ứng viên bị ẩn.",
+};
+
 /** Route duy nhất admin được vào (ngoài các trang công khai). */
 export const ADMIN_HOME = "/admin";
 

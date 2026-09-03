@@ -231,7 +231,7 @@ chọn.
 | `SMTP_*` chưa cấu hình | `send_room_details` trả 503 kèm lý do — cố ý, không phải lỗi |
 | Chỉ có 1 tech lead | Ngưỡng 80% thành 1/1, không minh hoạ được cơ chế hội đồng |
 | `RECRUITER_EMAIL_DOMAINS` rỗng | Đăng nhập Google **chỉ chạy cho `ADMIN_EMAILS`** |
-| Đăng ký công khai tự cấp `hr` | Giữ theo quyết định của chủ dự án |
+| Đăng ký công khai tự chọn `hr` hoặc `tech_lead` | Giữ theo quyết định của chủ dự án. `admin` KHÔNG tự cấp được — `RegisterRequest.role` là Literal hai giá trị, và service kiểm lại lần nữa |
 | `/ai-agent-prompt` là mockup tĩnh | Giữ theo quyết định của chủ dự án |
 | 5 component frontend chết | Chưa xoá, cần hỏi người viết |
 

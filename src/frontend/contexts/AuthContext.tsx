@@ -18,14 +18,19 @@ import {
   setStoredTokens,
 } from "../services/httpClient";
 import { resolveSessionState } from "../lib/jwt";
-import { landingPathForRole, normaliseRole, type UserRole } from "../lib/rbac";
+import {
+  landingPathForRole,
+  normaliseRole,
+  type SelfSignupRole,
+  type UserRole,
+} from "../lib/rbac";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                               */
 /* ------------------------------------------------------------------ */
 
 // Định nghĩa role sống ở lib/rbac.ts. Re-export để import cũ vẫn chạy.
-export { landingPathForRole, type UserRole };
+export { landingPathForRole, type SelfSignupRole, type UserRole };
 
 export interface AuthUser {
   id: string;
@@ -47,7 +52,12 @@ interface AuthContextValue {
   isLoading: boolean;
   loginWithGoogle: (credential: string) => Promise<void>;
   loginWithEmailPassword: (email: string, password: string) => Promise<void>;
-  registerWithEmailPassword: (name: string, email: string, password: string) => Promise<void>;
+  registerWithEmailPassword: (
+    name: string,
+    email: string,
+    password: string,
+    role: SelfSignupRole,
+  ) => Promise<void>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   canUpload: boolean;
@@ -167,11 +177,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const registerWithEmailPassword = useCallback(
-    async (name: string, email: string, password: string) => {
-      // Role is assigned server-side (recruiter); never sent from the client.
+    async (name: string, email: string, password: string, role: SelfSignupRole) => {
+      // Người đăng ký chọn giữa `hr` và `tech_lead`. Backend KHÔNG tin giá trị
+      // này một cách mù quáng: `RegisterRequest.role` là Literal hai giá trị,
+      // nên "admin" gửi lên bị trả 422 — kiểu ở đây chỉ để giao diện không gửi
+      // nhầm, không phải là chốt chặn bảo mật.
       const data = await api.post<GoogleAuthResponse>(
         "/api/auth/register",
-        { name, email, password },
+        { name, email, password, role },
         { skipAuth: true },
       );
 

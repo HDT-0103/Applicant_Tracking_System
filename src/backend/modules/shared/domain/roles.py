@@ -23,6 +23,20 @@ OPERATIONAL_ROLES: tuple[UserRole, ...] = ("hr", "tech_lead")
 
 ALL_ROLES: tuple[UserRole, ...] = get_args(UserRole)
 
+#: Role mà người dùng TỰ CHỌN được ở màn hình đăng ký công khai.
+#:
+#: `admin` cố ý không có mặt và không bao giờ được thêm vào: nó mở
+#: `/api/admin/*`, tức là ai cũng tự cấp được quyền quản trị hệ thống chỉ bằng
+#: một lời gọi HTTP. Hai role ở đây đều là role nghiệp vụ, và `tech_lead` còn
+#: bị ABAC che PII cùng cơ chế hội đồng chặn — xem `modules/shared/
+#: infrastructure/abac.py` và `modules/review/domain/policy.py`.
+#:
+#: Đây là kiểu Literal luôn, để pydantic từ chối giá trị lạ ngay ở tầng
+#: request thay vì để nó đi sâu vào service rồi mới phát hiện.
+SelfSignupRole = Literal["hr", "tech_lead"]
+
+SELF_SIGNUP_ROLES: tuple[UserRole, ...] = get_args(SelfSignupRole)
+
 #: Từ vựng cũ còn sót lại trong DB / Supabase / JWT chưa hết hạn.
 #: Xem migrations/V005__consolidate_roles.sql.
 LEGACY_ROLE_ALIASES: dict[str, UserRole] = {

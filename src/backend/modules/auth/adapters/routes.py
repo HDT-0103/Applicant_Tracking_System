@@ -97,6 +97,7 @@ async def email_password_register(
             name=payload.name,
             email=payload.email,
             password=payload.password,
+            role=payload.role,
         )
     except ValueError as exc:
         raise HTTPException(

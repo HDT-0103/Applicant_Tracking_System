@@ -4,6 +4,12 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { User, Mail, KeyRound, Loader2, ArrowRight } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import {
+  ROLE_LABELS,
+  SELF_SIGNUP_ROLES,
+  SELF_SIGNUP_ROLE_HINTS,
+  type SelfSignupRole,
+} from "../../lib/rbac";
 import { AuthShell } from "../../components/auth/AuthShell";
 import { AuthField } from "../../components/auth/AuthField";
 import { T } from "../../components/auth/authTheme";
@@ -15,6 +21,9 @@ export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Mặc định `hr` — cũng là mặc định của backend khi thiếu trường này, nên hai
+  // bên không lệch nhau nếu ai đó gọi API thẳng.
+  const [role, setRole] = useState<SelfSignupRole>("hr");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -27,7 +36,7 @@ export default function RegisterPage() {
     setIsSubmitting(true);
     setError(null);
     try {
-      await registerWithEmailPassword(name, email, password);
+      await registerWithEmailPassword(name, email, password, role);
       // Redirect is handled in AuthContext (recruiters land on the workspace).
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
@@ -39,7 +48,7 @@ export default function RegisterPage() {
   return (
     <AuthShell
       heading="Create your account"
-      subheading="Register as a recruiter to start hiring with SmartATS"
+      subheading="Chọn vai trò của bạn để bắt đầu với SmartATS"
       error={error}
       footer={
         <>
@@ -81,6 +90,68 @@ export default function RegisterPage() {
           autoComplete="new-password"
         />
 
+        <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+          <legend
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: T.sub,
+              marginBottom: 6,
+              padding: 0,
+            }}
+          >
+            I am joining as
+          </legend>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {SELF_SIGNUP_ROLES.map((option) => {
+              const selected = role === option;
+              return (
+                <label
+                  key={option}
+                  htmlFor={`role-${option}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    padding: "10px 12px",
+                    border: `1px solid ${selected ? T.primary : T.line}`,
+                    borderRadius: T.radius,
+                    background: T.page,
+                    boxShadow: selected ? `0 0 0 3px ${T.ring}` : "none",
+                    cursor: "pointer",
+                    transition: "border-color .15s ease, box-shadow .15s ease",
+                  }}
+                >
+                  <input
+                    id={`role-${option}`}
+                    type="radio"
+                    name="role"
+                    value={option}
+                    checked={selected}
+                    onChange={() => setRole(option)}
+                    style={{ marginTop: 3, accentColor: T.primary }}
+                  />
+                  <span>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: T.ink,
+                      }}
+                    >
+                      {ROLE_LABELS[option]}
+                    </span>
+                    <span style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
+                      {SELF_SIGNUP_ROLE_HINTS[option]}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
         <button type="submit" disabled={isSubmitting} style={submitStyle(isSubmitting)}>
           {isSubmitting ? (
             <>
@@ -96,8 +167,7 @@ export default function RegisterPage() {
         </button>
 
         <p style={{ fontSize: 12, color: T.dim, textAlign: "center", margin: "2px 0 0", lineHeight: 1.5 }}>
-          Accounts register as recruiters. Elevated roles are granted by a system
-          administrator.
+          Quyền quản trị hệ thống không tự đăng ký được — chỉ quản trị viên cấp.
         </p>
       </form>
     </AuthShell>

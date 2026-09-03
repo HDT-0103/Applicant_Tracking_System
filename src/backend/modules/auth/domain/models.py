@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 # Nguồn sự thật duy nhất về role: modules.shared.domain.roles.
 # Re-export để code cũ `from modules.auth.domain.models import UserRole` vẫn chạy.
-from modules.shared.domain.roles import UserRole  # noqa: F401
+from modules.shared.domain.roles import SelfSignupRole, UserRole  # noqa: F401
 
 
 class AuthUser(BaseModel):
@@ -48,9 +48,17 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    # Public registration only. Role is NOT client-selectable: every self-service
-    # signup becomes an `hr`. Admin và tech_lead chỉ được cấp qua seed hoặc
-    # Admin Dashboard (Epic 6), không bao giờ qua endpoint này.
+    # Public registration. Người đăng ký chọn được GIỮA HAI role nghiệp vụ —
+    # `hr` hoặc `tech_lead` — và không gì khác.
+    #
+    # `admin` KHÔNG nằm trong `SelfSignupRole`, nên gửi "admin" lên bị pydantic
+    # trả 422 ngay ở biên, không đi vào tới service. Đó là chỗ chặn quan trọng
+    # nhất của thay đổi này: admin mở `/api/admin/*`, tự cấp được là mất hệ
+    # thống. Quyền admin chỉ đến từ seed hoặc Admin Dashboard (Epic 6).
+    #
+    # Mặc định `hr` để các client cũ chưa gửi trường này vẫn chạy đúng như
+    # trước.
     name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     password: str = Field(min_length=6)
+    role: SelfSignupRole = "hr"

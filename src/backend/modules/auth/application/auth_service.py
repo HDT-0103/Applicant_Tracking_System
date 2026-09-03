@@ -14,11 +14,13 @@ from modules.auth.domain.models import (
 from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
 from modules.auth.infra.password_service import PasswordService
-from modules.shared.domain.roles import normalise_role
+from modules.shared.domain.roles import SELF_SIGNUP_ROLES, normalise_role
 from modules.shared.infrastructure.config import Settings
 
 logger = structlog.get_logger(__name__)
 
+#: Role mặc định khi lời gọi không nói gì. Người đăng ký chọn được `hr` hoặc
+#: `tech_lead` ở màn hình đăng ký; xem SELF_SIGNUP_ROLES.
 PUBLIC_SIGNUP_ROLE: UserRole = "hr"
 PUBLIC_SIGNUP_AUTO_APPROVED: bool = True
 
@@ -237,7 +239,22 @@ class AuthService:
             user=user,
         )
 
-    async def register_user(self, name: str, email: str, password: str) -> AuthTokenResponse:
+    async def register_user(
+        self,
+        name: str,
+        email: str,
+        password: str,
+        role: UserRole = PUBLIC_SIGNUP_ROLE,
+    ) -> AuthTokenResponse:
+        # Kiểm lại ở đây dù `RegisterRequest` đã chặn bằng kiểu.
+        #
+        # Service này còn được gọi từ script và test, không chỉ từ route HTTP.
+        # Một lời gọi bỏ qua tầng request mà truyền "admin" sẽ tạo ra quản trị
+        # viên im lặng — hỏng theo kiểu không ai nhìn thấy cho tới lúc quá
+        # muộn. Thà nổ ngay tại đây.
+        if role not in SELF_SIGNUP_ROLES:
+            raise ValueError(f"Role '{role}' không được phép tự đăng ký")
+
         res = self._supabase_client.table("users").select("id").eq("email", email).limit(1).execute()
         if res.data:
             raise ValueError("Email already registered")
@@ -248,7 +265,7 @@ class AuthService:
             .insert({
                 "name": name,
                 "email": email,
-                "role": PUBLIC_SIGNUP_ROLE,
+                "role": role,
                 "password_hash": password_hash,
                 "is_approved": PUBLIC_SIGNUP_AUTO_APPROVED,
             })
@@ -265,10 +282,10 @@ class AuthService:
             email=db_user["email"],
             name=db_user["name"],
             # Normalised for the same reason as the other two sign-in paths.
-            # The insert above sets PUBLIC_SIGNUP_ROLE explicitly, so this is
+            # The insert above sets the requested role explicitly, so this is
             # defence rather than a fix — but a database trigger or default
             # rewriting the value would otherwise turn signup into a 500.
-            role=normalise_role(db_user["role"]) or PUBLIC_SIGNUP_ROLE,
+            role=normalise_role(db_user["role"]) or role,
         )
 
         jti = str(uuid.uuid4())
