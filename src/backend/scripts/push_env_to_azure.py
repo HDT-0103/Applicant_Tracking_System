@@ -51,6 +51,13 @@ SECRETS: dict[str, str] = {
     "SUPABASE_URL": "supabase-url",
     "SUPABASE_ANON_KEY": "supabase-anon-key",
     "SUPABASE_SERVICE_ROLE_KEY": "supabase-service-role-key",
+    # HAI tên khác nhau, KHÔNG phải trùng lặp — thiếu cái này là hỏng nửa hệ
+    # thống. `Settings` đòi SUPABASE_SERVICE_ROLE_KEY, còn client admin trong
+    # `modules/shared/infrastructure/supabase_client.py` đọc thẳng biến môi
+    # trường SUPABASE_SERVICE_KEY. Thiếu nó thì app vẫn khởi động và /health
+    # vẫn xanh, nhưng mọi route dùng client admin — ingest, catalog, search,
+    # scheduling, review — nhận `None` và trả 503 hoặc rỗng.
+    "SUPABASE_SERVICE_KEY": "supabase-service-key",
     "AZURE_STORAGE_CONNECTION_STRING": "azure-storage",
     "GOOGLE_CLIENT_ID": "google-client-id",
     "GOOGLE_CLIENT_SECRET": "google-client-secret",
@@ -65,7 +72,15 @@ SECRETS: dict[str, str] = {
 
 # Bốn biến bắt buộc để app khởi động (modules/shared/infrastructure/config.py).
 # JWT_SECRET không nằm đây vì script tự sinh.
-REQUIRED = ("SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+#
+# SUPABASE_SERVICE_KEY không nằm trong `Settings` nhưng vẫn bắt buộc: thiếu nó
+# app khởi động bình thường rồi hỏng lặng lẽ ở mọi route dùng client admin.
+REQUIRED = (
+    "SUPABASE_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_SERVICE_KEY",
+)
 
 # Biến công khai, đặt thẳng chứ không qua secret.
 PLAIN: dict[str, str] = {
@@ -117,7 +132,9 @@ def main() -> int:
     parser.add_argument("--resource-group", required=True)
     parser.add_argument(
         "--frontend-url",
-        help="URL Vercel, ví dụ https://smartats.vercel.app. "
+        help="Domain frontend. Nhiều domain thì ngăn bằng dấu phẩy, ví dụ "
+             "https://smartats.tech,https://app.vercel.app — TẤT CẢ vào "
+             "CORS_ORIGINS, còn GOOGLE_REDIRECT_URI lấy domain ĐẦU TIÊN. "
              "Bỏ trống ở lần deploy đầu (chưa có domain) rồi chạy lại sau.",
     )
     parser.add_argument("--env-file", default=str(_ROOT / ".env"))
@@ -172,12 +189,18 @@ def main() -> int:
             env_args.append(f"{key}={values[key]}")
 
     if args.frontend_url:
-        url = args.frontend_url.rstrip("/")
+        urls = [u.strip().rstrip("/") for u in args.frontend_url.split(",") if u.strip()]
         # CORS_ORIGINS BẮT BUỘC: mặc định chỉ cho localhost:3000, và phần nới
         # lỏng cho localhost chỉ bật khi APP_ENV=development. Thiếu biến này là
         # trình duyệt chặn sạch mọi lời gọi từ Vercel.
-        env_args.append(f"CORS_ORIGINS={url}")
-        env_args.append(f"GOOGLE_REDIRECT_URI={url}/schedule")
+        env_args.append("CORS_ORIGINS=" + ",".join(urls))
+        # GOOGLE_REDIRECT_URI chỉ nhận MỘT giá trị: backend gửi đúng chuỗi này
+        # khi đổi authorization code lấy token, và Google từ chối nếu nó lệch
+        # dù chỉ một ký tự. Nên chọn domain chính, và luồng kết nối Google
+        # Calendar sẽ chỉ chạy từ domain đó.
+        env_args.append(f"GOOGLE_REDIRECT_URI={urls[0]}/schedule")
+        print(f"\n  CORS_ORIGINS: {len(urls)} domain")
+        print(f"  GOOGLE_REDIRECT_URI: {urls[0]}/schedule")
     else:
         print("\n  CORS_ORIGINS: CHƯA ĐẶT — frontend trên Vercel sẽ bị trình duyệt "
               "chặn cho tới khi bạn chạy lại script này kèm --frontend-url")

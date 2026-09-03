@@ -137,17 +137,29 @@ class Skip(Exception):
 # Xác thực
 # ---------------------------------------------------------------------------
 
-def mint_tokens() -> dict[str, str]:
+def mint_tokens(jwt_secret: str | None = None) -> dict[str, str]:
     """Tạo access token cho từng role, ký bằng chính JWT_SECRET của backend.
 
     Ký trực tiếp thay vì đăng nhập thật để script không phải tạo tài khoản rác
     cho ba role, và không phụ thuộc vào việc ai đã đổi mật khẩu seed.
+
+    Chạy với `BASE` trỏ vào production thì PHẢI truyền `--jwt-secret` của môi
+    trường đó: bản deploy dùng khoá riêng, không phải khoá trong `.env` dev.
+    Không truyền thì mọi lời gọi có xác thực trả 401 và bảng kết quả trông y
+    hệt như hệ thống hỏng, trong khi thật ra chỉ là ký sai khoá.
+
+    Không đọc được từ biến môi trường: `get_settings()` gọi
+    `load_dotenv(override=True)`, nên `.env` LUÔN đè lên biến của shell.
     """
     from modules.auth.domain.models import AuthUser
     from modules.auth.infra.jwt_service import JwtService
     from modules.shared.infrastructure.config import get_settings
 
-    jwt = JwtService(get_settings())
+    settings = get_settings()
+    if jwt_secret:
+        settings = settings.model_copy(update={"jwt_secret": jwt_secret})
+
+    jwt = JwtService(settings)
     tokens = {}
     for role in ("hr", "tech_lead", "admin"):
         tokens[role] = jwt.create_access_token(
@@ -203,6 +215,11 @@ MINIMAL_PDF = (
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--keep", action="store_true", help="Giữ lại dữ liệu thử")
+    parser.add_argument(
+        "--jwt-secret",
+        help="JWT_SECRET của môi trường đang kiểm. Bắt buộc khi BASE trỏ vào "
+             "production — xem docs/DEPLOY.md mục 5.",
+    )
     args = parser.parse_args()
 
     run = Runner()
@@ -221,7 +238,7 @@ def main() -> int:
         return 1
     run.check("/health trả ok", lambda: _eq(health.json().get("status"), "ok"))
 
-    tokens = mint_tokens()
+    tokens = mint_tokens(args.jwt_secret)
     api = Api(BASE, tokens)
 
     try:

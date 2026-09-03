@@ -14,6 +14,26 @@ Thời gian: khoảng 1–2 tiếng, trong đó **20–30 phút chỉ ngồi ch�
 
 ---
 
+## Việc tiếp theo (cập nhật 03/09/2026)
+
+Đã xong: backend chạy trên Azure Container Apps, frontend chạy trên Vercel tại
+`applicant-tracking-system-alpha.vercel.app`, domain riêng `smartats.tech` đã
+mua. Làm theo thứ tự này:
+
+| # | Việc | Mục | Vì sao gấp |
+|---|---|---|---|
+| 1 | Đẩy lại cấu hình lên Azure (bản mới có `SUPABASE_SERVICE_KEY`) | 2.5 | Thiếu nó là Flow A không tạo được hồ sơ và Flow B trả 503 |
+| 2 | Chạy lại smoke test kèm `--jwt-secret` | 5 | Không có nó thì 16/24 phép kiểm trả 401 dù hệ thống vẫn tốt |
+| 3 | Trỏ `smartats.tech` về Vercel | 3.4 | |
+| 4 | Cập nhật `CORS_ORIGINS` cho domain mới | 4 | Domain mới chưa được phép gọi backend, trình duyệt chặn sạch |
+| 5 | Thêm `smartats.tech` vào Google Cloud Console | 1.4 | Nếu không, nút đăng nhập Google lỗi trên domain mới |
+| 6 | *(tuỳ chọn)* `api.smartats.tech` cho backend | 3.5 | Đẹp hơn tên `...azurecontainerapps.io` khi demo |
+| 7 | *(tuỳ chọn)* bật auto-deploy khi merge vào `main` | 8 | Khỏi build tay mỗi lần |
+
+Việc 1 và 2 làm được ngay, không phụ thuộc DNS.
+
+---
+
 ## 0. Vì sao không phải Vercel Functions / Render Free / Lambda
 
 Ba thứ nằm trong chính mã nguồn loại bỏ serverless, không phải sở thích:
@@ -87,15 +107,26 @@ Riêng `JWT_SECRET` thì **không** lấy từ `.env`: script sinh giá trị m�
 ### 1.4 Google Cloud Console — việc DUY NHẤT có thể phải nhờ người khác
 
 Đăng nhập Google và đặt lịch phỏng vấn dùng OAuth client do một thành viên
-khác tạo. Sau khi có domain Vercel (bước 3), phải vào Google Cloud Console →
-**APIs & Services → Credentials → OAuth 2.0 Client ID** và thêm:
+khác tạo. Vào Google Cloud Console → **APIs & Services → Credentials → OAuth
+2.0 Client ID** và thêm **cả hai** domain:
 
-- **Authorized JavaScript origins:** `https://<domain>.vercel.app`
-- **Authorized redirect URIs:** `https://<domain>.vercel.app/schedule`
+- **Authorized JavaScript origins:**
+  `https://smartats.tech`, `https://www.smartats.tech`,
+  `https://applicant-tracking-system-alpha.vercel.app`
+- **Authorized redirect URIs:**
+  `https://smartats.tech/schedule`,
+  `https://applicant-tracking-system-alpha.vercel.app/schedule`
 
 Nếu bạn không có quyền vào project đó, nhờ người tạo client làm — mất 2 phút.
 **Chưa làm thì mọi thứ khác vẫn chạy, chỉ nút đăng nhập Google báo lỗi
 `redirect_uri_mismatch`.**
+
+> **`GOOGLE_REDIRECT_URI` bên backend chỉ nhận MỘT giá trị.** Khi đổi
+> authorization code lấy token, backend gửi đúng chuỗi đó và Google từ chối nếu
+> lệch dù một ký tự (`modules/scheduling/adapters/routes.py:39`). Vì vậy chọn
+> `https://smartats.tech` làm domain chính — luồng **kết nối Google Calendar**
+> chỉ chạy từ domain đó, còn `*.vercel.app` vẫn mở app và đăng nhập bình
+> thường.
 
 ### 1.5 Supabase — không phải đổi gì
 
@@ -153,6 +184,24 @@ container khởi động lại phải tải mô hình từ Hugging Face, và req
 `.dockerignore` (mới thêm), phần upload chỉ vài MB thay vì 3 GB — và quan trọng
 hơn, `.env` **không** bị đóng vào image.
 
+**Nếu `az acr build` đòi trả phí** (ACR Tasks tính tiền phần compute, và một số
+subscription sinh viên chặn hẳn), build ở máy rồi đẩy lên — cần Docker Desktop
+đang chạy:
+
+```bash
+az acr login --name $ACR_NAME
+docker build -t $ACR_NAME.azurecr.io/smartats-backend:v1 .
+docker push $ACR_NAME.azurecr.io/smartats-backend:v1
+```
+
+Lần đẩy đầu mất lâu vì ~3 GB. **Những lần sau nhanh hơn nhiều**: các layer nặng
+(`pip install`, mô hình nhúng) không đổi nên ACR đã có, chỉ layer `COPY . .`
+vài MB là phải đẩy — miễn là bạn không sửa `requirements.txt`.
+
+Máy Mac Intel build ra `linux/amd64`, đúng thứ Container Apps cần. Máy Apple
+Silicon phải thêm `--platform linux/amd64`, nếu không container sẽ khởi động
+lỗi `exec format error`.
+
 ### 2.4 Tạo Container App
 
 ```bash
@@ -192,7 +241,14 @@ Ba tham số đừng đổi nếu chưa hiểu hệ quả:
     --app $APP_NAME --resource-group $RG
 ```
 
-Script đọc `.env`, đưa 12 khoá lên dạng **secret** (không phải biến thường —
+> **Hai biến Supabase khác nhau, không phải trùng lặp.** `Settings` đòi
+> `SUPABASE_SERVICE_ROLE_KEY`, còn client admin trong
+> `modules/shared/infrastructure/supabase_client.py` đọc thẳng biến môi trường
+> `SUPABASE_SERVICE_KEY`. Thiếu cái sau thì app **vẫn khởi động và `/health`
+> vẫn xanh**, nhưng mọi route dùng client admin — ingest, catalog, search,
+> scheduling, review — nhận `None` và trả 503 hoặc rỗng. Script đẩy cả hai.
+
+Script đọc `.env`, đưa 13 khoá lên dạng **secret** (không phải biến thường —
 giá trị đặt thẳng sẽ hiện trong `az containerapp show` và trong cổng Azure),
 sinh `JWT_SECRET` mới, rồi đặt biến môi trường trỏ vào các secret đó. Nó in tên
 biến kèm trạng thái, **không in giá trị**.
@@ -267,6 +323,62 @@ Vercel mặc định coi `main` là nhánh production. Đang muốn demo từ
 
 ---
 
+### 3.4 Trỏ `smartats.tech` về Vercel
+
+Vercel → project → **Settings → Domains → Add**, nhập `smartats.tech`. Vercel
+sẽ hiện đúng bản ghi DNS cần thêm; **dùng giá trị nó hiện ra**, đừng chép từ
+tài liệu (Vercel có đổi IP theo thời gian). Thường là:
+
+| Loại | Tên | Giá trị |
+|---|---|---|
+| `A` | `@` | `76.76.21.21` |
+| `CNAME` | `www` | `cname.vercel-dns.com` |
+
+Thêm ở trang quản lý DNS của nơi bán domain. Vercel cấp chứng chỉ HTTPS tự
+động sau khi DNS trỏ đúng — thường vài phút, có thể tới 24 giờ nếu nơi bán
+domain lười cập nhật.
+
+Domain `applicant-tracking-system-alpha.vercel.app` vẫn dùng được song song;
+Vercel tự chuyển hướng về domain chính nếu bạn đặt `smartats.tech` là
+**Primary Domain**.
+
+Không phải build lại: `NEXT_PUBLIC_*` không đổi ở bước này.
+
+### 3.5 *(tuỳ chọn)* `api.smartats.tech` cho backend
+
+Container Apps cấp chứng chỉ miễn phí cho domain riêng. Lấy mã xác minh trước:
+
+```bash
+az containerapp show --name $APP_NAME --resource-group $RG \
+  --query properties.customDomainVerificationId -o tsv
+```
+
+Thêm hai bản ghi DNS:
+
+| Loại | Tên | Giá trị |
+|---|---|---|
+| `CNAME` | `api` | `$FQDN` (tên `...azurecontainerapps.io`) |
+| `TXT` | `asuid.api` | mã vừa lấy ở trên |
+
+Rồi gắn vào app:
+
+```bash
+az containerapp hostname add --hostname api.smartats.tech \
+  --name $APP_NAME --resource-group $RG
+
+az containerapp hostname bind --hostname api.smartats.tech \
+  --name $APP_NAME --resource-group $RG \
+  --environment $ENV_NAME --validation-method CNAME
+```
+
+Xong thì **phải Redeploy frontend** sau khi đổi `NEXT_PUBLIC_API_BASE_URL`
+thành `https://api.smartats.tech` — biến này nhúng lúc build, restart không ăn
+thua. WebSocket tự đi theo: frontend suy ra `wss://` từ chính biến đó
+(`app/candidate-profile/enriched/page.tsx:113`), không có biến riêng.
+
+Chưa làm mục này thì cứ để `NEXT_PUBLIC_API_BASE_URL` trỏ vào FQDN của Azure —
+người dùng không nhìn thấy nó.
+
 ## 4. Nối hai đầu
 
 Backend chưa biết domain Vercel, nên trình duyệt vẫn bị CORS chặn. Chạy lại
@@ -275,8 +387,13 @@ script kèm domain vừa có:
 ```bash
 ./venv/bin/python src/backend/scripts/push_env_to_azure.py \
     --app $APP_NAME --resource-group $RG \
-    --frontend-url https://<tên>.vercel.app
+    --frontend-url "https://smartats.tech,https://www.smartats.tech,https://applicant-tracking-system-alpha.vercel.app"
 ```
+
+Nhiều domain thì ngăn bằng dấu phẩy: **tất cả** vào `CORS_ORIGINS`, còn
+`GOOGLE_REDIRECT_URI` lấy domain **đầu tiên**. Nên để `smartats.tech` đứng đầu.
+Thiếu domain nào trong danh sách thì mở app từ domain đó sẽ thấy trang trắng và
+console báo lỗi CORS.
 
 Lệnh này đặt `CORS_ORIGINS` và `GOOGLE_REDIRECT_URI`, đồng thời **giữ nguyên**
 `JWT_SECRET` đã sinh lần trước (sinh lại sẽ đăng xuất mọi phiên đang mở).
@@ -293,8 +410,17 @@ Rồi quay lại **mục 1.4** thêm domain đó vào Google Cloud Console.
 ```bash
 curl -s "https://$FQDN/health"
 
-BASE="https://$FQDN" ./venv/bin/python src/backend/scripts/smoke_flows.py
+# Smoke script TỰ KÝ token cho ba role, nên phải ký bằng đúng khoá của bản
+# deploy — không phải khoá trong `.env` dev. Thiếu `--jwt-secret` thì 16/24
+# phép kiểm trả 401 và bảng kết quả trông y hệt như hệ thống hỏng.
+JWT=$(az containerapp secret show --name $APP_NAME --resource-group $RG \
+      --secret-name jwt-secret --query value -o tsv)
+
+BASE="https://$FQDN" ./venv/bin/python src/backend/scripts/smoke_flows.py --jwt-secret "$JWT"
 ```
+
+Lệnh `secret show` in khoá ra màn hình — đóng terminal hoặc xoá dòng đó khỏi
+lịch sử sau khi dùng xong (`history -d`).
 
 35 phép kiểm HTTP qua 4 luồng SRS, **khẳng định kết quả chứ không chỉ mã trạng
 thái**: xếp hạng phải giảm dần, lọc cứng phải thu hẹp tập kết quả, `tech_lead`
@@ -343,11 +469,15 @@ az containerapp revision list --name $APP_NAME --resource-group $RG -o table
 | Triệu chứng | Nguyên nhân hay gặp |
 |---|---|
 | `/health` không trả lời, log có `ValidationError` | Thiếu 1 trong 4 biến bắt buộc — chạy lại mục 2.5 |
+| Smoke test: hàng loạt `mong đợi 200, nhận 401` | Ký token bằng khoá dev — thêm `--jwt-secret` như mục 5 |
+| `503 ... the database is not configured` | Thiếu `SUPABASE_SERVICE_KEY` (khác `SUPABASE_SERVICE_ROLE_KEY`) — chạy lại mục 2.5 |
+| Nộp CV không tạo được `application_id` | Cùng nguyên nhân: ingest ghi DB bằng client admin |
 | Container bị OOM, restart liên tục | `--memory` dưới 4Gi |
 | Trình duyệt báo lỗi CORS | Chưa chạy mục 4, hoặc domain có dấu `/` ở cuối |
 | Frontend gọi `localhost:8000` | Thiếu `NEXT_PUBLIC_API_BASE_URL` lúc **build** — Redeploy trên Vercel |
 | Giao diện mất sạch layout | Build không nạp được Tailwind — kiểm tra Root Directory đúng `src/frontend` chưa |
-| `redirect_uri_mismatch` | Mục 1.4 |
+| `redirect_uri_mismatch` | Mục 1.4 — và nhớ luồng Google Calendar chỉ chạy từ domain chính |
+| Domain mới trang trắng, console báo CORS | Domain đó chưa có trong `CORS_ORIGINS` — chạy lại mục 4 với đủ danh sách |
 | Trang trắng, console báo lỗi Supabase | Project Supabase đang bị tạm dừng — vào dashboard Restore |
 
 ---
@@ -357,10 +487,18 @@ az containerapp revision list --name $APP_NAME --resource-group $RG -o table
 Sửa code xong, hai lệnh:
 
 ```bash
-az acr build --registry $ACR_NAME --image smartats-backend:v2 --file Dockerfile .
+# build ở máy (hoặc `az acr build` nếu subscription cho phép)
+az acr login --name $ACR_NAME
+docker build -t $ACR_NAME.azurecr.io/smartats-backend:v2 .
+docker push $ACR_NAME.azurecr.io/smartats-backend:v2
+
 az containerapp update --name $APP_NAME --resource-group $RG \
   --image $ACR_NAME.azurecr.io/smartats-backend:v2
 ```
+
+**Luôn đổi tag** (`v2`, `v3`, …). Đẩy đè lên `latest` rồi `update` với cùng một
+tag thì Azure thấy image không đổi và **không tạo revision mới** — code mới nằm
+im trong registry còn container vẫn chạy bản cũ, không có lỗi nào báo.
 
 Frontend thì Vercel tự build lại mỗi khi có commit mới trên nhánh production.
 
@@ -391,6 +529,12 @@ az role assignment create --assignee $PRINCIPAL --role AcrPull --scope $ACR_ID
 > Tài khoản sinh viên của trường thường **bị chặn tạo service principal**
 > (`Insufficient privileges to complete the operation`). Gặp lỗi đó thì bỏ qua
 > phần này và deploy tay như trên — không có cách vòng nào khác từ phía bạn.
+
+Job `docker-build` (chạy trên mọi nhánh) build với `--build-arg
+BAKE_MODEL=false`: nó chỉ cần chứng minh image build được và container khởi
+động được, không phép kiểm nào chạm tới mô hình nhúng. Job `deploy` build lại
+với mặc định `BAKE_MODEL=true`, nên bản lên production vẫn có mô hình nằm sẵn
+trong image.
 
 CI đợi `/health` của revision mới trả lời rồi mới báo xanh. Bước chờ đó quan
 trọng: `az containerapp update` trả về ngay khi Azure **nhận** yêu cầu, không
@@ -433,7 +577,9 @@ trước bằng `az storage account list -o table`.
 | `src/frontend/package.json` *(mới)* | Vercel cần một package Next.js thật tại Root Directory; `package.json` ở gốc repo giữ vai trò điều phối và gọi vào đây bằng `npm --prefix` |
 | `next.config.ts` → `src/frontend/` | Next đọc config từ **thư mục dự án**, nên bản ở gốc chưa từng được nạp — cảnh báo chọn nhầm workspace root vẫn còn nguyên dù đã có `outputFileTracingRoot` |
 | `tailwind.config.ts`, `postcss.config.mjs` → `src/frontend/` | PostCSS dò cấu hình theo **thư mục làm việc**. Để ở gốc thì khi Vercel build với cwd = `src/frontend`, Tailwind không được nạp và trang mất sạch class tiện ích — mà build vẫn xanh |
-| `src/backend/scripts/push_env_to_azure.py` *(mới)* | 12 khoá phải lên Azure, trong đó chuỗi kết nối Blob chứa `;` nên `source .env` sẽ đứt giữa chừng |
+| `src/backend/scripts/push_env_to_azure.py` *(mới)* | 13 khoá phải lên Azure, trong đó chuỗi kết nối Blob chứa `;` nên `source .env` sẽ đứt giữa chừng |
+| `smoke_flows.py` — thêm `--jwt-secret` | Bản deploy dùng khoá riêng; không có cờ này thì smoke test trên production trả 401 hàng loạt và trông y hệt hệ thống hỏng |
+| `.github/workflows/ci-cd.yml` | Job kiểm đóng gói build với `BAKE_MODEL=false` — bỏ 1,1 GB mô hình khỏi bản build kiểm thử, tiết kiệm ~20 phút runner mỗi push |
 
 Cách chạy ở máy local **không đổi**: `npm run dev`, `npm run build`, `npm test`
 vẫn gõ ở gốc repo như cũ.

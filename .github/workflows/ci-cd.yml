@@ -121,7 +121,16 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Build backend image
-      run: docker build -t smartats-backend:${{ github.sha }} .
+      # BAKE_MODEL=false: KHÔNG nạp mô hình nhúng 1,1 GB vào image ở job này.
+      #
+      # Job này chỉ trả lời một câu hỏi: image build được và container khởi
+      # động được không. Không phép kiểm nào ở đây chạm tới mô hình, nên nạp
+      # nó chỉ tốn ~20 phút runner cho mỗi push của MỌI nhánh — và hạn mức
+      # GitHub Actions là thứ có thật.
+      #
+      # Job `deploy` bên dưới build LẠI với mặc định BAKE_MODEL=true, nên bản
+      # lên production vẫn có mô hình nằm sẵn trong image.
+      run: docker build --build-arg BAKE_MODEL=false -t smartats-backend:${{ github.sha }} .
 
     - name: Container khởi động được và /health trả lời
       env:

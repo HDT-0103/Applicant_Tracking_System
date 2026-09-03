@@ -475,7 +475,16 @@ class TestCalendarTokenExpiry:
             calendar, MagicMock(),
             self._interviewer(calendar_api_key=None, calendar_refresh_token=None),
         )
-        start = datetime(2026, 9, 1, 2, 0, tzinfo=timezone.utc)
+        # Mốc thời gian phải TƯƠNG ĐỐI theo hiện tại, không ghim cứng ngày.
+        #
+        # Riêng nhánh dự phòng cắt cửa sổ bằng `max(start, datetime.now())`
+        # (`scheduling_service.py`), nên một ngày ghim cứng sẽ trôi vào quá khứ
+        # và cửa sổ co lại thành rỗng — test tự đỏ vào đúng ngày đó mà không ai
+        # đụng vào code. Đã xảy ra ngày 03/09/2026 với mốc cũ 01/09/2026.
+        #
+        # Các test khác trong file vẫn ghim cứng ngày được, vì chúng đi qua
+        # freebusy giả lập và sweep-line không so với hiện tại.
+        start = datetime.now(timezone.utc) + timedelta(days=1)
 
         # Chưa kết nối lịch là chuyện khác hẳn: ở đây quy về giờ làm việc tiêu
         # chuẩn là lựa chọn sản phẩm có chủ đích, không phải đoán bừa.

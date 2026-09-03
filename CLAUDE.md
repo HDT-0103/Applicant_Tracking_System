@@ -26,8 +26,13 @@ mac**.
 
 ```bash
 ./venv/bin/python -m pytest -q            # 371 test — GỘP cả hai bộ
-cd src/frontend && npm test -- --run      # 199 test
+npm test                                  # 199 test — vitest, chạy từ GỐC repo
 ```
+
+**`npm test` phải chạy ở gốc repo.** Script `test` khai trong `package.json` ở
+gốc; `src/frontend/package.json` chỉ có `dev`/`build`/`start`/`lint`. Chạy
+`npm test` trong `src/frontend` sẽ nhận `Missing script: "test"` — dễ bị hiểu
+nhầm là frontend hỏng.
 
 **Repo có HAI thư mục test.** `tests/` ở gốc (agent, pipeline, service của cây
 `app/`) và `src/backend/tests/` (module đang chạy). Chạy pytest từ **gốc repo**
@@ -106,6 +111,18 @@ ghi lý do vào comment.
 
 `tests/test_review_repo_schema.py` ghi lại tên cột mà repo gửi đi, không cần
 DB. Sai tên cột là lỗi chỉ lộ ra khi có người bấm vào màn hình.
+
+### Hai biến khoá Supabase, tên gần giống nhau
+
+`Settings` đòi `SUPABASE_SERVICE_ROLE_KEY` (khoá JWT `service_role` cũ), nhưng
+client admin ở `modules/shared/infrastructure/supabase_client.py` đọc **thẳng
+biến môi trường** `SUPABASE_SERVICE_KEY` (khoá `sb_secret_...` kiểu mới) và
+không hề nhìn vào `Settings`.
+
+Thiếu `SUPABASE_SERVICE_KEY` là kiểu hỏng khó chịu nhất: app khởi động bình
+thường, `/health` xanh, nhưng mọi route dùng client admin — ingest, catalog,
+search, scheduling, review — nhận `None`. Đã mất một vòng deploy vì chuyện này.
+Môi trường nào cũng phải có **cả hai**.
 
 ### RLS đang BẬT
 
