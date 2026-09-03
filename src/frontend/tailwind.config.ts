@@ -1,7 +1,20 @@
 import type { Config } from "tailwindcss";
 
+// Config này phải nằm CÙNG thư mục với app Next, không phải ở gốc repo.
+//
+// PostCSS dò file cấu hình từ THƯ MỤC LÀM VIỆC, không phải từ thư mục dự án
+// truyền cho `next build`. Đặt ở gốc thì chỉ đúng khi build từ gốc; trên
+// Vercel (Root Directory = src/frontend) Tailwind sẽ không được nạp và toàn bộ
+// class tiện ích biến mất — trang vẫn build xanh, chỉ mất sạch layout.
+// Mọi script build đều chạy với cwd = src/frontend, xem package.json ở gốc.
 export default {
-  content: ["./src/frontend/**/*.{ts,tsx}"],
+  content: [
+    "./app/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./contexts/**/*.{ts,tsx}",
+    "./lib/**/*.{ts,tsx}",
+    "./services/**/*.{ts,tsx}",
+  ],
   theme: {
     extend: {
       colors: {
