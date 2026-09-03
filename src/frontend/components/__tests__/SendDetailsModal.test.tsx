@@ -34,7 +34,7 @@ function setup(overrides: Partial<React.ComponentProps<typeof SendDetailsModal>>
 }
 
 const room = () => screen.getByPlaceholderText("Meeting Room 4.02");
-const address = () => screen.getByPlaceholderText(/Nguyễn Văn Cừ/);
+const address = () => screen.getByPlaceholderText(/Nguyen Van Cu/);
 const sendButton = () => screen.getByRole("button", { name: /Send to candidate/ });
 
 describe("SendDetailsModal", () => {

@@ -39,8 +39,8 @@ export type SelfSignupRole = (typeof SELF_SIGNUP_ROLES)[number];
 
 /** Mô tả ngắn hiện cạnh mỗi lựa chọn ở màn hình đăng ký. */
 export const SELF_SIGNUP_ROLE_HINTS: Record<SelfSignupRole, string> = {
-  hr: "Đăng tin, sàng lọc và đặt lịch. Thấy đầy đủ thông tin ứng viên.",
-  tech_lead: "Chấm hồ sơ kỹ thuật trong hội đồng. Thông tin cá nhân ứng viên bị ẩn.",
+  hr: "Post jobs, screen applicants and schedule interviews. Sees full candidate details.",
+  tech_lead: "Review applicants on a panel. Candidate personal details are hidden.",
 };
 
 /** Route duy nhất admin được vào (ngoài các trang công khai). */

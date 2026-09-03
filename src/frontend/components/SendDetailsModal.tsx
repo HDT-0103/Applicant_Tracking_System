@@ -128,7 +128,7 @@ export function SendDetailsModal({
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="227 Nguyễn Văn Cừ, Quận 5, TP.HCM"
+              placeholder="227 Nguyen Van Cu, District 5, HCMC"
               style={field}
             />
           </label>

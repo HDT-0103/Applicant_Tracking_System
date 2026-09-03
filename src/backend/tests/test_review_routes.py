@@ -311,7 +311,9 @@ class TestPanelThreshold:
         body = client.get(f"/api/review/{CANDIDATE}").json()
         assert body["total_tls"] == 5
         assert body["required_tl_approvals"] == 4  # ceil(5 * 0.8)
-        assert "4/5" in body["panel_rule"]
+        # Câu luật hiện thẳng trên giao diện nên phải nói ra CON SỐ, không chỉ
+        # trả về ngưỡng ở một trường khác rồi để frontend tự ghép.
+        assert "4 of 5" in body["panel_rule"]
 
     def test_a_partial_panel_still_waits(self, client, as_role, repo):
         repo.panel_size = 5
@@ -521,7 +523,8 @@ class TestPanelSizeIsFrozen:
         assert body["total_tls"] == 0
         assert body["required_tl_approvals"] == 0
         assert body["overall_status"] == "waiting_for_tls"
-        assert "chưa có hội đồng" in body["panel_rule"]
+        # Người dùng phải đọc được LÝ DO hồ sơ đứng im, không chỉ thấy 0/0.
+        assert "no Tech Lead panel" in body["panel_rule"]
 
 
 class TestPanelLookupDoesNotGuessConstraintNames:

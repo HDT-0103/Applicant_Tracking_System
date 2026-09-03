@@ -218,8 +218,8 @@ class ReviewService:
                 rejected_tls=0,
                 required_tl_approvals=0,
                 panel_rule=(
-                    "Tin tuyển dụng này chưa có hội đồng Tech Lead. "
-                    "HR cần mời người chấm trước khi hồ sơ đi tiếp."
+                    "This job posting has no Tech Lead panel yet. HR must "
+                    "invite reviewers before applications can move forward."
                 ),
                 overall_status="waiting_for_tls",
             )

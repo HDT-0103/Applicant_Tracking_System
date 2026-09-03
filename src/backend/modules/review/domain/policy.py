@@ -45,8 +45,10 @@ def rule_text(panel_size: int) -> str:
 
     Người duyệt phải đọc được luật ngay tại chỗ bấm nút, không phải đi hỏi.
     """
+    # Tiếng Anh: chuỗi này đi thẳng ra giao diện (ReviewPanel.tsx), và toàn bộ
+    # phần người dùng nhìn thấy dùng một ngôn ngữ duy nhất.
     need = required_approvals(panel_size)
     return (
-        f"{need}/{max(panel_size, 1)} Tech Lead phải duyệt "
-        f"({int(TL_APPROVAL_RATIO * 100)}%), sau đó HR chốt."
+        f"{need} of {max(panel_size, 1)} Tech Leads must approve "
+        f"({int(TL_APPROVAL_RATIO * 100)}%), then HR makes the final call."
     )

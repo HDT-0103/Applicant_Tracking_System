@@ -48,7 +48,7 @@ export default function RegisterPage() {
   return (
     <AuthShell
       heading="Create your account"
-      subheading="Chọn vai trò của bạn để bắt đầu với SmartATS"
+      subheading="Pick your role to get started with SmartATS"
       error={error}
       footer={
         <>
@@ -167,7 +167,8 @@ export default function RegisterPage() {
         </button>
 
         <p style={{ fontSize: 12, color: T.dim, textAlign: "center", margin: "2px 0 0", lineHeight: 1.5 }}>
-          Quyền quản trị hệ thống không tự đăng ký được — chỉ quản trị viên cấp.
+          System administrator access cannot be self-assigned — only an
+          administrator can grant it.
         </p>
       </form>
     </AuthShell>

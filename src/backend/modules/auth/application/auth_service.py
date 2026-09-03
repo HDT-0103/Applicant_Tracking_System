@@ -253,7 +253,7 @@ class AuthService:
         # viên im lặng — hỏng theo kiểu không ai nhìn thấy cho tới lúc quá
         # muộn. Thà nổ ngay tại đây.
         if role not in SELF_SIGNUP_ROLES:
-            raise ValueError(f"Role '{role}' không được phép tự đăng ký")
+            raise ValueError(f"Role '{role}' cannot be chosen at registration")
 
         res = self._supabase_client.table("users").select("id").eq("email", email).limit(1).execute()
         if res.data:
