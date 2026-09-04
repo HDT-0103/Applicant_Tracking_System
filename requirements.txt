@@ -49,6 +49,11 @@ langchain-core>=0.3,<1.0
 langgraph>=0.2,<1.0
 langgraph-checkpoint>=2.0,<3.0
 langgraph-checkpoint-postgres>=2.0,<3.0
+# app/services/llm_provider.py import `Groq` ở CẤP MODULE. Trước đây gói này chỉ
+# được cài tay trong venv nên máy dev chạy bình thường, còn CI chết ở khâu thu
+# thập test với ModuleNotFoundError (3 file test agent/pipeline). Sàn 0.30 vì
+# code dùng API `chat.completions.create` của dòng client mới.
+groq>=0.30,<1.0
 numpy>=2.2,<3.0
 scikit-learn>=1.6,<2.0
 # Provider embedding mặc định (modules/scoring). Tự kéo theo torch —
