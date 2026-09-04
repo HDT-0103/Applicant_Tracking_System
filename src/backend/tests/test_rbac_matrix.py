@@ -454,7 +454,7 @@ def test_policy_load_failure_backs_off_instead_of_retrying_every_request(monkeyp
         raise RuntimeError("supabase down")
 
     monkeypatch.setattr(abac, "_fetch_deny_overrides", _failing_fetch)
-    monkeypatch.setattr(abac, "_last_fetch_time", 0.0)
+    monkeypatch.setattr(abac, "_last_fetch_time", float("-inf"))  # chưa từng nạp
 
     for _ in range(50):
         apply_abac(SAMPLE_PROFILE, "tech_lead")
@@ -480,7 +480,7 @@ def test_db_failure_does_not_widen_access(monkeypatch):
 
     monkeypatch.setattr(abac, "_fetch_deny_overrides", _boom)
     with _deny_overrides({"tech_lead": frozenset({"public_repos_count"})}):
-        abac._last_fetch_time = 0.0  # ép hết hạn để kích hoạt refresh
+        abac._last_fetch_time = float("-inf")  # ép hết hạn để kích hoạt refresh
         masked = apply_abac(SAMPLE_PROFILE, "tech_lead")["enriched_profile"]
         assert masked["email"] == "***"
         assert masked["github"]["public_repos_count"] == 0  # cache cũ còn hiệu lực

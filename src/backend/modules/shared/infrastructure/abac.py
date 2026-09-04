@@ -121,7 +121,12 @@ _CACHE_TTL_SECONDS = 300
 
 #: role đã chuẩn hoá -> tên field bị DB che thêm.
 _db_deny_overrides: dict[str, frozenset[str]] = {}
-_last_fetch_time: float = 0.0
+#: -inf nghĩa là "chưa từng nạp". KHÔNG dùng 0.0: time.monotonic() trên Linux đếm
+#: từ lúc boot, nên trong 5 phút đầu sau khi máy khởi động thì
+#: `monotonic() - 0.0 <= _CACHE_TTL_SECONDS` và cache bị coi là còn hạn — override
+#: từ DB không bao giờ được nạp cho tới khi hết TTL. Runner CI (VM vừa tạo) và
+#: container vừa deploy đều rơi vào đúng cửa sổ đó.
+_last_fetch_time: float = float("-inf")
 
 #: FastAPI phục vụ nhiều request đồng thời; cache dưới đây là biến module dùng
 #: chung nên mọi thao tác đọc-ghi phải nằm trong khoá, tránh một request đọc
