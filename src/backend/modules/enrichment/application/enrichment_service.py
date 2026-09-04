@@ -386,9 +386,10 @@ async def fetch_linkedin_profile(
         run = await client.actor("GOvL4O4RwFqsdIqXF").call(run_input=actor_input)
         
         # Lấy dữ liệu từ Dataset
-        dataset_client = client.dataset(run.default_dataset_id)
+        dataset_id = run.get("defaultDatasetId") if isinstance(run, dict) else getattr(run, "default_dataset_id", None)
+        dataset_client = client.dataset(dataset_id)
         list_items_page = await dataset_client.list_items()
-        items = list_items_page.items
+        items = list_items_page.items if hasattr(list_items_page, "items") else (list_items_page.get("items", []) if isinstance(list_items_page, dict) else [])
         
         if not items or len(items) == 0:
             raise ValueError("Apify Actor returned empty dataset.")
