@@ -12,7 +12,7 @@ You will receive a structured input containing:
 # Instructions
 1. **Analyze Query Clarity**:
    - Determine if the request has enough detail to construct a meaningful search query.
-   - If information is missing or ambiguous, set `query_assessment.clarification_detail.status` to `"needed"` or `"not_enough"` and provide ONE concise question in `suggestion`.
+   - If information is missing or ambiguous, set `query_assessment.clarification.status` to `"not_enough"` and provide ONE concise question in `query_assessment.clarification.question`.
 
 2. **Formulate Search Requirements**:
    - If the query is clear OR if you are revising search terms based on `reflection` feedback, generate a structured `search_requirement`.
@@ -26,3 +26,5 @@ You will receive a structured input containing:
 - NEVER search candidates yourself.
 - NEVER invent information not present in user query or context.
 - Output MUST be valid JSON conforming strictly to the `PlannerOutput` schema.
+- Use `query_assessment.clarification.status` with exactly `"enough"` or `"not_enough"`.
+- Do not use fields named `clarification_detail`, `needed`, or `suggestion` inside `query_assessment`.

@@ -1,10 +1,73 @@
 import asyncio
 
 from src.backend.app.agents.nodes.base import BaseNode
-from src.backend.app.agents.state import ATSState, RecruiterDecisionOutput, RecruiterDecisionInput
+from src.backend.app.agents.state import (
+    ATSState,
+    CandidateContext,
+    CandidateRecommendation,
+    RecruiterDecisionInput,
+    RecruiterDecisionOutput,
+)
 from src.backend.app.services.llm_provider import LLMProvider
 
+
 class RecruiterDecisionNode(BaseNode):
+    batch_size = 2
+    history_limit = 3
+
+    @staticmethod
+    def _compact_candidate(candidate: CandidateContext) -> CandidateContext:
+        return candidate.model_copy(
+            update={
+                "summary": candidate.summary[:400],
+                "skills": candidate.skills[:8],
+                "strengths": candidate.strengths[:8],
+                "weaknesses": candidate.weaknesses[:6],
+                "experiences": [
+                    experience.model_copy(
+                        update={
+                            "company": experience.company[:100],
+                            "position": experience.position[:100],
+                            "duration": experience.duration[:50],
+                            "highlights": [highlight[:180] for highlight in experience.highlights[:2]],
+                        }
+                    )
+                    for experience in candidate.experiences[:3]
+                ],
+                "github_summary": (
+                    candidate.github_summary[:400]
+                    if candidate.github_summary
+                    else None
+                ),
+                "linkedin_summary": (
+                    candidate.linkedin_summary[:400]
+                    if candidate.linkedin_summary
+                    else None
+                ),
+            }
+        )
+
+    @staticmethod
+    def _compact_mission(mission):
+        return mission.model_copy(
+            update={
+                "objective": mission.objective[:1000],
+                "plan": [step[:160] for step in mission.plan[:5]],
+            }
+        )
+
+    @staticmethod
+    def _compact_history(history):
+        return [
+            action.model_copy(
+                update={
+                    "action": action.action[:160],
+                    "decision": action.decision[:300] if action.decision else None,
+                }
+            )
+            for action in history
+        ]
+
     def __init__(self, llm_provider: LLMProvider):
         super().__init__()
         self.llm_provider = llm_provider
@@ -24,19 +87,46 @@ class RecruiterDecisionNode(BaseNode):
             )
             return state
         
-        # 1. Read state (Fix các biến bị trỏ sai)
-        decision_input = RecruiterDecisionInput(
-            mission=state.candidate_search.mission,  # Đã fix
-            candidates=state.candidate_search.candidates,
-            history=state.candidate_search.action_history  # Đã fix naming
+        # Evaluate small batches so one large candidate set cannot exceed the
+        # provider's per-request or tokens-per-minute budget.
+        candidates = [
+            self._compact_candidate(candidate)
+            for candidate in state.candidate_search.candidates
+        ]
+        mission = self._compact_mission(state.candidate_search.mission)
+        history = self._compact_history(
+            state.candidate_search.action_history[-self.history_limit :]
         )
-        
-        # 2. Call LLM
-        decision_output = await asyncio.to_thread(
-            self.llm_provider.invoke,
-            recruiter_prompt,
-            decision_input,
-            RecruiterDecisionOutput,
+        recommendations: list[CandidateRecommendation] = []
+
+        for start in range(0, len(candidates), self.batch_size):
+            decision_input = RecruiterDecisionInput(
+                mission=mission,
+                candidates=candidates[start : start + self.batch_size],
+                history=history,
+            )
+            batch_output = await asyncio.to_thread(
+                self.llm_provider.invoke,
+                recruiter_prompt,
+                decision_input,
+                RecruiterDecisionOutput,
+            )
+            recommendations.extend(batch_output.recommendations)
+
+        recommendations.sort(key=lambda item: item.confidence, reverse=True)
+        top_recommendations = recommendations[:5]
+        recommendation_summary = "; ".join(
+            f"{item.candidate_id}: {item.recommendation} "
+            f"({item.confidence:.0%}) - {item.reasoning[:180]}"
+            for item in top_recommendations
+        )
+        decision_output = RecruiterDecisionOutput(
+            recommendations=recommendations,
+            final_summary=(
+                f"Evaluated {len(candidates)} candidates in "
+                f"{(len(candidates) + self.batch_size - 1) // self.batch_size} batches. "
+                f"Top matches: {recommendation_summary or 'No recommendations returned.'}"
+            ),
         )
 
         # 3. Update state

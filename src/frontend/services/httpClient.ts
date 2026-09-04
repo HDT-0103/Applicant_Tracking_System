@@ -160,6 +160,38 @@ async function getValidAccessToken(): Promise<string | null> {
   return null;
 }
 
+export async function streamClient(
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const accessToken = await getValidAccessToken();
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  let response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  if (response.status === 401) {
+    const newToken = await refreshAccessTokenOnce();
+    if (newToken) {
+      headers.set("Authorization", `Bearer ${newToken}`);
+      response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+    }
+    if (response.status === 401) notifySessionExpired();
+  }
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`;
+    try {
+      const body = (await response.json()) as { detail?: string; message?: string };
+      message = body.detail ?? body.message ?? message;
+    } catch {
+      /* Keep the HTTP status when a stream endpoint has no JSON error body. */
+    }
+    throw new ApiError(message, response.status);
+  }
+  if (!response.body) throw new Error("Agent response did not include a stream");
+  return response;
+}
+
 function buildHeaders(
   initHeaders: HeadersInit | undefined,
   accessToken: string | null,

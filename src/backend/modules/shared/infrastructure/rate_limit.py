@@ -105,3 +105,5 @@ register_rate_limit = RateLimit("auth.register", limit=5, seconds=3600)
 #: Nộp CV công khai — mỗi lượt là một file tới 10MB đi vào Azure và một lượt
 #: gọi LLM. Không giới hạn thì một script biến nó thành hoá đơn.
 ingest_rate_limit = RateLimit("ingestion.ingest", limit=20, seconds=3600)
+
+agent_rate_limit = RateLimit("agents.chat", limit=20, seconds=600)

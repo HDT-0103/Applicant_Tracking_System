@@ -6,7 +6,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 SRC_DIR = ROOT_DIR / "src"
 
 for path in (SRC_DIR, ROOT_DIR):
@@ -156,7 +156,7 @@ async def run_e2e_test() -> None:
         min_similarity=0.5,
     )
 
-    llm_provider = GroqProvider(model="llama-3.1-8b-instant")
+    llm_provider = GroqProvider()
     interaction_gateway = CLIInteractionGateway()
 
     app = build_graph(

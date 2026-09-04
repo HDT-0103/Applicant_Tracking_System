@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any
-
 import json
 import os
+from abc import ABC, abstractmethod
+from typing import Any
 
 from dotenv import load_dotenv
 from groq import Groq
@@ -54,7 +53,7 @@ class GroqProvider(LLMProvider):
 
     def __init__(
         self,
-        model: str = "llama-3.1-8b-instant",
+        model: str = "openai/gpt-oss-20b",
     ):
         self.client = Groq(
             api_key=os.getenv("GROQ_API_KEY")
@@ -104,11 +103,8 @@ class GroqProvider(LLMProvider):
         # ----------------------------
         if response_model is not None:
 
-            schema = json.dumps(
-                response_model.model_json_schema(),
-                ensure_ascii=False,
-                indent=2,
-            )
+            schema = response_model.model_json_schema()
+            schema_text = json.dumps(schema, ensure_ascii=False, indent=2)
 
             system_prompt = (
                 f"{system_prompt}\n\n"
@@ -116,7 +112,7 @@ class GroqProvider(LLMProvider):
                 "Do NOT explain.\n"
                 "Do NOT wrap in markdown.\n"
                 "The JSON MUST follow this schema:\n"
-                f"{schema}"
+                f"{schema_text}"
             )
 
         # ----------------------------
@@ -126,7 +122,11 @@ class GroqProvider(LLMProvider):
 
         if response_model is not None:
             request_kwargs["response_format"] = {
-                "type": "json_object"
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__,
+                    "schema": schema,
+                },
             }
 
         response = self.client.chat.completions.create(
