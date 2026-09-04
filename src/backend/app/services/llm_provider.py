@@ -34,6 +34,21 @@ class LLMProvider(ABC):
     ) -> Any:
         pass
 
+    def generate_text(
+        self,
+        prompt: str,
+        temperature: float = 0.1,
+    ) -> str:
+        """Compatibility helper for services that only need plain text."""
+        result = self.invoke(
+            system_prompt="You are a helpful assistant.",
+            user_input=prompt,
+            temperature=temperature,
+        )
+        if not isinstance(result, str):
+            raise TypeError("LLM provider returned a non-text response")
+        return result
+
 
 class GroqProvider(LLMProvider):
 

@@ -15,7 +15,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AuthGuard>
           <WorkspaceProvider>
             {children}
-            <RequireCalendarModal />
+            {/* <RequireCalendarModal /> */}
             </WorkspaceProvider>
         </AuthGuard>
       </AuthProvider>
