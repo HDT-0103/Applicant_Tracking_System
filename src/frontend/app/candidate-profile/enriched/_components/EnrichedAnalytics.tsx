@@ -2,6 +2,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Shield, GitBranch, Cpu, Globe, Calendar, FileText } from "lucide-react";
 import { D, Dot, SectionLabel, Divider } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import { api } from "@/services/httpClient";
 import { openCandidateCv } from "@/services/candidateCvService";
 import { type ReviewStatus } from "@/services/reviewService";
@@ -29,6 +30,7 @@ export function EnrichedAnalytics({
   onRefreshReview: () => void;
 }) {
   const router = useRouter();
+  const t = useT();
   const [cvError, setCvError] = React.useState<string | null>(null);
   const repoCount = data?.github?.public_repos_count ?? 0;
   const skillsCount = data?.analytics?.semantic_tags?.length ?? 0;
@@ -68,7 +70,7 @@ export function EnrichedAnalytics({
               letterSpacing: "-0.01em",
             }}
           >
-            Unified Candidate Analytics
+            {t("candidate.analytics.title")}
           </span>
           <span
             style={{
@@ -81,7 +83,7 @@ export function EnrichedAnalytics({
               background: D.surface,
             }}
           >
-            post-enrichment
+            {t("candidate.analytics.postEnrichmentTag")}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -94,7 +96,7 @@ export function EnrichedAnalytics({
                   await openCandidateCv(candidateUuid);
                 } catch (err) {
                   setCvError(
-                    err instanceof Error ? err.message : "Could not open this CV.",
+                    err instanceof Error ? err.message : t("candidate.cv.couldNotOpen"),
                   );
                 }
               }}
@@ -114,7 +116,7 @@ export function EnrichedAnalytics({
               }}
             >
               <FileText size={12} strokeWidth={2} color={D.blue} />
-              <span>View Original CV</span>
+              <span>{t("candidate.cv.viewOriginal")}</span>
             </button>
           )}
           {cvError && (
@@ -125,7 +127,7 @@ export function EnrichedAnalytics({
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Dot color={D.mint} pulse />
             <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>
-              LIVE
+              {t("candidate.analytics.live")}
             </span>
           </div>
         </div>
@@ -141,14 +143,14 @@ export function EnrichedAnalytics({
         }}
       >
         <div style={{ marginBottom: 20 }}>
-          <SectionLabel>Match Confidence Score</SectionLabel>
+          <SectionLabel>{t("candidate.analytics.matchConfidenceScore")}</SectionLabel>
           <MatchConfidence analytics={data?.analytics || null} />
         </div>
         <Divider />
         {/* The "why" behind the number above. A score with no breakdown is
             something a recruiter can only accept or ignore, never check. */}
         <div style={{ marginBottom: 20 }}>
-          <SectionLabel>Requirements Breakdown</SectionLabel>
+          <SectionLabel>{t("candidate.analytics.requirementsBreakdown")}</SectionLabel>
           <SkillMatchPanel
             skillMatrix={data?.skill_matrix}
             score={data?.analytics?.match_confidence_score ?? null}
@@ -166,7 +168,7 @@ export function EnrichedAnalytics({
 
         {/* Enrichment Impact Summary */}
         <div style={{ marginBottom: 12 }}>
-          <SectionLabel>Enrichment Impact Summary</SectionLabel>
+          <SectionLabel>{t("candidate.analytics.impactSummary")}</SectionLabel>
           <div
             style={{
               display: "grid",
@@ -178,25 +180,25 @@ export function EnrichedAnalytics({
             {[
               {
                 icon: <GitBranch size={13} strokeWidth={1.8} color={D.blue} />,
-                label: "Repos Corroborating",
+                label: t("candidate.analytics.reposCorroborating"),
                 value: repoCount.toString(),
-                sub: "public repositories",
+                sub: t("candidate.analytics.reposCorroboratingSub"),
                 color: D.blue,
               },
               {
                 icon: (
                   <CheckCircle2 size={13} strokeWidth={1.8} color={D.mint} />
                 ),
-                label: "Roles Verified",
+                label: t("candidate.analytics.rolesVerified"),
                 value: roleCount.toString(),
-                sub: "LinkedIn employment entries",
+                sub: t("candidate.analytics.rolesVerifiedSub"),
                 color: D.mint,
               },
               {
                 icon: <Cpu size={13} strokeWidth={1.8} color={D.purple} />,
-                label: "Skills Confirmed",
+                label: t("candidate.analytics.skillsConfirmed"),
                 value: skillsCount.toString(),
-                sub: "from README analysis",
+                sub: t("candidate.analytics.skillsConfirmedSub"),
                 color: D.purple,
               },
             ].map((item, i) => (
@@ -254,17 +256,17 @@ export function EnrichedAnalytics({
           >
             <Globe size={10} strokeWidth={2} color={D.muted} />
             <span style={{ fontSize: 10, color: D.muted, flex: 1 }}>
-              Sources:{" "}
+              {t("candidate.analytics.sources")}{" "}
               <span style={{ color: D.sub, fontWeight: 500 }}>
-                GitHub ({repoCount} repos analyzed)
+                {t("candidate.analytics.sourceGithub", { n: repoCount })}
               </span>
               {" · "}
               <span style={{ color: D.sub, fontWeight: 500 }}>
-                LinkedIn ({roleCount} verified positions)
+                {t("candidate.analytics.sourceLinkedin", { n: roleCount })}
               </span>
             </span>
             <span style={{ fontSize: 9, fontFamily: D.mono, color: D.dim }}>
-              Just now
+              {t("time.justNow")}
             </span>
           </div>
         </div>
@@ -280,7 +282,7 @@ export function EnrichedAnalytics({
           <button
             onClick={() =>
               router.push(
-                `/schedule?uuid=${candidateUuid}&name=${encodeURIComponent(data?.full_name || "Candidate")}`,
+                `/schedule?uuid=${candidateUuid}&name=${encodeURIComponent(data?.full_name || t("candidate.anonymous"))}`,
               )
             }
             style={{
@@ -301,7 +303,7 @@ export function EnrichedAnalytics({
             }}
           >
             <Calendar size={13} strokeWidth={2} />
-            Schedule Interview
+            {t("candidate.analytics.scheduleInterview")}
           </button>
         ) : (
           userRole === "hr" && (
@@ -316,13 +318,13 @@ export function EnrichedAnalytics({
               }}
             >
               {reviewStatus?.overall_status === "waiting_for_tls"
-                ? "⏳ Waiting for the Tech Lead panel to approve before scheduling"
+                ? t("candidate.analytics.waitingForTls")
                 : reviewStatus?.overall_status === "rejected_by_tls" ||
                     reviewStatus?.overall_status === "rejected_by_hr"
-                  ? "❌ Candidate rejected — scheduling unavailable"
+                  ? t("candidate.analytics.rejected")
                   : reviewStatus?.overall_status === "waiting_for_hr"
-                    ? "⚠️ Submit your final HR decision above"
-                    : "Submit your review above"}
+                    ? t("candidate.analytics.submitHrDecision")
+                    : t("candidate.analytics.submitReview")}
             </div>
           )
         )}

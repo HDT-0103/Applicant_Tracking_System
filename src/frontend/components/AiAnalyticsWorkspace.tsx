@@ -148,7 +148,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
             key={i}
             points={pts}
             fill="none"
-            stroke="#e5e7eb"
+            stroke={D.line}
             strokeWidth="1"
           />
         ))}
@@ -161,7 +161,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
             y1={cy}
             x2={pt.x}
             y2={pt.y}
-            stroke="#e5e7eb"
+            stroke={D.line}
             strokeWidth="1"
           />
         ))}
@@ -194,7 +194,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
             textAnchor="middle"
             dominantBaseline="central"
             fontSize="10"
-            fill="#6b7280"
+            fill={D.muted}
           >
             {skills[i].name}
           </text>

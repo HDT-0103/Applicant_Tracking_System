@@ -361,6 +361,10 @@ class CandidateCvLink(BaseModel):
     url: str
     #: Giây còn lại trước khi link hết hạn, hoặc None nếu link không có hạn.
     expires_in_seconds: Optional[int] = None
+    #: Cùng blob, nhưng ép `Content-Disposition: attachment` để nút Download
+    #: tải về thay vì mở. `download` trên thẻ <a> bị trình duyệt bỏ qua với
+    #: link khác origin, nên phải quyết ở phía máy chủ lưu trữ.
+    download_url: Optional[str] = None
 
 
 #: Link SAS sống bấy nhiêu lâu. Đủ để đọc xong một CV, không đủ để phát tán.
@@ -425,10 +429,15 @@ async def get_candidate_cv(
     sas_url = _build_sas_url(candidate_uuid, settings)
     if sas_url:
         return CandidateCvLink(
-            url=sas_url, expires_in_seconds=int(CV_LINK_TTL.total_seconds())
+            url=sas_url,
+            expires_in_seconds=int(CV_LINK_TTL.total_seconds()),
+            download_url=_build_sas_url(candidate_uuid, settings, disposition="attachment"),
         )
 
-    if stored_path:
+    # Chỉ đưa cho trình duyệt một đường dẫn nó mở được. Hồ sơ seed cũ ghi
+    # `uploads/x.pdf` — đường dẫn trên đĩa của máy dev — và trình duyệt mở nó
+    # ra một trang lỗi vô nghĩa. Không có CV thì nói là không có.
+    if stored_path and stored_path.lower().startswith(("http://", "https://")):
         return CandidateCvLink(url=stored_path)
 
     raise HTTPException(
@@ -437,8 +446,18 @@ async def get_candidate_cv(
     )
 
 
-def _build_sas_url(candidate_uuid: str, settings: Settings) -> Optional[str]:
-    """Ký một SAS URL chỉ-đọc cho blob CV. `None` nếu không ký được."""
+def _build_sas_url(
+    candidate_uuid: str, settings: Settings, *, disposition: str = "inline"
+) -> Optional[str]:
+    """Ký một SAS URL chỉ-đọc cho blob CV. `None` nếu không ký được.
+
+    Blob được tải lên không có content type (Azure mặc định
+    `application/octet-stream`), nên trình duyệt TẢI VỀ thay vì hiển thị:
+    iframe trắng tinh, bấm Open cũng ra file. SAS cho phép ép header phản hồi
+    (`rsct` / `rscd`), nên ta ký kèm `application/pdf` + `inline` — sửa được
+    cho cả blob cũ mà không phải đụng vào chúng. `disposition="attachment"`
+    cho nút Download.
+    """
     conn_str = getattr(settings, "azure_storage_connection_string", "")
     if not conn_str:
         return None
@@ -456,6 +475,22 @@ def _build_sas_url(candidate_uuid: str, settings: Settings) -> Optional[str]:
         if not (account_name and account_key):
             return None
 
+        # Ký được KHÔNG có nghĩa là blob tồn tại: SAS chỉ là chữ ký trên một
+        # cái tên. Trước đây hàm này ký cho `{uuid}.pdf` của MỌI ứng viên,
+        # kể cả 24 hồ sơ seed chưa từng được tải lên Azure, và trình duyệt mở
+        # ra trang XML "BlobNotFound" thay vì CV. Hỏi tồn tại trước.
+        blob_client = blob_service_client.get_blob_client(
+            container=BLOB_CONTAINER_NAME, blob=f"{candidate_uuid}.pdf"
+        )
+        if not blob_client.exists():
+            logger.info("cv.blob_missing", candidate_uuid=candidate_uuid)
+            return None
+
+        if disposition == "attachment":
+            content_disposition = f'attachment; filename="CV-{candidate_uuid[:8]}.pdf"'
+        else:
+            content_disposition = "inline"
+
         sas_token = generate_blob_sas(
             account_name=account_name,
             container_name=BLOB_CONTAINER_NAME,
@@ -463,6 +498,8 @@ def _build_sas_url(candidate_uuid: str, settings: Settings) -> Optional[str]:
             account_key=account_key,
             permission=BlobSasPermissions(read=True),
             expiry=datetime.now(timezone.utc) + CV_LINK_TTL,
+            content_type="application/pdf",
+            content_disposition=content_disposition,
         )
         return (
             f"https://{account_name}.blob.core.windows.net/"

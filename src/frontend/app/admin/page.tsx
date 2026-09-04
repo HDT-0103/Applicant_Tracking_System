@@ -6,8 +6,9 @@ import { AppHeader } from "../../components/AppHeader";
 import { api } from "../../services/httpClient";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useAuth } from "../../contexts/AuthContext";
-import { ALL_ROLES, ROLE_LABELS, type UserRole } from "../../lib/rbac";
-import { D } from "../../lib/shared";
+import { ALL_ROLES, type UserRole } from "../../lib/rbac";
+import { D, tint } from "../../lib/shared";
+import { useLang } from "../../lib/i18n";
 import type { LucideIcon } from "lucide-react";
 import {
   ShieldAlert,
@@ -147,27 +148,30 @@ const RoleBadge: React.FC<{ role: string }> = ({ role }) => (
   </span>
 );
 
-const NAV: { key: ActiveTab; label: string; icon: LucideIcon }[] = [
-  { key: "users", label: "Users & Access", icon: Users },
-  { key: "abac", label: "ABAC & Security", icon: ShieldAlert },
-  { key: "ai", label: "AI & Vector", icon: Cpu },
-  { key: "infra", label: "Infrastructure", icon: Activity },
-  { key: "audit", label: "Audit Trail", icon: ScrollText },
+const NAV: { key: ActiveTab; labelKey: string; icon: LucideIcon }[] = [
+  { key: "users", labelKey: "admin.nav.users", icon: Users },
+  { key: "abac", labelKey: "admin.nav.abac", icon: ShieldAlert },
+  { key: "ai", labelKey: "admin.nav.ai", icon: Cpu },
+  { key: "infra", labelKey: "admin.nav.infra", icon: Activity },
+  { key: "audit", labelKey: "admin.nav.audit", icon: ScrollText },
 ];
 
+// `name` là key i18n của thứ trong tuần; dịch lúc render (xem chartData).
 const SAMPLE_COST: CostPoint[] = [
-  { name: "Mon", cost: 0.24, tokens: 12000 },
-  { name: "Tue", cost: 0.45, tokens: 22500 },
-  { name: "Wed", cost: 0.38, tokens: 19000 },
-  { name: "Thu", cost: 0.72, tokens: 36000 },
-  { name: "Fri", cost: 0.95, tokens: 47500 },
-  { name: "Sat", cost: 0.52, tokens: 26000 },
-  { name: "Sun", cost: 0.65, tokens: 32500 },
+  { name: "admin.day.mon", cost: 0.24, tokens: 12000 },
+  { name: "admin.day.tue", cost: 0.45, tokens: 22500 },
+  { name: "admin.day.wed", cost: 0.38, tokens: 19000 },
+  { name: "admin.day.thu", cost: 0.72, tokens: 36000 },
+  { name: "admin.day.fri", cost: 0.95, tokens: 47500 },
+  { name: "admin.day.sat", cost: 0.52, tokens: 26000 },
+  { name: "admin.day.sun", cost: 0.65, tokens: 32500 },
 ];
 
 export default function AdminDashboard() {
   const router = useRouter();
   const { user, hasRole } = useAuth();
+  const { lang, t } = useLang();
+  const locale = lang === "vi" ? "vi-VN" : "en-US";
   const [activeTab, setActiveTab] = useState<ActiveTab>("users");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -219,7 +223,7 @@ export default function AdminDashboard() {
         setAuditLogs(await api.get<AuditLog[]>(`/api/admin/audit-logs${auditSearch ? `?query=${auditSearch}` : ""}`));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard metrics");
+      setError(err instanceof Error ? err.message : t("admin.error.loadMetrics"));
     } finally {
       setLoading(false);
     }
@@ -244,7 +248,7 @@ export default function AdminDashboard() {
         return next;
       });
     } catch (err) {
-      setError("Failed to update user: " + (err instanceof Error ? err.message : "Error"));
+      setError(t("admin.error.updateUser", { message: err instanceof Error ? err.message : t("admin.error.generic") }));
     } finally {
       setSavingId(null);
     }
@@ -255,7 +259,7 @@ export default function AdminDashboard() {
       const updated = await api.put<Policy>(`/api/admin/abac/policies/${policy.id}`, { is_masked: !policy.is_masked });
       setPolicies((prev) => prev.map((p) => (p.id === policy.id ? updated : p)));
     } catch (err) {
-      setError("Failed to toggle policy: " + (err instanceof Error ? err.message : "Error"));
+      setError(t("admin.error.togglePolicy", { message: err instanceof Error ? err.message : t("admin.error.generic") }));
     }
   };
 
@@ -269,7 +273,7 @@ export default function AdminDashboard() {
       setSessions((prev) => prev.map((s) => (s.jti === jti ? { ...s, is_revoked: true } : s)));
       setRevokingJti(null);
     } catch (err) {
-      setError("Failed to revoke session: " + (err instanceof Error ? err.message : "Error"));
+      setError(t("admin.error.revokeSession", { message: err instanceof Error ? err.message : t("admin.error.generic") }));
     } finally {
       setRevoking(false);
     }
@@ -282,14 +286,14 @@ export default function AdminDashboard() {
       const res = await api.post<{ message: string }>("/api/admin/vector/reindex");
       setReindexMsg(res.message);
     } catch (err) {
-      setReindexMsg("Failed to re-index vectors: " + (err instanceof Error ? err.message : "Error"));
+      setReindexMsg(t("admin.error.reindex", { message: err instanceof Error ? err.message : t("admin.error.generic") }));
     } finally {
       setReindexing(false);
     }
   };
 
-  const chartData = costSeries.length > 0 ? costSeries : SAMPLE_COST;
   const chartIsSample = costSeries.length === 0;
+  const chartData = chartIsSample ? SAMPLE_COST.map((p) => ({ ...p, name: t(p.name) })) : costSeries;
 
   if (!user || user.role !== "admin") {
     return (
@@ -307,9 +311,9 @@ export default function AdminDashboard() {
         {/* Sidebar */}
         <aside style={{ width: 232, borderRight: `1px solid ${D.line}`, background: D.canvas, padding: "20px 12px", display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
           <h2 style={{ fontSize: 10.5, fontWeight: 700, color: D.dim, textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 12px", margin: "4px 0 12px" }}>
-            Admin Console
+            {t("admin.console")}
           </h2>
-          {NAV.map(({ key, label, icon: Icon }) => {
+          {NAV.map(({ key, labelKey, icon: Icon }) => {
             const active = activeTab === key;
             return (
               <button
@@ -324,7 +328,7 @@ export default function AdminDashboard() {
                 }}
               >
                 <Icon size={16} />
-                <span>{label}</span>
+                <span>{t(labelKey)}</span>
               </button>
             );
           })}
@@ -334,16 +338,16 @@ export default function AdminDashboard() {
         <main style={{ flex: 1, overflowY: "auto", padding: "32px 36px", background: D.bg }}>
           <ConfirmDialog
             open={revokingJti !== null}
-            title="Revoke this session?"
-            message="The user will be signed out immediately and will have to log in again. Any work they have not saved is lost."
-            confirmLabel="Revoke session"
+            title={t("admin.revoke.title")}
+            message={t("admin.revoke.message")}
+            confirmLabel={t("admin.revoke.confirm")}
             busy={revoking}
             onCancel={() => setRevokingJti(null)}
             onConfirm={handleRevokeSession}
           />
 
           {error && (
-            <div style={{ background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, padding: "12px 16px", color: D.red, fontSize: 13.5, marginBottom: 22 }}>
+            <div style={{ background: "rgba(220,38,38,0.06)", border: `1px solid ${tint("red", "40")}`, borderRadius: 6, padding: "12px 16px", color: D.red, fontSize: 13.5, marginBottom: 22 }}>
               {error}
             </div>
           )}
@@ -351,8 +355,8 @@ export default function AdminDashboard() {
           {/* TAB: USERS & ACCESS */}
           {activeTab === "users" && (
             <div>
-              <h1 style={h1Style}>Users &amp; Access</h1>
-              <p style={subStyle}>Approve accounts and grant roles. New sign-ups start as recruiters; elevate to interviewer or admin here.</p>
+              <h1 style={h1Style}>{t("admin.users.title")}</h1>
+              <p style={subStyle}>{t("admin.users.subtitle")}</p>
 
               {loading ? (
                 <Spinner />
@@ -361,11 +365,11 @@ export default function AdminDashboard() {
                   <table style={table}>
                     <thead>
                       <tr>
-                        <th style={thStyle}>User</th>
-                        <th style={thStyle}>Current</th>
-                        <th style={thStyle}>Assign Role</th>
-                        <th style={thStyle}>Approved</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>Action</th>
+                        <th style={thStyle}>{t("admin.users.col.user")}</th>
+                        <th style={thStyle}>{t("admin.users.col.current")}</th>
+                        <th style={thStyle}>{t("admin.users.col.assignRole")}</th>
+                        <th style={thStyle}>{t("admin.users.col.approved")}</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>{t("admin.users.col.action")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -389,7 +393,7 @@ export default function AdminDashboard() {
                                   DB vẫn hiện ở value nhưng không chọn lại được —
                                   chọn 1 trong 3 role dưới đây là đã migrate. */}
                               {ALL_ROLES.map((r) => (
-                                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                                <option key={r} value={r}>{t(`role.${r}`)}</option>
                               ))}
                             </select>
                           </td>
@@ -412,13 +416,13 @@ export default function AdminDashboard() {
                               }}
                             >
                               {savingId === u.id ? <Loader2 size={13} style={{ animation: "spin 0.8s linear infinite" }} /> : <Save size={13} />}
-                              Save
+                              {t("common.save")}
                             </button>
                           </td>
                         </tr>
                       ))}
                       {users.length === 0 && (
-                        <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: D.muted, padding: 28 }}>No users found.</td></tr>
+                        <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: D.muted, padding: 28 }}>{t("admin.users.empty")}</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -431,18 +435,18 @@ export default function AdminDashboard() {
           {activeTab === "abac" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
               <div>
-                <h1 style={h1Style}>Attribute-Based Access Control</h1>
-                <p style={subStyle}>Toggle real-time PII masking per role (e.g. interviewer) without editing backend code.</p>
+                <h1 style={h1Style}>{t("admin.abac.title")}</h1>
+                <p style={subStyle}>{t("admin.abac.subtitle")}</p>
                 {loading ? <Spinner /> : (
                   <div style={tableWrap}>
                     <table style={table}>
                       <thead>
                         <tr>
-                          <th style={thStyle}>Target Role</th>
-                          <th style={thStyle}>Resource</th>
-                          <th style={thStyle}>PII Field</th>
-                          <th style={thStyle}>Strategy</th>
-                          <th style={{ ...thStyle, textAlign: "right" }}>Masked</th>
+                          <th style={thStyle}>{t("admin.abac.col.targetRole")}</th>
+                          <th style={thStyle}>{t("admin.abac.col.resource")}</th>
+                          <th style={thStyle}>{t("admin.abac.col.field")}</th>
+                          <th style={thStyle}>{t("admin.abac.col.strategy")}</th>
+                          <th style={{ ...thStyle, textAlign: "right" }}>{t("admin.abac.col.masked")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -452,7 +456,7 @@ export default function AdminDashboard() {
                             <td style={tdStyle}>{p.resource}</td>
                             <td style={{ ...tdStyle, fontFamily: D.mono, color: D.blue }}>{p.field_name}</td>
                             <td style={tdStyle}>
-                              <span style={{ fontSize: 11, background: D.surface, border: `1px solid ${D.line}`, padding: "2px 7px", borderRadius: 4, color: D.sub }}>Replace “{p.masking_pattern}”</span>
+                              <span style={{ fontSize: 11, background: D.surface, border: `1px solid ${D.line}`, padding: "2px 7px", borderRadius: 4, color: D.sub }}>{t("admin.abac.replaceWith", { pattern: p.masking_pattern })}</span>
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
                               <button onClick={() => handleTogglePolicy(p)} style={{ background: "none", border: "none", color: p.is_masked ? D.mint : D.dim, cursor: "pointer" }}>
@@ -468,19 +472,19 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <h2 style={{ fontSize: 16, fontWeight: 700, color: D.ink, margin: "0 0 6px" }}>Active JWT Sessions</h2>
-                <p style={subStyle}>Revoke a token to force immediate re-authentication.</p>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: D.ink, margin: "0 0 6px" }}>{t("admin.sessions.title")}</h2>
+                <p style={subStyle}>{t("admin.sessions.subtitle")}</p>
                 {loading ? <Spinner /> : (
                   <div style={tableWrap}>
                     <table style={table}>
                       <thead>
                         <tr>
-                          <th style={thStyle}>User</th>
-                          <th style={thStyle}>Role</th>
-                          <th style={thStyle}>IP</th>
-                          <th style={thStyle}>Issued</th>
-                          <th style={thStyle}>Status</th>
-                          <th style={{ ...thStyle, textAlign: "right" }}>Action</th>
+                          <th style={thStyle}>{t("admin.sessions.col.user")}</th>
+                          <th style={thStyle}>{t("admin.sessions.col.role")}</th>
+                          <th style={thStyle}>{t("admin.sessions.col.ip")}</th>
+                          <th style={thStyle}>{t("admin.sessions.col.issued")}</th>
+                          <th style={thStyle}>{t("admin.sessions.col.status")}</th>
+                          <th style={{ ...thStyle, textAlign: "right" }}>{t("admin.sessions.col.action")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -492,17 +496,17 @@ export default function AdminDashboard() {
                             </td>
                             <td style={tdStyle}><RoleBadge role={s.user_role} /></td>
                             <td style={{ ...tdStyle, fontFamily: D.mono }}>{s.ip_address}</td>
-                            <td style={tdStyle}>{new Date(s.created_at).toLocaleString()}</td>
+                            <td style={tdStyle}>{new Date(s.created_at).toLocaleString(locale)}</td>
                             <td style={tdStyle}>
                               {s.is_revoked ? (
-                                <span style={{ color: D.red, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><Ban size={12} /> Revoked</span>
+                                <span style={{ color: D.red, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><Ban size={12} /> {t("admin.sessions.revoked")}</span>
                               ) : (
-                                <span style={{ color: D.mint, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={12} /> Active</span>
+                                <span style={{ color: D.mint, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={12} /> {t("admin.sessions.active")}</span>
                               )}
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
                               {!s.is_revoked && (
-                                <button type="button" onClick={() => setRevokingJti(s.jti)} style={{ padding: "4px 10px", background: "rgba(220,38,38,0.06)", border: `1px solid ${D.red}40`, borderRadius: 6, color: D.red, cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>Kill Token</button>
+                                <button type="button" onClick={() => setRevokingJti(s.jti)} style={{ padding: "4px 10px", background: "rgba(220,38,38,0.06)", border: `1px solid ${tint("red", "40")}`, borderRadius: 6, color: D.red, cursor: "pointer", fontSize: 11.5, fontWeight: 600 }}>{t("admin.sessions.kill")}</button>
                               )}
                             </td>
                           </tr>
@@ -518,22 +522,22 @@ export default function AdminDashboard() {
           {/* TAB: AI & VECTOR */}
           {activeTab === "ai" && (
             <div>
-              <h1 style={h1Style}>AI Engine Cost &amp; Vector Analytics</h1>
-              <p style={subStyle}>Monitor token/cost utilisation and trigger pgvector re-indexing.</p>
+              <h1 style={h1Style}>{t("admin.ai.title")}</h1>
+              <p style={subStyle}>{t("admin.ai.subtitle")}</p>
 
               {aiMetrics && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16, marginBottom: 24 }}>
-                  <StatCard label="Estimated Total Cost" value={`$${aiMetrics.total_estimated_cost.toFixed(4)}`} color={D.mint} />
-                  <StatCard label="Total Tokens" value={aiMetrics.total_tokens.toLocaleString()} color={D.blue} />
-                  <StatCard label="Prompt Tokens" value={aiMetrics.total_prompt_tokens.toLocaleString()} color={D.purple} />
-                  <StatCard label="Completion Tokens" value={aiMetrics.total_completion_tokens.toLocaleString()} color={D.amber} />
+                  <StatCard label={t("admin.ai.stat.cost")} value={`$${aiMetrics.total_estimated_cost.toFixed(4)}`} color={D.mint} />
+                  <StatCard label={t("admin.ai.stat.tokens")} value={aiMetrics.total_tokens.toLocaleString(locale)} color={D.blue} />
+                  <StatCard label={t("admin.ai.stat.promptTokens")} value={aiMetrics.total_prompt_tokens.toLocaleString(locale)} color={D.purple} />
+                  <StatCard label={t("admin.ai.stat.completionTokens")} value={aiMetrics.total_completion_tokens.toLocaleString(locale)} color={D.amber} />
                 </div>
               )}
 
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 28 }}>
                 <div style={{ ...card, padding: 20 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 700, color: D.ink, margin: "0 0 4px", display: "flex", alignItems: "center", gap: 6 }}>
-                    <TrendingUp size={15} style={{ color: D.blue }} /> Daily API Cost {chartIsSample && <span style={{ fontSize: 10.5, color: D.dim, fontWeight: 500 }}>(sample — no usage yet)</span>}
+                    <TrendingUp size={15} style={{ color: D.blue }} /> {t("admin.ai.dailyCost")} {chartIsSample && <span style={{ fontSize: 10.5, color: D.dim, fontWeight: 500 }}>{t("admin.ai.sampleNote")}</span>}
                   </h3>
                   <div style={{ width: "100%", height: 232, marginTop: 12 }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -557,43 +561,43 @@ export default function AdminDashboard() {
                 <div style={{ ...card, padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                   <div>
                     <h3 style={{ fontSize: 14, fontWeight: 700, color: D.ink, margin: "0 0 10px", display: "flex", alignItems: "center", gap: 8 }}>
-                      <Database size={15} style={{ color: D.mint }} /> pgvector re-indexing
+                      <Database size={15} style={{ color: D.mint }} /> {t("admin.ai.reindex.title")}
                     </h3>
                     <p style={{ fontSize: 12.5, color: D.muted, lineHeight: 1.5, margin: "0 0 14px" }}>
-                      Rebuild HNSW / IVFFlat indexes on the embedding tables.
+                      {t("admin.ai.reindex.body")}
                     </p>
                     {reindexMsg && (
                       <div style={{ fontSize: 12, background: D.surface, padding: "10px 12px", borderRadius: 6, border: `1px solid ${D.line}`, color: D.sub, marginBottom: 14 }}>{reindexMsg}</div>
                     )}
                   </div>
                   <button onClick={handleTriggerReindex} disabled={reindexing} style={{ width: "100%", padding: 11, background: D.mint, border: "none", borderRadius: 6, color: "#fff", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: reindexing ? "default" : "pointer", opacity: reindexing ? 0.75 : 1 }}>
-                    {reindexing ? <><Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }} /> Rebuilding…</> : <><RefreshCw size={15} /> Run Vector Re-Index</>}
+                    {reindexing ? <><Loader2 size={15} style={{ animation: "spin 0.8s linear infinite" }} /> {t("admin.ai.reindex.running")}</> : <><RefreshCw size={15} /> {t("admin.ai.reindex.run")}</>}
                   </button>
                 </div>
               </div>
 
-              <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, margin: "0 0 12px" }}>Token Consumption by Model</h3>
+              <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, margin: "0 0 12px" }}>{t("admin.ai.byModel")}</h3>
               <div style={tableWrap}>
                 <table style={table}>
                   <thead>
                     <tr>
-                      <th style={thStyle}>Model</th>
-                      <th style={thStyle}>Calls</th>
-                      <th style={thStyle}>Tokens</th>
-                      <th style={{ ...thStyle, textAlign: "right" }}>Cost (USD)</th>
+                      <th style={thStyle}>{t("admin.ai.col.model")}</th>
+                      <th style={thStyle}>{t("admin.ai.col.calls")}</th>
+                      <th style={thStyle}>{t("admin.ai.col.tokens")}</th>
+                      <th style={{ ...thStyle, textAlign: "right" }}>{t("admin.ai.col.cost")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {aiMetrics?.by_model.map((m, i) => (
                       <tr key={i}>
                         <td style={{ ...tdStyle, fontWeight: 600, color: D.blue }}>{m.model_name}</td>
-                        <td style={tdStyle}>{m.calls.toLocaleString()}</td>
-                        <td style={{ ...tdStyle, fontFamily: D.mono }}>{m.total_tokens.toLocaleString()}</td>
+                        <td style={tdStyle}>{m.calls.toLocaleString(locale)}</td>
+                        <td style={{ ...tdStyle, fontFamily: D.mono }}>{m.total_tokens.toLocaleString(locale)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", color: D.mint, fontWeight: 600 }}>${m.cost.toFixed(5)}</td>
                       </tr>
                     ))}
                     {(!aiMetrics || aiMetrics.by_model.length === 0) && (
-                      <tr><td colSpan={4} style={{ ...tdStyle, textAlign: "center", color: D.muted, padding: 20 }}>No LLM usage recorded.</td></tr>
+                      <tr><td colSpan={4} style={{ ...tdStyle, textAlign: "center", color: D.muted, padding: 20 }}>{t("admin.ai.empty")}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -604,18 +608,18 @@ export default function AdminDashboard() {
           {/* TAB: INFRASTRUCTURE */}
           {activeTab === "infra" && (
             <div>
-              <h1 style={h1Style}>Infrastructure &amp; Queue Monitoring</h1>
-              <p style={subStyle}>Azure Service Bus, ingestion retries, and third-party API rate limits.</p>
+              <h1 style={h1Style}>{t("admin.infra.title")}</h1>
+              <p style={subStyle}>{t("admin.infra.subtitle")}</p>
               {infraMetrics && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div style={{ ...card, padding: 20 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-                      <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, display: "flex", alignItems: "center", gap: 8, margin: 0 }}><HardDrive size={17} style={{ color: D.blue }} /> Azure Service Bus</h3>
-                      <span style={{ fontSize: 11, background: `${queueTone(infraMetrics.azure_service_bus.status)}18`, color: queueTone(infraMetrics.azure_service_bus.status), padding: "2px 8px", borderRadius: 99, fontWeight: 700, textTransform: "uppercase" }}>{infraMetrics.azure_service_bus.status.replace("_", " ")}</span>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, display: "flex", alignItems: "center", gap: 8, margin: 0 }}><HardDrive size={17} style={{ color: D.blue }} /> {t("admin.infra.serviceBus")}</h3>
+                      <span style={{ fontSize: 11, background: `${queueTone(infraMetrics.azure_service_bus.status)}18`, color: queueTone(infraMetrics.azure_service_bus.status), padding: "2px 8px", borderRadius: 99, fontWeight: 700, textTransform: "uppercase" }}>{t(`admin.infra.status.${infraMetrics.azure_service_bus.status}`)}</span>
                     </div>
-                    <InfraRow label="Queue" value={infraMetrics.azure_service_bus.queue_name} mono />
-                    <InfraRow label="Active Messages" value={countOrUnknown(infraMetrics.azure_service_bus.active_message_count)} strong color={D.blue} />
-                    <InfraRow label="Deadletter" value={countOrUnknown(infraMetrics.azure_service_bus.deadletter_message_count)} strong color={D.red} last={!infraMetrics.azure_service_bus.detail} />
+                    <InfraRow label={t("admin.infra.queue")} value={infraMetrics.azure_service_bus.queue_name} mono />
+                    <InfraRow label={t("admin.infra.activeMessages")} value={countOrUnknown(infraMetrics.azure_service_bus.active_message_count)} strong color={D.blue} />
+                    <InfraRow label={t("admin.infra.deadletter")} value={countOrUnknown(infraMetrics.azure_service_bus.deadletter_message_count)} strong color={D.red} last={!infraMetrics.azure_service_bus.detail} />
                     {infraMetrics.azure_service_bus.detail && (
                       <div style={{ marginTop: 12, padding: "8px 10px", borderRadius: 6, background: `${queueTone(infraMetrics.azure_service_bus.status)}0D`, border: `1px solid ${queueTone(infraMetrics.azure_service_bus.status)}28`, fontSize: 12, color: D.sub, lineHeight: 1.5 }}>
                         {infraMetrics.azure_service_bus.detail}
@@ -624,13 +628,13 @@ export default function AdminDashboard() {
                   </div>
 
                   <div style={{ ...card, padding: 20 }}>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, margin: "0 0 18px", display: "flex", alignItems: "center", gap: 8 }}><RefreshCw size={17} style={{ color: D.blue }} /> API Rate Limits</h3>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, color: D.ink, margin: "0 0 18px", display: "flex", alignItems: "center", gap: 8 }}><RefreshCw size={17} style={{ color: D.blue }} /> {t("admin.infra.rateLimits")}</h3>
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                       {infraMetrics.api_rate_limits.length === 0 && (
                         // Danh sách rỗng là câu trả lời thật. Trước đây chỗ này
                         // dựng sẵn github/proxycurl với hạn mức bịa.
                         <div style={{ fontSize: 13, color: D.muted, padding: "12px 0" }}>
-                          No provider has reported a rate limit yet.
+                          {t("admin.infra.noRateLimits")}
                         </div>
                       )}
                       {infraMetrics.api_rate_limits.map((l, i) => {
@@ -645,7 +649,7 @@ export default function AdminDashboard() {
                               <div style={{ width: `${pct * 100}%`, height: "100%", background: pct < 0.25 ? D.red : D.mint, borderRadius: 99 }} />
                             </div>
                             <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 11, color: D.dim, marginTop: 6 }}>
-                              Resets: {new Date(l.rate_limit_reset).toLocaleTimeString()}
+                              {t("admin.infra.resets", { time: new Date(l.rate_limit_reset).toLocaleTimeString(locale) })}
                             </div>
                           </div>
                         );
@@ -660,15 +664,15 @@ export default function AdminDashboard() {
           {/* TAB: AUDIT */}
           {activeTab === "audit" && (
             <div>
-              <h1 style={h1Style}>Compliance Audit Trail</h1>
-              <p style={subStyle}>Searchable log of system actions mapped by user_id and candidate_uuid.</p>
+              <h1 style={h1Style}>{t("admin.audit.title")}</h1>
+              <p style={subStyle}>{t("admin.audit.subtitle")}</p>
 
               <div style={{ display: "flex", gap: 10, maxWidth: 480, marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, padding: "8px 12px", background: D.canvas, border: `1px solid ${D.line}`, borderRadius: 6 }}>
                   <Search size={15} style={{ color: D.dim }} />
-                  <input value={auditSearch} onChange={(e) => setAuditSearch(e.target.value)} placeholder="Search by action, user, keyword…" onKeyDown={(e) => e.key === "Enter" && loadTabData()} style={{ background: "transparent", border: "none", outline: "none", color: D.ink, fontSize: 13, width: "100%", fontFamily: D.font }} />
+                  <input value={auditSearch} onChange={(e) => setAuditSearch(e.target.value)} placeholder={t("admin.audit.searchPlaceholder")} onKeyDown={(e) => e.key === "Enter" && loadTabData()} style={{ background: "transparent", border: "none", outline: "none", color: D.ink, fontSize: 13, width: "100%", fontFamily: D.font }} />
                 </div>
-                <button onClick={loadTabData} style={{ padding: "8px 16px", background: D.blue, border: "none", borderRadius: 6, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Search</button>
+                <button onClick={loadTabData} style={{ padding: "8px 16px", background: D.blue, border: "none", borderRadius: 6, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{t("admin.audit.search")}</button>
               </div>
 
               {loading ? <Spinner /> : (
@@ -676,17 +680,17 @@ export default function AdminDashboard() {
                   <table style={table}>
                     <thead>
                       <tr>
-                        <th style={thStyle}>Timestamp</th>
-                        <th style={thStyle}>Operator</th>
-                        <th style={thStyle}>Action</th>
-                        <th style={thStyle}>Network</th>
-                        <th style={thStyle}>Details</th>
+                        <th style={thStyle}>{t("admin.audit.col.timestamp")}</th>
+                        <th style={thStyle}>{t("admin.audit.col.operator")}</th>
+                        <th style={thStyle}>{t("admin.audit.col.action")}</th>
+                        <th style={thStyle}>{t("admin.audit.col.network")}</th>
+                        <th style={thStyle}>{t("admin.audit.col.details")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {auditLogs.map((log) => (
                         <tr key={log.id}>
-                          <td style={{ ...tdStyle, whiteSpace: "nowrap", color: D.muted }}>{new Date(log.created_at).toLocaleString()}</td>
+                          <td style={{ ...tdStyle, whiteSpace: "nowrap", color: D.muted }}>{new Date(log.created_at).toLocaleString(locale)}</td>
                           <td style={tdStyle}>
                             <div style={{ fontWeight: 600, color: D.ink }}>{log.user_name}</div>
                             {log.user_email && <div style={{ fontSize: 10.5, color: D.muted }}>{log.user_email}</div>}
@@ -698,7 +702,7 @@ export default function AdminDashboard() {
                             {log.ip_address ? (
                               <div style={{ fontFamily: D.mono }}>{log.ip_address}</div>
                             ) : (
-                              <div style={{ color: D.dim, fontStyle: "italic" }}>not recorded</div>
+                              <div style={{ color: D.dim, fontStyle: "italic" }}>{t("admin.audit.notRecorded")}</div>
                             )}
                             {log.user_agent && (
                               <div style={{ fontSize: 10, color: D.dim, maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={log.user_agent}>{log.user_agent}</div>
@@ -712,8 +716,8 @@ export default function AdminDashboard() {
                       {auditLogs.length === 0 && (
                         <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: D.muted, padding: 28 }}>
                           {auditSearch
-                            ? `No audit trail matches “${auditSearch}”.`
-                            : "No audit trails recorded yet."}
+                            ? t("admin.audit.noMatch", { query: auditSearch })
+                            : t("admin.audit.empty")}
                         </td></tr>
                       )}
                     </tbody>

@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Plus, Users, X } from "lucide-react";
-import { D } from "../lib/shared";
+import { D, tint } from "../lib/shared";
+import { useT } from "@/lib/i18n";
 import {
   getPanel,
   invitePanelMember,
@@ -28,6 +29,11 @@ export function ReviewPanelPicker({
   jobPostingId: string | null;
   onCountChange?: (count: number) => void;
 }) {
+  const t = useT();
+  // Đọc t qua ref trong effect nạp dữ liệu: nếu đưa t vào deps, mỗi lần đổi
+  // ngôn ngữ sẽ gọi lại API và nháy "Loading panel…" dù dữ liệu không đổi.
+  const tRef = useRef(t);
+  tRef.current = t;
   const [panel, setPanel] = useState<PanelMember[]>([]);
   const [available, setAvailable] = useState<PanelMember[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,7 +61,7 @@ export function ReviewPanelPicker({
         publish(members);
         setAvailable(all);
       })
-      .catch((err) => alive && setError(err instanceof Error ? err.message : "Could not load the panel."))
+      .catch((err) => alive && setError(err instanceof Error ? err.message : tRef.current("jobs.panel.loadError")))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
@@ -68,7 +74,7 @@ export function ReviewPanelPicker({
     try {
       publish(await run());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That change did not go through.");
+      setError(err instanceof Error ? err.message : t("jobs.panel.changeError"));
     } finally {
       setBusyId(null);
     }
@@ -90,7 +96,7 @@ export function ReviewPanelPicker({
   if (!jobPostingId) {
     return (
       <div style={{ ...card, color: D.muted, fontSize: 12.5 }}>
-        Save this posting first, then choose who reviews the applications.
+        {t("jobs.panel.saveFirst")}
       </div>
     );
   }
@@ -99,20 +105,20 @@ export function ReviewPanelPicker({
     <div style={card}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
         <Users size={15} strokeWidth={1.8} color={D.blue} />
-        <span style={{ fontSize: 13.5, fontWeight: 700, color: D.ink }}>Review panel</span>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: D.ink }}>{t("jobs.panel.title")}</span>
       </div>
 
       <p style={{ fontSize: 12, color: D.sub, lineHeight: 1.6, margin: "0 0 12px" }}>
-        Only these Tech Leads can open applications for this posting, and{" "}
+        {t("jobs.panel.rule.lead")}{" "}
         <strong style={{ color: D.ink }}>
-          {needed > 0 ? `${needed} of ${panel.length}` : "none of them"}
+          {needed > 0 ? t("jobs.panel.rule.count", { needed, total: panel.length }) : t("jobs.panel.rule.none")}
         </strong>{" "}
-        must approve before it reaches HR.
+        {t("jobs.panel.rule.tail")}
       </p>
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: D.muted, fontSize: 12 }}>
-          <Loader2 size={14} className="animate-spin" /> Loading panel…
+          <Loader2 size={14} className="animate-spin" /> {t("jobs.panel.loading")}
         </div>
       ) : (
         <>
@@ -122,15 +128,14 @@ export function ReviewPanelPicker({
               style={{
                 padding: "8px 10px",
                 borderRadius: 5,
-                background: `${D.amber}0D`,
-                border: `1px solid ${D.amber}33`,
+                background: `${tint("amber", "0D")}`,
+                border: `1px solid ${tint("amber", "33")}`,
                 color: D.amber,
                 fontSize: 11.5,
                 marginBottom: 10,
               }}
             >
-              No reviewers yet — this posting cannot be published, and any application
-              to it would sit unreviewed.
+              {t("jobs.panel.empty")}
             </div>
           )}
 
@@ -154,7 +159,7 @@ export function ReviewPanelPicker({
                 </div>
                 <button
                   type="button"
-                  aria-label={`Remove ${m.name}`}
+                  aria-label={t("jobs.panel.remove", { name: m.name })}
                   disabled={busyId === m.reviewer_id}
                   onClick={() =>
                     act(m.reviewer_id, () => removePanelMember(jobPostingId, m.reviewer_id))
@@ -205,7 +210,7 @@ export function ReviewPanelPicker({
           )}
 
           {invitable.length === 0 && panel.length > 0 && (
-            <div style={{ fontSize: 11, color: D.dim }}>Every Tech Lead is on this panel.</div>
+            <div style={{ fontSize: 11, color: D.dim }}>{t("jobs.panel.allInvited")}</div>
           )}
         </>
       )}
@@ -217,8 +222,8 @@ export function ReviewPanelPicker({
             marginTop: 10,
             padding: "7px 9px",
             borderRadius: 5,
-            background: `${D.red}0D`,
-            border: `1px solid ${D.red}28`,
+            background: `${tint("red", "0D")}`,
+            border: `1px solid ${tint("red", "28")}`,
             color: D.red,
             fontSize: 11.5,
           }}

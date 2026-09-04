@@ -27,6 +27,14 @@ export default function RootLayout({
   return (
     <html lang="vi" className={inter.variable}>
       <body suppressHydrationWarning={true}>
+        {/* Đặt data-theme TRƯỚC khi React chạy, nếu không trang tối sẽ loé
+            trắng một nhịp ở mỗi lần tải. Cùng luật với ThemeContext: trang
+            công khai luôn sáng. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var p=location.pathname;if(/^\/(login|register|careers)(\/|$)/.test(p))return;var t=localStorage.getItem("smartats_theme");var d=t==="dark"||((!t||t==="system")&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.setAttribute("data-theme",d?"dark":"light");}catch(e){}})();`,
+          }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>

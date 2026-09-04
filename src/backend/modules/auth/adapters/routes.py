@@ -8,8 +8,9 @@ from modules.auth.application.auth_service import AuthService
 from modules.auth.domain.models import (
     AuthTokenResponse,
     AuthUser,
-    CompanyUpdateRequest,
+    ChangePasswordRequest,
     GoogleLoginRequest,
+    ProfileUpdateRequest,
     LoginRequest,
     RefreshTokenRequest,
     RefreshTokenResponse,
@@ -130,22 +131,41 @@ async def read_me(
 
 
 @router.patch("/me", response_model=AuthUser)
-async def update_my_company(
-    payload: CompanyUpdateRequest,
+async def update_my_profile(
+    payload: ProfileUpdateRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     current_user: Annotated[AuthUser, Depends(get_current_user)],
 ) -> AuthUser:
-    """Hoàn tất thông tin công ty (màn hình /onboarding/company) hoặc sửa nó.
+    """Sửa hồ sơ của chính mình: tên, công ty, website (Settings / onboarding).
 
-    Chỉ hai cột công ty. Role, email, is_approved KHÔNG đi qua đây — đó là
-    việc của admin.
+    Role, email, is_approved KHÔNG đi qua đây — đó là việc của admin.
     """
     try:
-        return await auth_service.update_company(
-            current_user, payload.company_name, payload.company_website
+        return await auth_service.update_profile(
+            current_user,
+            name=payload.name,
+            company_name=payload.company_name,
+            company_website=payload.company_website,
         )
     except LookupError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_my_password(
+    payload: ChangePasswordRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    current_user: Annotated[AuthUser, Depends(get_current_user)],
+) -> None:
+    """Đổi mật khẩu; phải gửi kèm mật khẩu hiện tại. Tài khoản Google bị từ chối."""
+    try:
+        await auth_service.change_password(
+            current_user, payload.current_password, payload.new_password
+        )
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
 @router.post("/refresh", response_model=RefreshTokenResponse)

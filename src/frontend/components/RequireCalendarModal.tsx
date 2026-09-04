@@ -4,9 +4,11 @@ import React, { useEffect, useState } from "react";
 import { Calendar, Link2, AlertCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { checkCalendarStatus, getGoogleAuthUrl } from "../services/schedulingService";
-import { D } from "../lib/shared";
+import { D, tint } from "../lib/shared";
+import { useT } from "../lib/i18n";
 
 export function RequireCalendarModal() {
+  const t = useT();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [connected, setConnected] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,7 +46,7 @@ export function RequireCalendarModal() {
       const { url } = await getGoogleAuthUrl();
       window.location.href = url;
     } catch (err: any) {
-      setError(err?.message || "Failed to initialize Google Calendar authentication");
+      setError(err?.message || t("calendar.errInit"));
       setLoading(false);
     }
   };
@@ -84,7 +86,7 @@ export function RequireCalendarModal() {
             width: "64px",
             height: "64px",
             borderRadius: "50%",
-            background: `${D.blue}15`,
+            background: `${tint("blue", "15")}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -95,11 +97,11 @@ export function RequireCalendarModal() {
         </div>
 
         <h2 style={{ fontSize: "20px", fontWeight: 700, color: D.ink, marginBottom: "8px" }}>
-          Google Calendar Connection Required
+          {t("calendar.title")}
         </h2>
 
         <p style={{ fontSize: "13.5px", color: D.muted, lineHeight: 1.5, marginBottom: "24px" }}>
-          Welcome, <strong>{user?.name || "Tech Lead"}</strong>. To participate as an interviewer and allow automated interview availability matching, you must connect your Google Calendar.
+          {t("calendar.welcome")} <strong>{user?.name || t("role.tech_lead")}</strong>. {t("calendar.body")}
         </p>
 
         {error && (
@@ -110,8 +112,8 @@ export function RequireCalendarModal() {
               gap: "8px",
               padding: "10px 14px",
               borderRadius: "8px",
-              background: `${D.red}10`,
-              border: `1px solid ${D.red}30`,
+              background: `${tint("red", "10")}`,
+              border: `1px solid ${tint("red", "30")}`,
               color: D.red,
               fontSize: "12px",
               marginBottom: "16px",
@@ -146,11 +148,11 @@ export function RequireCalendarModal() {
           }}
         >
           <Link2 size={16} />
-          {loading ? "Redirecting to Google..." : "Connect Google Calendar Now"}
+          {loading ? t("calendar.redirecting") : t("calendar.connectNow")}
         </button>
 
         <p style={{ fontSize: "11px", color: D.dim, marginTop: "16px" }}>
-          You only need to connect your calendar once.
+          {t("calendar.once")}
         </p>
       </div>
 

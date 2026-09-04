@@ -1,5 +1,5 @@
 import structlog
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, ContentSettings
 
 from modules.shared.infrastructure.config import Settings
 
@@ -46,7 +46,13 @@ class AzureBlobService:
                 container=BLOB_CONTAINER_NAME, blob=blob_name
             )
 
-            blob_client.upload_blob(file_content, overwrite=True)
+            # Không khai content type thì Azure ghi `application/octet-stream`
+            # và trình duyệt tải file về thay vì hiển thị trong iframe.
+            blob_client.upload_blob(
+                file_content,
+                overwrite=True,
+                content_settings=ContentSettings(content_type="application/pdf"),
+            )
 
             storage_url = blob_client.url
 

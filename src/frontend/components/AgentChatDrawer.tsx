@@ -7,15 +7,20 @@ import { useAgentChat } from "../hooks/useAgentChat";
 import { COMPANY_ONBOARDING_PATH, useAuth } from "../contexts/AuthContext";
 import { isOperationalRole } from "../lib/rbac";
 import { isPublicRoute } from "../lib/routes";
-import { D } from "../lib/shared";
+import { D, tint } from "../lib/shared";
+import { useT } from "../lib/i18n";
+
+/** Agent trả lời về ứng viên đang mở, nên nút chat chỉ sống ở trang ứng viên. */
+export const AGENT_CHAT_PATH_PREFIX = "/candidate-profile";
 
 /**
- * Nút chat chỉ có mặt trong workspace: đã đăng nhập, role nghiệp vụ (hr /
- * tech_lead), và không phải màn hình đăng nhập / đăng ký / careers /
- * onboarding. Trước đây nó chỉ hỏi `user` có tồn tại không, mà `user` được
- * khôi phục từ localStorage ngay khi app mở — nên nút hiện cả trên trang
- * đăng nhập trong lúc AuthGuard còn đang chuyển hướng, và trên trang careers
- * khi HR xem thử.
+ * Nút chat chỉ có mặt khi đã mở MỘT ứng viên cụ thể: đã đăng nhập với role
+ * nghiệp vụ (hr / tech_lead) và đang ở `/candidate-profile/*`.
+ *
+ * Trước đây nó chỉ hỏi `user` có tồn tại không, mà `user` được khôi phục từ
+ * localStorage ngay khi app mở — nên nút hiện cả trên trang đăng nhập trong
+ * lúc AuthGuard còn đang chuyển hướng, trên trang careers khi HR xem thử, và
+ * trên dashboard / tin tuyển dụng nơi không có ứng viên nào để hỏi.
  */
 export function shouldShowAgentChat(
   user: { role: string } | null | undefined,
@@ -23,7 +28,7 @@ export function shouldShowAgentChat(
 ): boolean {
   if (!user || !isOperationalRole(user.role as never)) return false;
   if (!pathname || isPublicRoute(pathname) || pathname === COMPANY_ONBOARDING_PATH) return false;
-  return true;
+  return pathname === AGENT_CHAT_PATH_PREFIX || pathname.startsWith(`${AGENT_CHAT_PATH_PREFIX}/`);
 }
 
 function MarkdownMessage({ content }: { content: string }) {
@@ -92,18 +97,19 @@ function parseAgentResult(content: string): AgentResult | null {
 
 function CandidateCards({ result }: { result: AgentResult }) {
   const router = useRouter();
+  const t = useT();
   return <div style={{ display: "grid", gap: 8 }}>
     <div style={{ lineHeight: 1.45 }}>{result.summary}</div>
     {result.candidates.map((candidate) => {
       const tone = candidate.recommendation === "Reject" ? D.red : candidate.recommendation === "Consider" ? D.amber : D.mint;
       const concerns = [...candidate.missing_requirements, ...candidate.risks];
       return <article key={candidate.candidate_id} style={{ border: `1px solid ${D.line}`, borderLeft: `3px solid ${tone}`, borderRadius: 6, padding: 10, background: D.surface }}>
-        <div style={{ display: "flex", alignItems: "start", gap: 8 }}><strong style={{ flex: 1 }}>{candidate.display_name || `Ứng viên (#${candidate.candidate_code})`}</strong><span style={{ color: tone, fontWeight: 700, fontSize: 11 }}>{candidate.recommendation}</span></div>
-        <div style={{ color: D.muted, fontSize: 11, marginTop: 4 }}>Confidence: {(candidate.confidence * 100).toFixed(0)}%</div>
+        <div style={{ display: "flex", alignItems: "start", gap: 8 }}><strong style={{ flex: 1 }}>{candidate.display_name || t("candidate.chat.candidateFallback", { code: candidate.candidate_code })}</strong><span style={{ color: tone, fontWeight: 700, fontSize: 11 }}>{candidate.recommendation}</span></div>
+        <div style={{ color: D.muted, fontSize: 11, marginTop: 4 }}>{t("candidate.chat.confidence", { pct: (candidate.confidence * 100).toFixed(0) })}</div>
         <div style={{ marginTop: 8, lineHeight: 1.45 }}>{candidate.reasoning}</div>
         {candidate.key_strengths.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>{candidate.key_strengths.map((item) => <span key={item} style={{ padding: "3px 6px", borderRadius: 3, background: D.mintSoft, color: D.sub, fontSize: 10 }}>{item}</span>)}</div>}
         {concerns.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 17, color: D.muted, fontSize: 11 }}>{concerns.map((item) => <li key={item}>{item}</li>)}</ul>}
-        <button type="button" onClick={() => router.push(`/candidate-profile/enriched?uuid=${encodeURIComponent(candidate.candidate_id)}`)} style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 9, border: 0, padding: 0, background: "transparent", color: D.blue, cursor: "pointer", fontSize: 11 }}><ExternalLink size={12} /> View profile</button>
+        <button type="button" onClick={() => router.push(`/candidate-profile/enriched?uuid=${encodeURIComponent(candidate.candidate_id)}`)} style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 9, border: 0, padding: 0, background: "transparent", color: D.blue, cursor: "pointer", fontSize: 11 }}><ExternalLink size={12} /> {t("candidate.chat.viewProfile")}</button>
       </article>;
     })}
   </div>;
@@ -117,6 +123,7 @@ function MessageContent({ message }: { message: { role: "assistant" | "user" | "
 export function AgentChatDrawer() {
   const { user } = useAuth();
   const pathname = usePathname();
+  const t = useT();
   const { messages, isLoading, isOpen, setIsOpen, sendMessage, retry } = useAgentChat();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -135,16 +142,16 @@ export function AgentChatDrawer() {
 
   return (
     <>
-      {!isOpen && <button type="button" aria-label="Open agent chat" title="Open agent chat" onClick={() => setIsOpen(true)} style={{ position: "fixed", right: 22, bottom: 22, zIndex: 60, width: 46, height: 46, border: 0, borderRadius: "50%", background: D.blue, color: "white", cursor: "pointer", boxShadow: "0 8px 24px rgba(15,23,42,.2)" }}><Bot size={19} /></button>}
-      {isOpen && <aside aria-label="Agent chat" style={{ position: "fixed", right: 20, bottom: 20, zIndex: 60, width: "min(390px, calc(100vw - 32px))", height: "min(650px, calc(100dvh - 40px))", display: "flex", flexDirection: "column", background: D.surface, border: `1px solid ${D.line}`, borderRadius: 8, boxShadow: "0 18px 45px rgba(15,23,42,.18)" }}>
-        <header style={{ padding: "14px 15px", display: "flex", alignItems: "center", gap: 9, borderBottom: `1px solid ${D.line}` }}><Bot size={17} color={D.blue} /><strong style={{ flex: 1, fontSize: 13 }}>ATS Agent</strong><button type="button" aria-label="Minimize agent chat" title="Minimize" onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><ChevronDown size={16} /></button><button type="button" aria-label="Close agent chat" title="Close" onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><X size={15} /></button></header>
+      {!isOpen && <button type="button" aria-label={t("candidate.chat.open")} title={t("candidate.chat.open")} onClick={() => setIsOpen(true)} style={{ position: "fixed", right: 22, bottom: 22, zIndex: 60, width: 46, height: 46, border: 0, borderRadius: "50%", background: D.blue, color: "white", cursor: "pointer", boxShadow: "0 8px 24px rgba(15,23,42,.2)" }}><Bot size={19} /></button>}
+      {isOpen && <aside aria-label={t("candidate.chat.aria")} style={{ position: "fixed", right: 20, bottom: 20, zIndex: 60, width: "min(390px, calc(100vw - 32px))", height: "min(650px, calc(100dvh - 40px))", display: "flex", flexDirection: "column", background: D.surface, border: `1px solid ${D.line}`, borderRadius: 8, boxShadow: "0 18px 45px rgba(15,23,42,.18)" }}>
+        <header style={{ padding: "14px 15px", display: "flex", alignItems: "center", gap: 9, borderBottom: `1px solid ${D.line}` }}><Bot size={17} color={D.blue} /><strong style={{ flex: 1, fontSize: 13 }}>{t("candidate.chat.title")}</strong><button type="button" aria-label={t("candidate.chat.minimizeAria")} title={t("candidate.chat.minimize")} onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><ChevronDown size={16} /></button><button type="button" aria-label={t("candidate.chat.closeAria")} title={t("common.close")} onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><X size={15} /></button></header>
         <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-          {messages.length === 0 && <div style={{ color: D.muted, fontSize: 12, textAlign: "center", margin: "auto 12px" }}>Ask the agent to search candidates or explain a recommendation.</div>}
-          {messages.map((message) => <div key={message.id} style={{ alignSelf: message.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", padding: "9px 11px", borderRadius: 7, background: message.role === "user" ? D.blue : message.role === "error" ? "#fff1f2" : D.canvas, color: message.role === "user" ? "white" : message.role === "error" ? "#be123c" : D.ink, fontSize: 12 }}>{message.role === "error" ? <><div>{message.content}</div><button type="button" onClick={() => message.retryMessage && retry(message.retryMessage)} disabled={isLoading} style={{ marginTop: 8, border: "1px solid currentColor", background: "transparent", borderRadius: 4, padding: "4px 8px", color: "inherit", cursor: "pointer" }}>Retry</button></> : <MessageContent message={message} />}</div>)}
-          {isLoading && <div style={{ alignSelf: "flex-start", color: D.muted, fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={13} style={{ animation: "spin .8s linear infinite" }} /> Agent is thinking...</div>}
+          {messages.length === 0 && <div style={{ color: D.muted, fontSize: 12, textAlign: "center", margin: "auto 12px" }}>{t("candidate.chat.empty")}</div>}
+          {messages.map((message) => <div key={message.id} style={{ alignSelf: message.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", padding: "9px 11px", borderRadius: 7, background: message.role === "user" ? D.blue : message.role === "error" ? tint("red", "12") : D.canvas, color: message.role === "user" ? "white" : message.role === "error" ? D.red : D.ink, fontSize: 12 }}>{message.role === "error" ? <><div>{message.content}</div><button type="button" onClick={() => message.retryMessage && retry(message.retryMessage)} disabled={isLoading} style={{ marginTop: 8, border: "1px solid currentColor", background: "transparent", borderRadius: 4, padding: "4px 8px", color: "inherit", cursor: "pointer" }}>{t("common.retry")}</button></> : <MessageContent message={message} />}</div>)}
+          {isLoading && <div style={{ alignSelf: "flex-start", color: D.muted, fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={13} style={{ animation: "spin .8s linear infinite" }} /> {t("candidate.chat.thinking")}</div>}
           <div ref={bottomRef} />
         </div>
-        <form onSubmit={submit} style={{ display: "flex", gap: 8, padding: 12, borderTop: `1px solid ${D.line}` }}><input value={input} onChange={(event) => setInput(event.target.value)} disabled={isLoading} placeholder="Ask the agent..." style={{ minWidth: 0, flex: 1, border: `1px solid ${D.line}`, borderRadius: 5, padding: "9px 10px", font: `12px ${D.font}`, outline: "none" }} /><button type="submit" aria-label="Send message" title="Send" disabled={isLoading || !input.trim()} style={{ width: 36, border: 0, borderRadius: 5, background: D.blue, color: "white", cursor: "pointer", opacity: isLoading || !input.trim() ? .5 : 1 }}><Send size={15} /></button></form>
+        <form onSubmit={submit} style={{ display: "flex", gap: 8, padding: 12, borderTop: `1px solid ${D.line}` }}><input value={input} onChange={(event) => setInput(event.target.value)} disabled={isLoading} placeholder={t("candidate.chat.placeholder")} style={{ minWidth: 0, flex: 1, border: `1px solid ${D.line}`, borderRadius: 5, padding: "9px 10px", font: `12px ${D.font}`, outline: "none" }} /><button type="submit" aria-label={t("candidate.chat.sendAria")} title={t("candidate.chat.send")} disabled={isLoading || !input.trim()} style={{ width: 36, border: 0, borderRadius: 5, background: D.blue, color: "white", cursor: "pointer", opacity: isLoading || !input.trim() ? .5 : 1 }}><Send size={15} /></button></form>
       </aside>}
     </>
   );

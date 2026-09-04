@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Download, ExternalLink, FileText, Loader2, RefreshCw } from "lucide-react";
 import { D } from "../lib/shared";
+import { useT } from "../lib/i18n";
 import { getCandidateCvLink } from "../services/candidateCvService";
 
 /**
@@ -30,7 +31,9 @@ export function CandidateCvPanel({
   candidateUuid: string;
   candidateName?: string | null;
 }) {
+  const t = useT();
   const [url, setUrl] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -42,7 +45,9 @@ export function CandidateCvPanel({
     setState("loading");
     setMessage(null);
     try {
-      setUrl(await getCandidateCvLink(candidateUuid));
+      const link = await getCandidateCvLink(candidateUuid);
+      setUrl(link.url);
+      setDownloadUrl(link.download_url ?? link.url);
       setState("ready");
     } catch (err) {
       // 404 nghĩa là "hồ sơ này không có CV" — một trạng thái bình thường, và
@@ -51,7 +56,9 @@ export function CandidateCvPanel({
       const notFound = err instanceof Error && /not found/i.test(err.message);
       setState(notFound ? "missing" : "error");
       if (!notFound) {
-        setMessage(err instanceof Error ? err.message : "Could not load the CV.");
+        // Không dịch ở đây: `load` là dependency của effect nạp CV, kéo `t`
+        // vào là đổi ngôn ngữ sẽ xin lại link. Thiếu thông điệp thì dịch lúc vẽ.
+        setMessage(err instanceof Error ? err.message : null);
       }
     }
   }, [candidateUuid]);
@@ -102,7 +109,7 @@ export function CandidateCvPanel({
           }}
           title={candidateName ?? undefined}
         >
-          {candidateName ? `${candidateName} — CV` : "Original CV"}
+          {candidateName ? t("candidate.cv.titleFor", { name: candidateName }) : t("candidate.cv.originalCv")}
         </span>
 
         <span style={{ flex: 1 }} />
@@ -111,20 +118,21 @@ export function CandidateCvPanel({
           <>
             <a href={url} target="_blank" rel="noopener noreferrer" style={iconButton}>
               <ExternalLink size={11} strokeWidth={2} />
-              Open
+              {t("common.open")}
             </a>
-            {/* download qua <a download> chứ không phải script: link là
-                cross-origin, nên trình duyệt tự xử lý phần lưu file. */}
-            <a href={url} download style={iconButton}>
+            {/* Thuộc tính `download` bị trình duyệt bỏ qua với link khác
+                origin, nên phần "tải về" do máy chủ lưu trữ quyết bằng
+                Content-Disposition trên `download_url`. */}
+            <a href={downloadUrl ?? url} download style={iconButton}>
               <Download size={11} strokeWidth={2} />
-              Download
+              {t("common.download")}
             </a>
           </>
         )}
         {state === "error" && (
           <button type="button" onClick={load} style={iconButton}>
             <RefreshCw size={11} strokeWidth={2} />
-            Retry
+            {t("common.retry")}
           </button>
         )}
       </div>
@@ -133,21 +141,21 @@ export function CandidateCvPanel({
         {state === "loading" && (
           <Centered>
             <Loader2 size={20} strokeWidth={1.8} color={D.blue} className="animate-spin" />
-            <span>Loading the document…</span>
+            <span>{t("candidate.cv.loading")}</span>
           </Centered>
         )}
 
         {state === "missing" && (
           <Centered>
             <FileText size={22} strokeWidth={1.5} color={D.dim} />
-            <span>No CV is attached to this candidate.</span>
+            <span>{t("candidate.cv.missing")}</span>
           </Centered>
         )}
 
         {state === "error" && (
           <Centered tone={D.red}>
             <AlertCircle size={22} strokeWidth={1.5} color={D.red} />
-            <span>{message}</span>
+            <span>{message ?? t("candidate.cv.couldNotLoad")}</span>
           </Centered>
         )}
 
@@ -155,7 +163,7 @@ export function CandidateCvPanel({
           <iframe
             key={url}
             src={url}
-            title="Candidate CV"
+            title={t("candidate.cv.frameTitle")}
             style={{ width: "100%", height: "100%", border: "none", display: "block" }}
           />
         )}

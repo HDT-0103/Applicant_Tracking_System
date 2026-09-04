@@ -17,6 +17,9 @@ class AuthUser(BaseModel):
     # `None` = chưa khai: frontend đưa người đó tới /onboarding/company.
     company_name: str | None = None
     company_website: str | None = None
+    # Tài khoản có mật khẩu (đăng ký bằng email) hay chỉ đăng nhập Google.
+    # Frontend dựa vào đây để ẩn phần "đổi mật khẩu" với tài khoản Google.
+    has_password: bool = False
 
 
 
@@ -73,8 +76,23 @@ class RegisterRequest(BaseModel):
     company_website: str | None = Field(default=None, max_length=500)
 
 
-class CompanyUpdateRequest(BaseModel):
-    """Hoàn tất / sửa thông tin công ty (PATCH /api/auth/me)."""
+class ProfileUpdateRequest(BaseModel):
+    """Sửa hồ sơ của CHÍNH MÌNH (PATCH /api/auth/me).
 
-    company_name: str = Field(min_length=2, max_length=200)
+    Chỉ ba trường hiển thị. Email, role, is_approved KHÔNG đi qua đây — đó là
+    việc của admin. Trường nào bỏ qua thì giữ nguyên; màn hình onboarding chỉ
+    gửi công ty, màn hình Settings gửi cả tên.
+    """
+
+    name: str | None = Field(default=None, min_length=2, max_length=100)
+    company_name: str | None = Field(default=None, min_length=2, max_length=200)
     company_website: str | None = Field(default=None, max_length=500)
+
+
+# Tên cũ, giữ để import cũ không gãy.
+CompanyUpdateRequest = ProfileUpdateRequest
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=6, max_length=200)

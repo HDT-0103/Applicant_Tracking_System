@@ -4,12 +4,8 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { User, Mail, KeyRound, Loader2, ArrowRight, Building2, Globe } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import {
-  ROLE_LABELS,
-  SELF_SIGNUP_ROLES,
-  SELF_SIGNUP_ROLE_HINTS,
-  type SelfSignupRole,
-} from "../../lib/rbac";
+import { SELF_SIGNUP_ROLES, type SelfSignupRole } from "../../lib/rbac";
+import { useT } from "../../lib/i18n";
 import { AuthShell } from "../../components/auth/AuthShell";
 import { AuthField } from "../../components/auth/AuthField";
 import { T } from "../../components/auth/authTheme";
@@ -17,6 +13,7 @@ import { submitStyle } from "../../components/Login";
 
 export default function RegisterPage() {
   const { registerWithEmailPassword } = useAuth();
+  const t = useT();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -34,7 +31,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password || !companyName.trim()) {
-      setError("Please fill in all required fields.");
+      setError(t("auth.register.fillRequired"));
       return;
     }
     setIsSubmitting(true);
@@ -46,7 +43,7 @@ export default function RegisterPage() {
       });
       // Redirect is handled in AuthContext (recruiters land on the workspace).
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed.");
+      setError(err instanceof Error ? err.message : t("auth.register.failed"));
     } finally {
       setIsSubmitting(false);
     }
@@ -54,14 +51,14 @@ export default function RegisterPage() {
 
   return (
     <AuthShell
-      heading="Create your account"
-      subheading="Pick your role to get started with SmartATS"
+      heading={t("auth.register.heading")}
+      subheading={t("auth.register.subheading")}
       error={error}
       footer={
         <>
-          Already have an account?{" "}
+          {t("auth.register.haveAccount")}{" "}
           <Link href="/login" style={{ color: T.primary, fontWeight: 600, textDecoration: "none" }}>
-            Sign in
+            {t("auth.register.signIn")}
           </Link>
         </>
       }
@@ -69,49 +66,49 @@ export default function RegisterPage() {
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <AuthField
           id="name"
-          label="Full name"
+          label={t("auth.register.fullName")}
           value={name}
           onChange={setName}
-          placeholder="Jane Doe"
+          placeholder={t("auth.register.fullNamePlaceholder")}
           icon={User}
           autoComplete="name"
         />
         <AuthField
           id="email"
-          label="Work email"
+          label={t("auth.register.workEmail")}
           type="email"
           value={email}
           onChange={setEmail}
-          placeholder="jane@company.com"
+          placeholder={t("auth.register.workEmailPlaceholder")}
           icon={Mail}
           autoComplete="email"
         />
         <AuthField
           id="password"
-          label="Password"
+          label={t("auth.register.password")}
           type="password"
           value={password}
           onChange={setPassword}
-          placeholder="Min. 6 characters"
+          placeholder={t("auth.register.passwordPlaceholder")}
           icon={KeyRound}
           autoComplete="new-password"
         />
         <AuthField
           id="company-name"
-          label="Company name"
+          label={t("auth.register.companyName")}
           value={companyName}
           onChange={setCompanyName}
-          placeholder="Acme Corp"
+          placeholder={t("auth.register.companyNamePlaceholder")}
           icon={Building2}
           autoComplete="organization"
         />
         <AuthField
           id="company-website"
-          label="Company website (optional)"
+          label={t("auth.register.companyWebsite")}
           type="url"
           value={companyWebsite}
           onChange={setCompanyWebsite}
-          placeholder="https://acme.example"
+          placeholder={t("auth.register.companyWebsitePlaceholder")}
           icon={Globe}
           autoComplete="url"
           required={false}
@@ -127,7 +124,7 @@ export default function RegisterPage() {
               padding: 0,
             }}
           >
-            I am joining as
+            {t("auth.register.joiningAs")}
           </legend>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {SELF_SIGNUP_ROLES.map((option) => {
@@ -167,10 +164,10 @@ export default function RegisterPage() {
                         color: T.ink,
                       }}
                     >
-                      {ROLE_LABELS[option]}
+                      {t(`role.${option}`)}
                     </span>
                     <span style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
-                      {SELF_SIGNUP_ROLE_HINTS[option]}
+                      {t(`role.hint.${option}`)}
                     </span>
                   </span>
                 </label>
@@ -183,19 +180,18 @@ export default function RegisterPage() {
           {isSubmitting ? (
             <>
               <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} />
-              <span>Creating account…</span>
+              <span>{t("auth.register.submitting")}</span>
             </>
           ) : (
             <>
-              <span>Create account</span>
+              <span>{t("auth.register.submit")}</span>
               <ArrowRight size={16} />
             </>
           )}
         </button>
 
         <p style={{ fontSize: 12, color: T.dim, textAlign: "center", margin: "2px 0 0", lineHeight: 1.5 }}>
-          System administrator access cannot be self-assigned — only an
-          administrator can grant it.
+          {t("auth.register.adminNote")}
         </p>
       </form>
     </AuthShell>

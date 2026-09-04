@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { MapPin, X } from "lucide-react";
-import { D } from "../lib/shared";
+import { D, tint } from "../lib/shared";
+import { useT } from "../lib/i18n";
 
 /**
  * Hỏi phòng và địa chỉ TRƯỚC khi gửi thư mời cho ứng viên.
@@ -29,6 +30,7 @@ export function SendDetailsModal({
   onCancel: () => void;
   onSend: (room: string, address: string) => void;
 }) {
+  const t = useT();
   const [room, setRoom] = useState("");
   const [address, setAddress] = useState("");
 
@@ -60,7 +62,7 @@ export function SendDetailsModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Send interview details"
+      aria-label={t("sendDetails.title")}
       style={{
         position: "fixed",
         inset: 0,
@@ -94,13 +96,13 @@ export function SendDetailsModal({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <MapPin size={14} strokeWidth={1.8} color={D.blue} />
             <span style={{ fontSize: 13, fontWeight: 700, color: D.ink }}>
-              Send interview details
+              {t("sendDetails.title")}
             </span>
           </div>
           <button
             type="button"
             onClick={onCancel}
-            aria-label="Close"
+            aria-label={t("common.close")}
             style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: D.muted }}
           >
             <X size={16} strokeWidth={2} />
@@ -109,26 +111,26 @@ export function SendDetailsModal({
 
         <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
           <p style={{ fontSize: 12, color: D.sub, lineHeight: 1.6, margin: 0 }}>
-            {candidateName} will receive these exactly as written, for{" "}
+            {t("sendDetails.intro", { name: candidateName })}{" "}
             <strong style={{ color: D.ink }}>{slotTime}</strong>.
           </p>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: D.ink }}>Room *</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: D.ink }}>{t("sendDetails.room")}</span>
             <input
               value={room}
               onChange={(e) => setRoom(e.target.value)}
-              placeholder="Meeting Room 4.02"
+              placeholder={t("sendDetails.roomPlaceholder")}
               style={field}
             />
           </label>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: D.ink }}>Address *</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: D.ink }}>{t("sendDetails.address")}</span>
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="227 Nguyen Van Cu, District 5, HCMC"
+              placeholder={t("sendDetails.addressPlaceholder")}
               style={field}
             />
           </label>
@@ -139,8 +141,8 @@ export function SendDetailsModal({
               style={{
                 fontSize: 11.5,
                 color: D.red,
-                background: `${D.red}0D`,
-                border: `1px solid ${D.red}28`,
+                background: `${tint("red", "0D")}`,
+                border: `1px solid ${tint("red", "28")}`,
                 borderRadius: 5,
                 padding: "8px 10px",
               }}
@@ -172,7 +174,7 @@ export function SendDetailsModal({
               color: D.sub,
             }}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -190,7 +192,7 @@ export function SendDetailsModal({
               opacity: ready && !sending ? 1 : 0.5,
             }}
           >
-            {sending ? "Sending…" : "Send to candidate"}
+            {sending ? t("sendDetails.sending") : t("sendDetails.send")}
           </button>
         </div>
       </div>

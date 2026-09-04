@@ -143,3 +143,61 @@ class TestMyProfile:
         assert payload == {"company_name": "Acme", "company_website": None}
         # Role / email / is_approved là việc của admin, không đi qua đây.
         assert "role" not in payload and "is_approved" not in payload
+
+    @pytest.mark.asyncio
+    async def test_settings_can_rename_without_touching_the_company(self):
+        row = {"id": "u-1", "email": "a@b.co", "name": "A", "role": "hr", "company_name": "Acme"}
+        service, table = _service(existing_row=row)
+
+        await service.update_profile(self._user(), name="  Mai Hương ")
+
+        assert table.update.call_args_list[0][0][0] == {"name": "Mai Hương"}
+
+    @pytest.mark.asyncio
+    async def test_me_says_whether_the_account_has_a_password_but_never_the_hash(self):
+        row = {"id": "u-1", "email": "a@b.co", "name": "A", "role": "hr", "password_hash": "salt$key"}
+        service, _ = _service(existing_row=row)
+        me = await service.get_me(self._user())
+        assert me.has_password is True
+        assert "salt$key" not in me.model_dump_json()
+
+        row_google = {"id": "u-1", "email": "a@b.co", "name": "A", "role": "hr", "password_hash": None}
+        service, _ = _service(existing_row=row_google)
+        assert (await service.get_me(self._user())).has_password is False
+
+
+class TestChangePassword:
+    def _user(self) -> AuthUser:
+        return AuthUser(id="u-1", email="a@b.co", name="A", role="hr")
+
+    def _row(self, password: str | None) -> dict:
+        from modules.auth.infra.password_service import PasswordService
+        return {"id": "u-1", "password_hash": PasswordService.hash_password(password) if password else None}
+
+    @pytest.mark.asyncio
+    async def test_the_current_password_must_be_right(self):
+        service, table = _service(existing_row=self._row("old-secret"))
+        with pytest.raises(ValueError, match="incorrect"):
+            await service.change_password(self._user(), "wrong", "new-secret-1")
+        table.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_correct_current_password_writes_a_new_hash(self):
+        from modules.auth.infra.password_service import PasswordService
+        service, table = _service(existing_row=self._row("old-secret"))
+
+        await service.change_password(self._user(), "old-secret", "new-secret-1")
+
+        payload = table.update.call_args_list[0][0][0]
+        assert set(payload) == {"password_hash"}
+        assert payload["password_hash"] != "new-secret-1"  # đã băm, không lưu thô
+        assert PasswordService.verify_password("new-secret-1", payload["password_hash"])
+
+    @pytest.mark.asyncio
+    async def test_a_google_account_has_nothing_to_change(self):
+        # Tạo mật khẩu cho tài khoản Google là mở thêm một cửa đăng nhập mà
+        # chủ tài khoản không ngờ tới.
+        service, table = _service(existing_row=self._row(None))
+        with pytest.raises(ValueError, match="Google"):
+            await service.change_password(self._user(), "x", "new-secret-1")
+        table.update.assert_not_called()

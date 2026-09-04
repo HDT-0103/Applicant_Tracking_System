@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { buildJobUrl } from "../../../lib/jobUrl";
 import { ShareLinkBox } from "../../../components/ShareLinkBox";
+import { useT } from "@/lib/i18n";
 
 interface JDState {
   title: string;
@@ -72,10 +73,11 @@ function StepIndicator({
   currentStep: number; 
   onSelectStep: (step: number) => void;
 }) {
+  const t = useT();
   const steps = [
-    { n: 1, label: "1. Job Details" },
-    { n: 2, label: "2. Preview Card" },
-    { n: 3, label: "3. Candidate View Portal" },
+    { n: 1, label: t("jobs.wizard.step1") },
+    { n: 2, label: t("jobs.wizard.step2") },
+    { n: 3, label: t("jobs.wizard.step3") },
   ];
 
   return (
@@ -139,6 +141,7 @@ function TagInput({
   variant: "primary" | "outline";
   placeholder: string;
 }) {
+  const t = useT();
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -164,7 +167,7 @@ function TagInput({
       <div className="flex items-center gap-1.5 mb-2">
         <Tag className="w-3.5 h-3.5 text-muted-foreground" />
         <label className="text-sm font-medium text-foreground">{label}</label>
-        <span className="ml-auto text-[11px] text-muted-foreground">{tags.length} added</span>
+        <span className="ml-auto text-[11px] text-muted-foreground">{t("jobs.wizard.tags.added", { n: tags.length })}</span>
       </div>
       <div className="flex gap-2 mb-3">
         <input
@@ -193,7 +196,7 @@ function TagInput({
 
       <div className="flex flex-wrap gap-1.5 min-h-[28px]">
         {tags.length === 0 && (
-          <span className="text-xs text-muted-foreground italic">No skills added yet — type above and press Enter</span>
+          <span className="text-xs text-muted-foreground italic">{t("jobs.wizard.tags.empty")}</span>
         )}
         {tags.map((tag) => (
           <span
@@ -240,6 +243,7 @@ function RichTextarea({
   rows?: number;
   required?: boolean;
 }) {
+  const t = useT();
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-1.5">
@@ -247,18 +251,18 @@ function RichTextarea({
           {label}
         </label>
         {required && <span className="text-destructive text-xs">*</span>}
-        <span className="ml-auto text-[11px] text-muted-foreground">{value.length} chars</span>
+        <span className="ml-auto text-[11px] text-muted-foreground">{t("jobs.wizard.chars", { n: value.length })}</span>
       </div>
       <div className="flex items-center gap-0.5 px-2 py-1.5 border border-b-0 border-[rgba(15,17,23,0.15)] rounded-t-md bg-[#f8f9fb]">
         {[
-          { icon: Bold, tip: "Bold" },
-          { icon: Italic, tip: "Italic" },
-          { icon: Code2, tip: "Code" },
-          { icon: List, tip: "List" },
-          { icon: AlignLeft, tip: "Paragraph" },
-        ].map(({ icon: Icon, tip }) => (
+          { id: "bold", icon: Bold, tip: t("jobs.wizard.fmt.bold") },
+          { id: "italic", icon: Italic, tip: t("jobs.wizard.fmt.italic") },
+          { id: "code", icon: Code2, tip: t("jobs.wizard.fmt.code") },
+          { id: "list", icon: List, tip: t("jobs.wizard.fmt.list") },
+          { id: "paragraph", icon: AlignLeft, tip: t("jobs.wizard.fmt.paragraph") },
+        ].map(({ id: tipId, icon: Icon, tip }) => (
           <button
-            key={tip}
+            key={tipId}
             type="button"
             title={tip}
             className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-[rgba(15,17,23,0.06)] transition-colors"
@@ -284,10 +288,11 @@ function RichTextarea({
 }
 
 function PreviewCard({ jd }: { jd: JDState }) {
-  const title = jd.title || "Job Title";
-  const dept = jd.department || "Department";
-  const loc = jd.location || "Location";
-  const mode = jd.workMode || "On-site";
+  const t = useT();
+  const title = jd.title || t("jobs.wizard.preview.titlePlaceholder");
+  const dept = jd.department || t("jobs.wizard.preview.deptPlaceholder");
+  const loc = jd.location || t("jobs.wizard.preview.locPlaceholder");
+  const mode = jd.workMode || t("jobs.wizard.preview.modePlaceholder");
   const seniority = jd.seniority || "Mid";
   const allMustHave = jd.mustHaveSkills.length > 0 ? jd.mustHaveSkills : [];
   const allNiceToHave = jd.niceToHaveSkills.length > 0 ? jd.niceToHaveSkills : [];
@@ -301,7 +306,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
           </div>
           <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Open
+            {t("jobs.wizard.preview.open")}
           </span>
         </div>
         <h3 className="text-base font-semibold text-white leading-snug mb-1">{title}</h3>
@@ -324,7 +329,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
       <div className="px-5 py-4 flex flex-col gap-3.5">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
-            Must-Have Skills
+            {t("jobs.wizard.preview.mustHave")}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {allMustHave.slice(0, 6).map((s) => (
@@ -334,7 +339,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
             ))}
             {allMustHave.length > 6 && (
               <span className="text-[11px] px-2 py-0.5 rounded-md bg-[#f4f5f7] text-muted-foreground border border-border font-medium">
-                +{allMustHave.length - 6} more
+                {t("jobs.wizard.preview.more", { n: allMustHave.length - 6 })}
               </span>
             )}
           </div>
@@ -342,7 +347,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
         {allNiceToHave.length > 0 && (
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
-              Nice-to-Have
+              {t("jobs.wizard.preview.niceToHave")}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {allNiceToHave.slice(0, 5).map((s) => (
@@ -360,7 +365,7 @@ function PreviewCard({ jd }: { jd: JDState }) {
           type="button"
           className="w-full h-9 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors"
         >
-          Apply Now
+          {t("jobs.wizard.preview.apply")}
         </button>
       </div>
     </div>
@@ -378,6 +383,7 @@ function PublishModal({
   jobTitle: string;
   shareUrl: string | null;
 }) {
+  const t = useT();
   if (!open) return null;
 
   return (
@@ -388,9 +394,9 @@ function PublishModal({
             <CheckCircle2 className="w-8 h-8 text-white" />
           </div>
           <div className="text-center">
-            <h2 className="text-xl font-semibold text-white">Job Description Published!</h2>
+            <h2 className="text-xl font-semibold text-white">{t("jobs.wizard.publish.title")}</h2>
             <p className="text-sm text-white/70 mt-1.5">
-              <span className="font-medium text-white/90">{jobTitle || "Your position"}</span> is now live and accepting applications.
+              <span className="font-medium text-white/90">{jobTitle || t("jobs.wizard.publish.yourPosition")}</span> {t("jobs.wizard.publish.live")}
             </p>
           </div>
         </div>
@@ -398,9 +404,9 @@ function PublishModal({
         <div className="px-8 py-6 flex flex-col gap-5">
           <div className="grid grid-cols-3 gap-3">
             {[
-              { icon: Globe, label: "Live on Portal", color: "emerald" },
-              { icon: Users, label: "Accepting Apps", color: "blue" },
-              { icon: Sparkles, label: "AI Enrichment On", color: "violet" },
+              { icon: Globe, label: t("jobs.wizard.publish.badge.live"), color: "emerald" },
+              { icon: Users, label: t("jobs.wizard.publish.badge.apps"), color: "blue" },
+              { icon: Sparkles, label: t("jobs.wizard.publish.badge.ai"), color: "violet" },
             ].map(({ icon: Icon, label, color }) => (
               <div key={label} className={cn(
                 "flex flex-col items-center gap-1.5 rounded-lg py-3 px-2 border text-center",
@@ -423,7 +429,7 @@ function PublishModal({
           </div>
 
           <p className="text-sm text-muted-foreground leading-relaxed text-center">
-            Candidates can now discover and apply for this position. Profile enrichment via GitHub and LinkedIn is active for all submissions.
+            {t("jobs.wizard.publish.body")}
           </p>
 
           {shareUrl && <ShareLinkBox url={shareUrl} />}
@@ -435,7 +441,7 @@ function PublishModal({
               className="w-full h-9 rounded-lg border border-border bg-white text-sm font-medium
                 text-foreground hover:bg-[#f4f5f7] transition-colors"
             >
-              Continue Editing
+              {t("jobs.wizard.publish.continue")}
             </button>
           </div>
         </div>
@@ -445,6 +451,7 @@ function PublishModal({
 }
 
 function CreateJobPostingForm() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const editJobId = searchParams.get('id');
@@ -530,10 +537,7 @@ function CreateJobPostingForm() {
     // xem được, và ngưỡng 80% của 0 người là vô nghĩa. Chặn ở đây vì sai lầm
     // phát hiện lúc đăng tin rẻ hơn nhiều so với lúc ứng viên đã nộp.
     if (status === 'PUBLISHED' && panelCount === 0) {
-      setSavingError(
-        "Add at least one Tech Lead to the review panel before publishing — " +
-        "applications to a posting with no panel cannot be reviewed by anyone.",
-      );
+      setSavingError(t("jobs.wizard.err.noPanel"));
       setSaveStatus("idle");
       setCurrentStep(3);
       return;
@@ -541,7 +545,7 @@ function CreateJobPostingForm() {
 
     const data = jdRef.current;
     if (!data.title || !data.title.trim()) {
-      setSavingError("Job title is required!");
+      setSavingError(t("jobs.wizard.err.titleRequired"));
       setSaveStatus("idle");
       return;
     }
@@ -585,7 +589,7 @@ function CreateJobPostingForm() {
       }
     } catch (err) {
       console.error('Failed to save to Supabase:', err);
-      setSavingError(err instanceof Error ? err.message : 'Save failed');
+      setSavingError(err instanceof Error ? err.message : t("jobs.wizard.err.saveFailed"));
       setSaveStatus("idle");
     }
   };
@@ -634,7 +638,7 @@ function CreateJobPostingForm() {
                   setTimeout(() => headerTitleInputRef.current?.focus(), 50);
                 }}
                 className="w-9 h-9 rounded-xl bg-primary/10 hover:bg-primary/20 flex items-center justify-center cursor-pointer transition-colors"
-                title="Click to edit position title"
+                title={t("jobs.wizard.header.editHint")}
               >
                 <Pencil className="w-4.5 h-4.5 text-primary" />
               </div>
@@ -648,7 +652,7 @@ function CreateJobPostingForm() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") setIsEditingHeaderTitle(false);
                     }}
-                    placeholder="Enter position title (Required)..."
+                    placeholder={t("jobs.wizard.header.placeholder")}
                     className="text-lg font-semibold text-foreground tracking-tight border-b-2 border-primary outline-none bg-transparent w-full"
                   />
                 ) : (
@@ -660,18 +664,18 @@ function CreateJobPostingForm() {
                     className="group flex items-center gap-2 cursor-pointer"
                   >
                     <h1 className={cn("text-lg font-semibold tracking-tight transition-colors group-hover:text-primary", jd.title.trim() ? "text-foreground" : "text-amber-600 italic")}>
-                      {jd.title.trim() || "Position Title (Required) *"}
+                      {jd.title.trim() || t("jobs.wizard.header.empty")}
                     </h1>
                     <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Position title is required. Click the title or pencil icon to edit directly.
+                  {t("jobs.wizard.header.help")}
                 </p>
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                Draft
+                {t("status.DRAFT")}
               </div>
               {/* Auto-save status */}
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-[90px]">
@@ -683,19 +687,19 @@ function CreateJobPostingForm() {
                 {saveStatus === "saving" && (
                   <>
                     <Clock className="w-3.5 h-3.5 animate-pulse text-amber-500" />
-                    <span className="text-amber-600">Saving…</span>
+                    <span className="text-amber-600">{t("common.saving")}</span>
                   </>
                 )}
                 {saveStatus === "saved" && (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-emerald-600">Draft saved</span>
+                    <span className="text-emerald-600">{t("jobs.wizard.save.saved")}</span>
                   </>
                 )}
                 {saveStatus === "idle" && !savingError && (
                   <>
                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30" />
-                    <span>Unsaved</span>
+                    <span>{t("jobs.wizard.save.unsaved")}</span>
                   </>
                 )}
               </div>
@@ -704,7 +708,7 @@ function CreateJobPostingForm() {
             {isLoadingJob ? (
               <div className="flex flex-col items-center justify-center py-28 gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                <p className="text-sm font-medium text-muted-foreground">Loading position details...</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("jobs.wizard.loading")}</p>
               </div>
             ) : (
               <>
@@ -719,28 +723,28 @@ function CreateJobPostingForm() {
                   <div className="bg-white rounded-xl border border-border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-5">
                       <div className="w-1 h-5 rounded-full bg-primary" />
-                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Position Details</h2>
+                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">{t("jobs.wizard.card.details")}</h2>
                     </div>
 
                     <div className="mb-5">
                       <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-1">
-                        Job Title <span className="text-destructive text-xs">* (Required)</span>
+                        {t("jobs.wizard.field.title")} <span className="text-destructive text-xs">{t("jobs.wizard.field.requiredMark")}</span>
                       </label>
                       <input
                         value={jd.title}
                         onChange={(e) => set("title", e.target.value)}
-                        placeholder='e.g. "Senior ML Engineer" or "Mobile Security Engineer Intern"'
+                        placeholder={t("jobs.wizard.field.titlePlaceholder")}
                         className={cn(inputCls, "h-12 text-base font-medium placeholder:font-normal placeholder:text-sm", !jd.title.trim() && "border-amber-400 focus:border-amber-500")}
                       />
                       {!jd.title.trim() && (
-                        <p className="text-xs text-amber-600 mt-1">Position title is required and cannot be empty.</p>
+                        <p className="text-xs text-amber-600 mt-1">{t("jobs.wizard.field.titleEmpty")}</p>
                       )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div>
                         <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                          <Building2 className="w-3.5 h-3.5 text-muted-foreground" /> Department
+                          <Building2 className="w-3.5 h-3.5 text-muted-foreground" /> {t("jobs.wizard.field.department")}
                         </label>
                         <div className="relative">
                           <select
@@ -748,22 +752,22 @@ function CreateJobPostingForm() {
                             onChange={(e) => set("department", e.target.value)}
                             className={selectCls}
                           >
-                            <option value="">Select department…</option>
-                            <option value="engineering">Technology – Engineering</option>
-                            <option value="search">Search & Ranking</option>
-                            <option value="security">Security & Trust</option>
-                            <option value="data">Data Science & ML</option>
-                            <option value="product">Product Management</option>
-                            <option value="design">Design & UX</option>
-                            <option value="operations">Operations</option>
-                            <option value="finance">Finance & Legal</option>
+                            <option value="">{t("jobs.wizard.field.selectDepartment")}</option>
+                            <option value="engineering">{t("jobs.wizard.dept.engineering")}</option>
+                            <option value="search">{t("jobs.wizard.dept.search")}</option>
+                            <option value="security">{t("jobs.wizard.dept.security")}</option>
+                            <option value="data">{t("jobs.wizard.dept.data")}</option>
+                            <option value="product">{t("jobs.wizard.dept.product")}</option>
+                            <option value="design">{t("jobs.wizard.dept.design")}</option>
+                            <option value="operations">{t("jobs.wizard.dept.operations")}</option>
+                            <option value="finance">{t("jobs.wizard.dept.finance")}</option>
                           </select>
                           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                         </div>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                          <MapPin className="w-3.5 h-3.5 text-muted-foreground" /> Location
+                          <MapPin className="w-3.5 h-3.5 text-muted-foreground" /> {t("jobs.wizard.field.location")}
                         </label>
                         <div className="relative">
                           <select
@@ -771,15 +775,15 @@ function CreateJobPostingForm() {
                             onChange={(e) => set("location", e.target.value)}
                             className={selectCls}
                           >
-                            <option value="">Select location…</option>
-                            <option value="hcmc-onsite">Ho Chi Minh / On-site</option>
-                            <option value="hanoi-onsite">Hanoi / On-site</option>
-                            <option value="eu-remote">EU / Remote</option>
-                            <option value="us-remote">US / Remote</option>
-                            <option value="apac-remote">APAC / Remote</option>
-                            <option value="global-remote">Global / Fully Remote</option>
-                            <option value="vancouver-hybrid">Vancouver / Hybrid</option>
-                            <option value="london-hybrid">London / Hybrid</option>
+                            <option value="">{t("jobs.wizard.field.selectLocation")}</option>
+                            <option value="hcmc-onsite">{t("jobs.wizard.loc.hcmcOnsite")}</option>
+                            <option value="hanoi-onsite">{t("jobs.wizard.loc.hanoiOnsite")}</option>
+                            <option value="eu-remote">{t("jobs.wizard.loc.euRemote")}</option>
+                            <option value="us-remote">{t("jobs.wizard.loc.usRemote")}</option>
+                            <option value="apac-remote">{t("jobs.wizard.loc.apacRemote")}</option>
+                            <option value="global-remote">{t("jobs.wizard.loc.globalRemote")}</option>
+                            <option value="vancouver-hybrid">{t("jobs.wizard.loc.vancouverHybrid")}</option>
+                            <option value="london-hybrid">{t("jobs.wizard.loc.londonHybrid")}</option>
                           </select>
                           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                         </div>
@@ -789,7 +793,7 @@ function CreateJobPostingForm() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                          <Layers className="w-3.5 h-3.5 text-muted-foreground" /> Seniority Level
+                          <Layers className="w-3.5 h-3.5 text-muted-foreground" /> {t("jobs.wizard.field.seniority")}
                         </label>
                         <div className="relative">
                           <select
@@ -797,35 +801,35 @@ function CreateJobPostingForm() {
                             onChange={(e) => set("seniority", e.target.value)}
                             className={selectCls}
                           >
-                            <option value="">Select level…</option>
-                            <option value="intern">Intern</option>
-                            <option value="junior">Junior (0–2 yrs)</option>
-                            <option value="mid">Mid-level (2–5 yrs)</option>
-                            <option value="senior">Senior (5–8 yrs)</option>
-                            <option value="staff">Staff / Principal</option>
-                            <option value="lead">Tech Lead</option>
-                            <option value="manager">Engineering Manager</option>
-                            <option value="director">Director+</option>
+                            <option value="">{t("jobs.wizard.field.selectLevel")}</option>
+                            <option value="intern">{t("jobs.wizard.level.intern")}</option>
+                            <option value="junior">{t("jobs.wizard.level.junior")}</option>
+                            <option value="mid">{t("jobs.wizard.level.mid")}</option>
+                            <option value="senior">{t("jobs.wizard.level.senior")}</option>
+                            <option value="staff">{t("jobs.wizard.level.staff")}</option>
+                            <option value="lead">{t("jobs.wizard.level.lead")}</option>
+                            <option value="manager">{t("jobs.wizard.level.manager")}</option>
+                            <option value="director">{t("jobs.wizard.level.director")}</option>
                           </select>
                           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                         </div>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                          <Target className="w-3.5 h-3.5 text-muted-foreground" /> Target Applicants / Openings
+                          <Target className="w-3.5 h-3.5 text-muted-foreground" /> {t("jobs.wizard.field.targetOpenings")}
                         </label>
                         <input
                           type="number"
                           min={1}
                           value={jd.targetApplicants}
                           onChange={(e) => set("targetApplicants", e.target.value)}
-                          placeholder="e.g. 200"
+                          placeholder={t("jobs.wizard.field.targetPlaceholder")}
                           className={inputCls}
                         />
                       </div>
                       <div>
                         <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                          <Briefcase className="w-3.5 h-3.5 text-muted-foreground" /> Employment Type
+                          <Briefcase className="w-3.5 h-3.5 text-muted-foreground" /> {t("jobs.wizard.field.employmentType")}
                         </label>
                         <div className="relative">
                           <select
@@ -833,19 +837,19 @@ function CreateJobPostingForm() {
                             onChange={(e) => set("employmentType", e.target.value)}
                             className={selectCls}
                           >
-                            <option value="">Select type…</option>
-                            <option value="fulltime">Full-time</option>
-                            <option value="parttime">Part-time</option>
-                            <option value="intern">Internship</option>
-                            <option value="contract">Contract</option>
-                            <option value="freelance">Freelance</option>
+                            <option value="">{t("jobs.wizard.field.selectType")}</option>
+                            <option value="fulltime">{t("jobs.wizard.type.fulltime")}</option>
+                            <option value="parttime">{t("jobs.wizard.type.parttime")}</option>
+                            <option value="intern">{t("jobs.wizard.type.intern")}</option>
+                            <option value="contract">{t("jobs.wizard.type.contract")}</option>
+                            <option value="freelance">{t("jobs.wizard.type.freelance")}</option>
                           </select>
                           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                         </div>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-2">
-                          <Globe className="w-3.5 h-3.5 text-muted-foreground" /> Work Mode
+                          <Globe className="w-3.5 h-3.5 text-muted-foreground" /> {t("jobs.wizard.field.workMode")}
                         </label>
                         <div className="relative">
                           <select
@@ -853,11 +857,11 @@ function CreateJobPostingForm() {
                             onChange={(e) => set("workMode", e.target.value)}
                             className={selectCls}
                           >
-                            <option value="">Select mode…</option>
-                            <option value="On-site">On-site</option>
-                            <option value="Hybrid">Hybrid</option>
-                            <option value="Remote">Remote</option>
-                            <option value="Flexible">Flexible</option>
+                            <option value="">{t("jobs.wizard.field.selectMode")}</option>
+                            <option value="On-site">{t("jobs.wizard.mode.onsite")}</option>
+                            <option value="Hybrid">{t("jobs.wizard.mode.hybrid")}</option>
+                            <option value="Remote">{t("jobs.wizard.mode.remote")}</option>
+                            <option value="Flexible">{t("jobs.wizard.mode.flexible")}</option>
                           </select>
                           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                         </div>
@@ -869,7 +873,7 @@ function CreateJobPostingForm() {
                   <div className="bg-white rounded-xl border border-border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-5">
                       <div className="w-1 h-5 rounded-full bg-primary" />
-                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Skills & Expertise</h2>
+                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">{t("jobs.wizard.card.skills")}</h2>
                     </div>
 
                     <div className="flex flex-col gap-7">
@@ -878,8 +882,8 @@ function CreateJobPostingForm() {
                           <div className="w-4 h-4 rounded bg-primary flex items-center justify-center shrink-0">
                             <Check className="w-2.5 h-2.5 text-white" />
                           </div>
-                          <span className="text-xs font-semibold text-primary uppercase tracking-[0.08em]">Must-Have Skills</span>
-                          <span className="ml-1.5 text-[10px] text-primary/60 bg-primary/10 px-1.5 py-0.5 rounded">Required</span>
+                          <span className="text-xs font-semibold text-primary uppercase tracking-[0.08em]">{t("jobs.wizard.skills.must")}</span>
+                          <span className="ml-1.5 text-[10px] text-primary/60 bg-primary/10 px-1.5 py-0.5 rounded">{t("jobs.wizard.skills.required")}</span>
                         </div>
                         <TagInput
                           label=""
@@ -887,7 +891,7 @@ function CreateJobPostingForm() {
                           onAdd={addMust}
                           onRemove={removeMust}
                           variant="primary"
-                          placeholder="Add a required skill (e.g. Python, Docker…)"
+                          placeholder={t("jobs.wizard.skills.mustPlaceholder")}
                         />
                       </div>
 
@@ -896,8 +900,8 @@ function CreateJobPostingForm() {
                           <div className="w-4 h-4 rounded border border-border bg-white flex items-center justify-center shrink-0">
                             <Plus className="w-2.5 h-2.5 text-muted-foreground" />
                           </div>
-                          <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">Nice-to-Have Skills</span>
-                          <span className="ml-1.5 text-[10px] text-muted-foreground bg-[rgba(15,17,23,0.06)] px-1.5 py-0.5 rounded border border-border">Optional</span>
+                          <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">{t("jobs.wizard.skills.nice")}</span>
+                          <span className="ml-1.5 text-[10px] text-muted-foreground bg-[rgba(15,17,23,0.06)] px-1.5 py-0.5 rounded border border-border">{t("jobs.wizard.skills.optional")}</span>
                         </div>
                         <TagInput
                           label=""
@@ -905,7 +909,7 @@ function CreateJobPostingForm() {
                           onAdd={addNice}
                           onRemove={removeNice}
                           variant="outline"
-                          placeholder="Add a preferred skill (e.g. LLM evaluation, Ray…)"
+                          placeholder={t("jobs.wizard.skills.nicePlaceholder")}
                         />
                       </div>
                     </div>
@@ -915,43 +919,43 @@ function CreateJobPostingForm() {
                   <div className="bg-white rounded-xl border border-border shadow-sm p-6">
                     <div className="flex items-center gap-2 mb-5">
                       <div className="w-1 h-5 rounded-full bg-primary" />
-                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">Job Content</h2>
+                      <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">{t("jobs.wizard.card.content")}</h2>
                     </div>
 
                     <div className="flex flex-col gap-6">
                       <RichTextarea
                         id="overview"
-                        label="Role Overview"
+                        label={t("jobs.wizard.content.overview")}
                         value={jd.overview}
                         onChange={(v) => set("overview", v)}
-                        placeholder="Brief summary of the role, the team, and what the candidate will accomplish…"
+                        placeholder={t("jobs.wizard.content.overviewPlaceholder")}
                         rows={4}
                         required
                       />
                       <RichTextarea
                         id="responsibilities"
-                        label="Key Responsibilities"
+                        label={t("jobs.wizard.content.responsibilities")}
                         value={jd.responsibilities}
                         onChange={(v) => set("responsibilities", v)}
-                        placeholder="- Own the design and implementation of…&#10;- Collaborate with cross-functional teams to…&#10;- Drive technical decisions across…"
+                        placeholder={t("jobs.wizard.content.responsibilitiesPlaceholder")}
                         rows={6}
                         required
                       />
                       <RichTextarea
                         id="requirements"
-                        label="Requirements"
+                        label={t("jobs.wizard.content.requirements")}
                         value={jd.requirements}
                         onChange={(v) => set("requirements", v)}
-                        placeholder="- 3+ years of experience with…&#10;- Strong proficiency in Python and…&#10;- Experience building production ML systems…"
+                        placeholder={t("jobs.wizard.content.requirementsPlaceholder")}
                         rows={6}
                         required
                       />
                       <RichTextarea
                         id="niceToHaveQuals"
-                        label="Nice-to-Have Qualifications"
+                        label={t("jobs.wizard.content.niceToHave")}
                         value={jd.niceToHaveQuals}
                         onChange={(v) => set("niceToHaveQuals", v)}
-                        placeholder="- Familiarity with LLM evaluation frameworks…&#10;- Prior internship at a tech company…"
+                        placeholder={t("jobs.wizard.content.niceToHavePlaceholder")}
                         rows={4}
                       />
                     </div>
@@ -962,32 +966,32 @@ function CreateJobPostingForm() {
                     <div className="flex items-center gap-2 mb-5">
                       <div className="w-1 h-5 rounded-full bg-primary" />
                       <h2 className="text-sm font-semibold text-foreground uppercase tracking-[0.06em]">
-                        Compensation <span className="font-normal text-muted-foreground normal-case tracking-normal">(Optional)</span>
+                        {t("jobs.wizard.card.compensation")} <span className="font-normal text-muted-foreground normal-case tracking-normal">{t("jobs.wizard.comp.optional")}</span>
                       </h2>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium text-foreground mb-1.5 block">Salary Min (USD/yr)</label>
+                        <label className="text-sm font-medium text-foreground mb-1.5 block">{t("jobs.wizard.comp.min")}</label>
                         <input
                           type="number"
                           value={jd.salaryMin}
                           onChange={(e) => set("salaryMin", e.target.value)}
-                          placeholder="e.g. 80000"
+                          placeholder={t("jobs.wizard.comp.minPlaceholder")}
                           className={inputCls}
                         />
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-foreground mb-1.5 block">Salary Max (USD/yr)</label>
+                        <label className="text-sm font-medium text-foreground mb-1.5 block">{t("jobs.wizard.comp.max")}</label>
                         <input
                           type="number"
                           value={jd.salaryMax}
                           onChange={(e) => set("salaryMax", e.target.value)}
-                          placeholder="e.g. 120000"
+                          placeholder={t("jobs.wizard.comp.maxPlaceholder")}
                           className={inputCls}
                         />
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-3">Leave blank to hide compensation from the candidate-facing portal.</p>
+                    <p className="text-xs text-muted-foreground mt-3">{t("jobs.wizard.comp.hint")}</p>
                   </div>
 
                   {/* Bottom actions */}
@@ -997,7 +1001,7 @@ function CreateJobPostingForm() {
                       className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => { setSaveStatus("saving"); setTimeout(() => setSaveStatus("saved"), 900); }}
                     >
-                      Discard changes
+                      {t("jobs.wizard.discard")}
                     </button>
                     <div className="flex items-center gap-3">
                       <button
@@ -1006,14 +1010,14 @@ function CreateJobPostingForm() {
                         className="gap-1.5 border-[rgba(15,17,23,0.15)] h-9 px-4 rounded-md text-sm transition-all flex items-center"
                       >
                         <Save className="w-4 h-4" />
-                        Save Draft
+                        {t("jobs.wizard.saveDraft")}
                       </button>
                       <button
                         type="button"
                         onClick={() => setCurrentStep(2)}
                         className="gap-2 bg-primary hover:bg-primary-hover text-white shadow-sm shadow-primary/20 h-9 px-5 rounded-md text-sm transition-all flex items-center"
                       >
-                        <span>Preview Card (Step 2)</span>
+                        <span>{t("jobs.wizard.toStep2")}</span>
                         <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -1024,19 +1028,19 @@ function CreateJobPostingForm() {
                 <div className="w-[300px] shrink-0 flex flex-col gap-4">
                   <div className="flex items-center gap-2">
                     <Eye className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">Live Preview</span>
+                    <span className="text-xs font-semibold text-foreground uppercase tracking-[0.08em]">{t("jobs.wizard.livePreview")}</span>
                     <div className="ml-auto flex items-center gap-1 text-[10px] text-emerald-600">
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Updating
+                      {t("jobs.wizard.updating")}
                     </div>
                   </div>
 
                   <PreviewCard jd={jd} />
 
                   <div className="rounded-lg border border-border bg-white p-3.5 flex flex-col gap-2">
-                    <p className="text-xs font-medium text-foreground">What candidates see</p>
+                    <p className="text-xs font-medium text-foreground">{t("jobs.wizard.whatCandidatesSee")}</p>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      This card appears on the candidate portal. Clicking &quot;Apply Now&quot; opens the full application form with GitHub and LinkedIn enrichment.
+                      {t("jobs.wizard.whatCandidatesSeeBody")}
                     </p>
                   </div>
                 </div>
@@ -1049,39 +1053,39 @@ function CreateJobPostingForm() {
                 <div className="bg-white rounded-xl border border-border shadow-sm p-6 flex flex-col gap-6">
                   <div className="flex items-center justify-between pb-4 border-b border-border">
                     <div>
-                      <h2 className="text-xl font-bold text-foreground">{jd.title || "No position title entered"}</h2>
+                      <h2 className="text-xl font-bold text-foreground">{jd.title || t("jobs.wizard.step2.noTitle")}</h2>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {jd.department || "Department"} · {jd.location || "Location"} · {jd.workMode || "Work Mode"}
+                        {jd.department || t("jobs.wizard.preview.deptPlaceholder")} · {jd.location || t("jobs.wizard.preview.locPlaceholder")} · {jd.workMode || t("jobs.wizard.preview.workModePlaceholder")}
                       </p>
                     </div>
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      Step 2: Preview Card
+                      {t("jobs.wizard.step2.badge")}
                     </span>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Role Overview</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">{t("jobs.wizard.content.overview")}</h3>
                     <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
-                      {jd.overview || "No role overview provided yet..."}
+                      {jd.overview || t("jobs.wizard.step2.noOverview")}
                     </p>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Key Responsibilities</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">{t("jobs.wizard.content.responsibilities")}</h3>
                     <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
-                      {jd.responsibilities || "No responsibilities provided yet..."}
+                      {jd.responsibilities || t("jobs.wizard.step2.noResponsibilities")}
                     </p>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Requirements</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">{t("jobs.wizard.content.requirements")}</h3>
                     <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
-                      {jd.requirements || "No requirements provided yet..."}
+                      {jd.requirements || t("jobs.wizard.step2.noRequirements")}
                     </p>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Must-Have Skills</h3>
+                    <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">{t("jobs.wizard.skills.must")}</h3>
                     <div className="flex flex-wrap gap-2">
                       {jd.mustHaveSkills.length > 0 ? (
                         jd.mustHaveSkills.map(s => (
@@ -1090,7 +1094,7 @@ function CreateJobPostingForm() {
                           </span>
                         ))
                       ) : (
-                        <span className="text-xs text-muted-foreground italic">No required skills added</span>
+                        <span className="text-xs text-muted-foreground italic">{t("jobs.wizard.step2.noSkills")}</span>
                       )}
                     </div>
                   </div>
@@ -1101,14 +1105,14 @@ function CreateJobPostingForm() {
                       onClick={() => setCurrentStep(1)}
                       className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-[#f4f5f7] transition-colors"
                     >
-                      ← Back to Edit (Step 1)
+                      {t("jobs.wizard.step2.back")}
                     </button>
                     <button
                       type="button"
                       onClick={() => setCurrentStep(3)}
                       className="px-5 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2"
                     >
-                      <span>Proceed to Candidate View Portal (Step 3)</span>
+                      <span>{t("jobs.wizard.step2.next")}</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
@@ -1122,14 +1126,14 @@ function CreateJobPostingForm() {
                 <div className="bg-white rounded-xl border border-border shadow-sm p-6 flex flex-col gap-6">
                   <div className="flex items-center justify-between pb-4 border-b border-border">
                     <div>
-                      <h2 className="text-xl font-bold text-foreground">Step 3: Candidate View Portal</h2>
+                      <h2 className="text-xl font-bold text-foreground">{t("jobs.wizard.step3.title")}</h2>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Public candidate application portal for job position
+                        {t("jobs.wizard.step3.subtitle")}
                       </p>
                     </div>
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1.5">
                       <Globe className="w-3.5 h-3.5" />
-                      <span>Portal Mode</span>
+                      <span>{t("jobs.wizard.step3.portalMode")}</span>
                     </span>
                   </div>
 
@@ -1137,7 +1141,7 @@ function CreateJobPostingForm() {
                     <ShareLinkBox url={buildJobUrl(postingId, jd.title || "Job")} />
                   ) : (
                     <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                      Click <strong>&quot;Save Draft&quot;</strong> or <strong>&quot;Publish&quot;</strong> to generate a public application link for candidates.
+                      {t("jobs.wizard.step3.hint.click")} <strong>&quot;{t("jobs.wizard.saveDraft")}&quot;</strong> {t("jobs.wizard.step3.hint.or")} <strong>&quot;{t("jobs.wizard.step3.hint.publish")}&quot;</strong> {t("jobs.wizard.step3.hint.tail")}
                     </div>
                   )}
 
@@ -1149,7 +1153,7 @@ function CreateJobPostingForm() {
                       onClick={() => setCurrentStep(2)}
                       className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-[#f4f5f7] transition-colors"
                     >
-                      ← Back to Preview Card (Step 2)
+                      {t("jobs.wizard.step3.back")}
                     </button>
                     <div className="flex items-center gap-3">
                       <button
@@ -1158,7 +1162,7 @@ function CreateJobPostingForm() {
                         className="px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-[#f4f5f7] transition-colors flex items-center gap-2"
                       >
                         <Save className="w-4 h-4" />
-                        Save Draft
+                        {t("jobs.wizard.saveDraft")}
                       </button>
                       <button
                         type="button"
@@ -1166,13 +1170,13 @@ function CreateJobPostingForm() {
                         disabled={publishBlocked}
                         title={
                           publishBlocked
-                            ? "Add at least one Tech Lead to the review panel first"
+                            ? t("jobs.wizard.step3.publishBlocked")
                             : undefined
                         }
                         className="px-5 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-hover transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Globe className="w-4 h-4" />
-                        Publish &amp; Open Applications
+                        {t("jobs.wizard.step3.publish")}
                       </button>
                     </div>
                   </div>

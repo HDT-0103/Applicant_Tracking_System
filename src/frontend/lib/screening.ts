@@ -5,7 +5,29 @@
 //
 // Kept free of React so it can be unit-tested without rendering the form.
 
+import { MESSAGES } from "./i18n/messages";
+
 export type Choice = { value: string; label: string; hint?: string };
+
+/**
+ * Shape of the translator the form hands in (`useT()` from lib/i18n). Kept as
+ * a plain function type so this module never touches React or the context.
+ */
+export type ScreeningT = (key: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * Default translator: English, read from the same dictionary the page uses.
+ *
+ * Pulling the text from MESSAGES instead of repeating it here is deliberate:
+ * screening.test.ts asserts on the exact English wording, and a second copy
+ * of the same sentence would let the two drift apart without any test noticing.
+ */
+const englishT: ScreeningT = (key, vars) => {
+  const entry = (MESSAGES as Record<string, { en: string }>)[key];
+  let text = entry ? entry.en : key;
+  for (const [k, v] of Object.entries(vars ?? {})) text = text.split(`{${k}}`).join(String(v));
+  return text;
+};
 
 export const WORK_MODE_OPTIONS: Choice[] = [
   { value: "onsite", label: "Full-time onsite" },
@@ -40,6 +62,61 @@ export const SALARY_BASIS_OPTIONS: Choice[] = [
 
 export const RATING_HINTS = ["Just starting", "Basic", "Comfortable", "Proficient", "Expert"];
 export const MAX_RATED_SKILLS = 12;
+
+export type ScreeningGroup = "salaryBasis" | "workMode" | "availability" | "motivation" | "workStyle";
+
+/**
+ * Option value -> i18n key, one map per question. The `label` on each Choice
+ * stays English (tests and any non-React caller read it); the form looks the
+ * key up here and renders `t(key)` so the candidate sees their own language.
+ *
+ * Values are the strings written to `applications`, so they never change —
+ * only the wording shown next to them does.
+ */
+export const SCREENING_LABEL_KEYS: Record<ScreeningGroup, Record<string, string>> = {
+  salaryBasis: {
+    gross: "careers.screening.salaryBasis.gross",
+    net: "careers.screening.salaryBasis.net",
+  },
+  workMode: {
+    onsite: "careers.screening.workMode.onsite",
+    hybrid: "careers.screening.workMode.hybrid",
+    remote: "careers.screening.workMode.remote",
+  },
+  availability: {
+    immediate: "careers.screening.availability.immediate",
+    two_weeks: "careers.screening.availability.two_weeks",
+    one_month: "careers.screening.availability.one_month",
+    other: "careers.screening.availability.other",
+  },
+  motivation: {
+    growth: "careers.screening.motivation.growth",
+    promotion: "careers.screening.motivation.promotion",
+    pivot: "careers.screening.motivation.pivot",
+    other: "careers.screening.motivation.other",
+  },
+  workStyle: {
+    independent: "careers.screening.workStyle.independent",
+    collaborative: "careers.screening.workStyle.collaborative",
+    structured: "careers.screening.workStyle.structured",
+  },
+};
+
+/** Only the working-style question carries a hint line under each label. */
+export const SCREENING_HINT_KEYS: Record<string, string> = {
+  independent: "careers.screening.workStyle.independent.hint",
+  collaborative: "careers.screening.workStyle.collaborative.hint",
+  structured: "careers.screening.workStyle.structured.hint",
+};
+
+/** Parallel to RATING_HINTS: index 0 is the hint for rating 1. */
+export const RATING_HINT_KEYS = [
+  "careers.screening.rating.1",
+  "careers.screening.rating.2",
+  "careers.screening.rating.3",
+  "careers.screening.rating.4",
+  "careers.screening.rating.5",
+];
 
 /** Digits only, grouped for display: "15000000" -> "15,000,000". */
 export const formatVnd = (raw: string) => {
@@ -84,31 +161,38 @@ export type ScreeningErrors = Partial<Record<keyof ScreeningAnswers, string>>;
  *
  * `requiredSkills` comes from the job; an empty list means the job declared no
  * skills and the matrix is not shown at all.
+ *
+ * `t` is optional so existing callers (and the tests) keep getting English;
+ * the form passes `useT()` to get the candidate's language.
  */
 export function validateScreening(
   a: ScreeningAnswers,
   requiredSkills: string[] = [],
+  t: ScreeningT = englishT,
 ): ScreeningErrors {
   const e: ScreeningErrors = {};
 
   const min = toAmount(a.salaryMin);
   const max = toAmount(a.salaryMax);
-  if (min === null || max === null) e.salaryMax = "Please give your expected range";
-  else if (max < min) e.salaryMax = "Maximum must be greater than the minimum";
+  if (min === null || max === null) e.salaryMax = t("careers.screening.error.salaryRange");
+  else if (max < min) e.salaryMax = t("careers.screening.error.salaryOrder");
 
-  if (!a.workModePref.length) e.workModePref = "Select at least one working arrangement";
+  if (!a.workModePref.length) e.workModePref = t("careers.screening.error.workMode");
 
-  if (!a.availabilityBucket) e.availabilityBucket = "Please select when you can start";
+  if (!a.availabilityBucket) e.availabilityBucket = t("careers.screening.error.availability");
   if (a.availabilityBucket === "other" && !a.availabilityDate)
-    e.availabilityDate = "Please specify your start date";
+    e.availabilityDate = t("careers.screening.error.availabilityDate");
 
   const unrated = requiredSkills.filter((s) => !a.skillRatings[s]);
   if (unrated.length)
-    e.skillRatings = `Please rate all ${requiredSkills.length} skills (${unrated.length} left)`;
+    e.skillRatings = t("careers.screening.error.skills", {
+      total: requiredSkills.length,
+      left: unrated.length,
+    });
 
-  if (!a.workStyle) e.workStyle = "Please select your preferred working style";
+  if (!a.workStyle) e.workStyle = t("careers.screening.error.workStyle");
 
-  if (!a.consent) e.consent = "We need your consent to process this application";
+  if (!a.consent) e.consent = t("careers.screening.error.consent");
 
   return e;
 }

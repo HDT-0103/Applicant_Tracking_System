@@ -41,10 +41,19 @@ export interface AuthUser {
   /** Công ty của người dùng (V009). `null`/thiếu = chưa hoàn tất hồ sơ. */
   company_name?: string | null;
   company_website?: string | null;
+  /** Tài khoản đăng ký bằng email (có mật khẩu) hay chỉ Google. */
+  has_password?: boolean;
 }
 
 export interface CompanyProfile {
   company_name: string;
+  company_website?: string | null;
+}
+
+/** Ba trường người dùng tự sửa được ở Settings. `undefined` = giữ nguyên. */
+export interface ProfileUpdate {
+  name?: string;
+  company_name?: string;
   company_website?: string | null;
 }
 
@@ -81,6 +90,10 @@ interface AuthContextValue {
   ) => Promise<void>;
   /** Hoàn tất / sửa công ty của chính mình (PATCH /api/auth/me). */
   updateCompany: (company: CompanyProfile) => Promise<void>;
+  /** Sửa tên / công ty / website ở Settings (PATCH /api/auth/me). */
+  updateProfile: (fields: ProfileUpdate) => Promise<void>;
+  /** Đổi mật khẩu; backend đòi mật khẩu hiện tại và từ chối tài khoản Google. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   canUpload: boolean;
@@ -246,20 +259,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     [router],
   );
 
+  const updateProfile = useCallback(async (fields: ProfileUpdate) => {
+    const body: Record<string, unknown> = {};
+    if (fields.name !== undefined) body.name = fields.name;
+    if (fields.company_name !== undefined) body.company_name = fields.company_name;
+    // Website: chuỗi rỗng = xoá. Backend hiểu "" là NULL; `null` bị pydantic
+    // coi là "không gửi" nên phải gửi "" mới xoá được.
+    if (fields.company_website !== undefined) body.company_website = fields.company_website ?? "";
+    const fresh = await api.patch<AuthUser>("/api/auth/me", body);
+    setUser((current) => {
+      const merged = { ...(current ?? fresh), ...fresh, role: current?.role ?? fresh.role };
+      persistUser(merged);
+      return merged;
+    });
+  }, []);
+
   const updateCompany = useCallback(
-    async (company: CompanyProfile) => {
-      const fresh = await api.patch<AuthUser>("/api/auth/me", {
+    (company: CompanyProfile) =>
+      updateProfile({
         company_name: company.company_name,
-        company_website: company.company_website || null,
-      });
-      setUser((current) => {
-        const merged = { ...(current ?? fresh), ...fresh, role: current?.role ?? fresh.role };
-        persistUser(merged);
-        return merged;
-      });
-    },
-    [],
+        company_website: company.company_website ?? "",
+      }),
+    [updateProfile],
   );
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    await api.post("/api/auth/change-password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  }, []);
 
   const logout = useCallback(() => {
     clearStoredTokens();
@@ -291,11 +320,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       loginWithEmailPassword,
       registerWithEmailPassword,
       updateCompany,
+      updateProfile,
+      changePassword,
       logout,
       hasRole,
       canUpload,
     }),
-    [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, updateCompany, logout, hasRole, canUpload],
+    [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, updateCompany, updateProfile, changePassword, logout, hasRole, canUpload],
   );
 
   return (

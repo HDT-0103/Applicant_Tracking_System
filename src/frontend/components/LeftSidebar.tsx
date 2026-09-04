@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { usePathname, useRouter } from 'next/navigation';
-import { D, Badge } from "../lib/shared";
+import { D, Badge, tint } from "../lib/shared";
 import { 
   Layers, 
   BarChart3, 
@@ -29,6 +29,7 @@ import {
 } from "../services/catalogService";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { buildJobPath, buildJobUrl } from "../lib/jobUrl";
+import { useT } from "../lib/i18n";
 
 /** Bề rộng rail khi thu gọn — vừa đủ cho vùng bấm 36px và lề hai bên. */
 const RAIL_WIDTH = 56;
@@ -56,6 +57,7 @@ export const LeftSidebar: React.FC = () => {
   const [deletingJob, setDeletingJob] = useState<JobPosting | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [jobError, setJobError] = useState<string | null>(null);
+  const t = useT();
   const [isOpen, setIsOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
 
@@ -77,20 +79,20 @@ export const LeftSidebar: React.FC = () => {
   const workspaceItems = [
     {
       icon: <Layers size={15} />,
-      label: "Dashboard Overview",
+      label: t("sidebar.dashboardOverview"),
       badge: null,
       path: "/",
     },
     {
       icon: <Search size={15} />,
-      label: "Find Candidates",
+      label: t("sidebar.findCandidates"),
       badge: null,
       path: "/search",
     },
     {
       icon: <BarChart3 size={15} />,
-      label: "Analytics & Insights",
-      badge: "AI Live",
+      label: t("sidebar.analytics"),
+      badge: t("sidebar.aiLive"),
       path: "/analytics",
     },
   ];
@@ -147,7 +149,7 @@ export const LeftSidebar: React.FC = () => {
       // Mở lại một tin chưa có hội đồng bị backend từ chối — người dùng cần
       // đọc được lý do, không phải thấy menu đóng lại và không có gì xảy ra.
       setJobError(
-        err instanceof Error ? err.message : 'Could not change the posting status.',
+        err instanceof Error ? err.message : t("sidebar.statusError"),
       );
     } finally {
       setOpenMenuJobId(null);
@@ -165,7 +167,7 @@ export const LeftSidebar: React.FC = () => {
       ]);
     } catch (err) {
       setJobError(
-        err instanceof Error ? err.message : 'Could not duplicate this posting.',
+        err instanceof Error ? err.message : t("sidebar.duplicateError"),
       );
     } finally {
       setOpenMenuJobId(null);
@@ -207,15 +209,13 @@ export const LeftSidebar: React.FC = () => {
     <>
     <ConfirmDialog
       open={deletingJob !== null}
-      title="Delete this job posting?"
+      title={t("sidebar.delete.title")}
       message={
         <>
-          <strong style={{ color: D.ink }}>{deletingJob?.title}</strong> will be removed
-          permanently. Applications already submitted to it are not deleted, but they
-          will no longer point at a posting.
+          <strong style={{ color: D.ink }}>{deletingJob?.title}</strong>{t("sidebar.delete.body")}
         </>
       }
-      confirmLabel="Delete posting"
+      confirmLabel={t("sidebar.delete.confirm")}
       busy={deleting}
       onCancel={() => setDeletingJob(null)}
       onConfirm={handleDeleteJob}
@@ -280,8 +280,8 @@ export const LeftSidebar: React.FC = () => {
           <button
             type="button"
             onClick={() => router.push("/job-postings/create")}
-            aria-label="Job postings"
-            title="Job postings"
+            aria-label={t("sidebar.jobPostingsAria")}
+            title={t("sidebar.jobPostingsAria")}
             style={{
               width: 36, height: 36, display: "grid", placeItems: "center",
               borderRadius: D.r1, border: "none", background: "transparent", color: D.sub,
@@ -300,9 +300,9 @@ export const LeftSidebar: React.FC = () => {
         <button
           type="button"
           onClick={() => setPinned((v) => !v)}
-          aria-label={pinned ? "Unpin sidebar" : "Keep sidebar open"}
+          aria-label={pinned ? t("sidebar.unpin") : t("sidebar.keepOpen")}
           aria-pressed={pinned}
-          title={pinned ? "Unpin" : "Keep open"}
+          title={pinned ? t("sidebar.unpinShort") : t("sidebar.keepOpenShort")}
           style={{
             display: "grid", placeItems: "center", width: 26, height: 26,
             borderRadius: D.r1, border: "none",
@@ -351,7 +351,7 @@ export const LeftSidebar: React.FC = () => {
                   cursor: "pointer",
                   transition: "all 0.15s ease",
                   background: isCurrent(item.path) ? D.blueSoft : "transparent",
-                  border: `1px solid ${isCurrent(item.path) ? `${D.blue}20` : "transparent"}`,
+                  border: `1px solid ${isCurrent(item.path) ? `${tint("blue", "20")}` : "transparent"}`,
                 }}
               >
                 <div style={{
@@ -379,7 +379,7 @@ export const LeftSidebar: React.FC = () => {
                 {item.badge && (
                   <Badge 
                     color={item.badge === "Active" ? D.blue : D.purple} 
-                    bg={item.badge === "Active" ? D.blueSoft : `${D.purple}15`}
+                    bg={item.badge === "Active" ? D.blueSoft : `${tint("purple", "15")}`}
                   >
                     {item.badge}
                   </Badge>
@@ -400,7 +400,7 @@ export const LeftSidebar: React.FC = () => {
             marginBottom: 10,
             paddingLeft: 4
           }}>
-            JOB POSTINGS
+            {t("sidebar.jobPostings")}
           </div>
           {jobError && (
             <div
@@ -409,8 +409,8 @@ export const LeftSidebar: React.FC = () => {
                 marginBottom: 8,
                 padding: "7px 9px",
                 borderRadius: 5,
-                background: `${D.red}0D`,
-                border: `1px solid ${D.red}28`,
+                background: `${tint("red", "0D")}`,
+                border: `1px solid ${tint("red", "28")}`,
                 color: D.red,
                 fontSize: 11,
                 lineHeight: 1.5,
@@ -439,8 +439,8 @@ export const LeftSidebar: React.FC = () => {
                     borderRadius: 6,
                     cursor: "pointer",
                     transition: "all 0.15s ease",
-                    background: activeJobId === job.id ? `${D.blue}08` : isHovered ? `${D.surface}` : "transparent",
-                    border: activeJobId === job.id ? `1px solid ${D.blue}20` : "1px solid transparent",
+                    background: activeJobId === job.id ? `${tint("blue", "08")}` : isHovered ? `${D.surface}` : "transparent",
+                    border: activeJobId === job.id ? `1px solid ${tint("blue", "20")}` : "1px solid transparent",
                     position: "relative"
                   }}
                 >
@@ -465,7 +465,7 @@ export const LeftSidebar: React.FC = () => {
                     background: job.status === "PUBLISHED" ? D.mint : D.muted,
                     flexShrink: 0,
                     marginLeft: activeJobId === job.id ? 4 : 0
-                  }} title={`Status: ${job.status}`} />
+                  }} title={t("sidebar.statusTitle", { status: t(`status.${job.status}`) })} />
                   
                   {/* Job title */}
                   <span style={{ 
@@ -484,8 +484,8 @@ export const LeftSidebar: React.FC = () => {
                   <div style={{
                     padding: "2px 6px",
                     borderRadius: 99,
-                    background: job.applicant_count > 0 ? `${D.blue}10` : D.surface,
-                    border: job.applicant_count > 0 ? `1px solid ${D.blue}25` : `1px solid ${D.line}`,
+                    background: job.applicant_count > 0 ? `${tint("blue", "10")}` : D.surface,
+                    border: job.applicant_count > 0 ? `1px solid ${tint("blue", "25")}` : `1px solid ${D.line}`,
                     fontSize: 10,
                     fontWeight: 600,
                     color: job.applicant_count > 0 ? D.blue : D.muted,
@@ -520,8 +520,8 @@ export const LeftSidebar: React.FC = () => {
                       // touch user never hovers. aria-label is what actually
                       // names the control; aria-expanded tells assistive tech
                       // whether the menu is currently open.
-                      title="Job options"
-                      aria-label={`Options for ${job.title}`}
+                      title={t("sidebar.jobOptions")}
+                      aria-label={t("sidebar.optionsFor", { title: job.title })}
                       aria-haspopup="menu"
                       aria-expanded={openMenuJobId === job.id}
                     >
@@ -538,7 +538,7 @@ export const LeftSidebar: React.FC = () => {
                         right: 8,
                         top: 36,
                         zIndex: 50,
-                        background: "#ffffff",
+                        background: D.canvas,
                         border: `1px solid ${D.line}`,
                         borderRadius: 8,
                         boxShadow: "0 10px 25px -5px rgba(0,0,0,0.15)",
@@ -572,11 +572,11 @@ export const LeftSidebar: React.FC = () => {
                           cursor: "pointer",
                           textAlign: "left"
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f4f5f7")}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = D.surface)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
                         <Pencil size={13} color={D.sub} />
-                        <span>Edit Position</span>
+                        <span>{t("sidebar.editPosition")}</span>
                       </button>
 
                       {/* Option 2: View Public Portal */}
@@ -604,11 +604,11 @@ export const LeftSidebar: React.FC = () => {
                           cursor: "pointer",
                           textAlign: "left"
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f4f5f7")}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = D.surface)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
                         <ExternalLink size={13} color={D.sub} />
-                        <span>View Public Portal</span>
+                        <span>{t("sidebar.viewPortal")}</span>
                       </button>
 
                       {/* Copy link: trước đây link chỉ hiện ở bước 3 của wizard
@@ -640,11 +640,11 @@ export const LeftSidebar: React.FC = () => {
                           cursor: "pointer",
                           textAlign: "left"
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f4f5f7")}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = D.surface)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
                         <Link2 size={13} color={D.sub} />
-                        <span>Copy Application Link</span>
+                        <span>{t("sidebar.copyLink")}</span>
                       </button>
 
                       {/* Option 3: Pause / Resume Applications */}
@@ -666,18 +666,18 @@ export const LeftSidebar: React.FC = () => {
                           cursor: "pointer",
                           textAlign: "left"
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f4f5f7")}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = D.surface)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
                         {job.status === "PUBLISHED" ? (
                           <>
                             <PauseCircle size={13} color="#eab308" />
-                            <span>Pause Applications</span>
+                            <span>{t("sidebar.pause")}</span>
                           </>
                         ) : (
                           <>
                             <PlayCircle size={13} color="#10b981" />
-                            <span>Resume Applications</span>
+                            <span>{t("sidebar.resume")}</span>
                           </>
                         )}
                       </button>
@@ -701,11 +701,11 @@ export const LeftSidebar: React.FC = () => {
                           cursor: "pointer",
                           textAlign: "left"
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f4f5f7")}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = D.surface)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
                         <Copy size={13} color={D.sub} />
-                        <span>Duplicate Posting</span>
+                        <span>{t("sidebar.duplicatePosting")}</span>
                       </button>
 
                       <div style={{ height: 1, background: D.line, margin: "2px 0" }} />
@@ -725,15 +725,15 @@ export const LeftSidebar: React.FC = () => {
                           border: "none",
                           fontSize: 11.5,
                           fontWeight: 500,
-                          color: "#ef4444",
+                          color: D.red,
                           cursor: "pointer",
                           textAlign: "left"
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = tint("red", "12"))}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
-                        <Trash2 size={13} color="#ef4444" />
-                        <span>Delete Job Posting</span>
+                        <Trash2 size={13} color={D.red} />
+                        <span>{t("sidebar.deleteJob")}</span>
                       </button>
                     </div>
                   )}
@@ -770,7 +770,7 @@ export const LeftSidebar: React.FC = () => {
             transition: "all 0.15s ease"
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = `${D.blue}08`;
+            e.currentTarget.style.background = `${tint("blue", "08")}`;
             e.currentTarget.style.borderColor = D.blue;
             e.currentTarget.style.color = D.blue;
           }}
@@ -781,7 +781,7 @@ export const LeftSidebar: React.FC = () => {
           }}
         >
           <Briefcase size={14} strokeWidth={1.8} />
-          <span>Create Job Posting</span>
+          <span>{t("sidebar.createJob")}</span>
         </button>
       </div>
       </>

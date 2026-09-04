@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Check, Copy } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 /**
  * Link nộp hồ sơ công khai của một tin, kèm nút copy.
@@ -12,6 +13,7 @@ import { Check, Copy } from "lucide-react";
  * chi tiết tin luôn hiện nó.
  */
 export function ShareLinkBox({ url }: { url: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -27,7 +29,7 @@ export function ShareLinkBox({ url }: { url: string }) {
   return (
     <div className="flex flex-col gap-2">
       <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-        Public application link
+        {t("jobs.share.label")}
       </span>
       <div className="flex items-stretch gap-2">
         <input
@@ -44,11 +46,11 @@ export function ShareLinkBox({ url }: { url: string }) {
             transition-colors hover:bg-primary-hover flex items-center gap-1.5"
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        Share this link anywhere. Every CV submitted through it is attached to this job only.
+        {t("jobs.share.hint")}
       </p>
     </div>
   );

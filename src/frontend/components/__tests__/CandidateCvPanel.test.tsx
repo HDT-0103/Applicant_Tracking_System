@@ -20,13 +20,15 @@ vi.mock("../../services/candidateCvService", () => ({
 import { CandidateCvPanel } from "../CandidateCvPanel";
 
 const SAS = "https://acct.blob.core.windows.net/cvs/cand-1.pdf?sig=abc";
+const SAS_DOWNLOAD = "https://acct.blob.core.windows.net/cvs/cand-1.pdf?sig=abc&rscd=attachment";
+const LINK = { url: SAS, download_url: SAS_DOWNLOAD, expires_in_seconds: 900 };
 
 afterEach(cleanup);
 beforeEach(() => getCandidateCvLink.mockReset());
 
 describe("CandidateCvPanel", () => {
   it("renders the document once the link arrives", async () => {
-    getCandidateCvLink.mockResolvedValue(SAS);
+    getCandidateCvLink.mockResolvedValue(LINK);
     const { container } = render(<CandidateCvPanel candidateUuid="cand-1" />);
 
     await waitFor(() => {
@@ -34,6 +36,18 @@ describe("CandidateCvPanel", () => {
       expect(frame).toHaveAttribute("src", SAS);
     });
     expect(getCandidateCvLink).toHaveBeenCalledWith("cand-1");
+  });
+
+  it("Open shows the file inline while Download uses the attachment link", async () => {
+    // Blob trên Azure là application/octet-stream, nên cùng một link không
+    // thể vừa hiển thị vừa tải về: máy chủ ký hai link với Content-Disposition
+    // khác nhau, và panel phải gắn đúng link vào đúng nút.
+    getCandidateCvLink.mockResolvedValue(LINK);
+    render(<CandidateCvPanel candidateUuid="cand-1" />);
+
+    const open = await screen.findByRole("link", { name: /Open/ });
+    expect(open).toHaveAttribute("href", SAS);
+    expect(screen.getByRole("link", { name: /Download/ })).toHaveAttribute("href", SAS_DOWNLOAD);
   });
 
   it("says the candidate has no CV rather than showing an error", async () => {
@@ -57,7 +71,7 @@ describe("CandidateCvPanel", () => {
 
     expect(await screen.findByText("Storage account unreachable")).toBeInTheDocument();
 
-    getCandidateCvLink.mockResolvedValue(SAS);
+    getCandidateCvLink.mockResolvedValue(LINK);
     fireEvent.click(screen.getByRole("button", { name: /Retry/ }));
     await waitFor(() => expect(getCandidateCvLink).toHaveBeenCalledTimes(2));
   });
@@ -69,19 +83,20 @@ describe("CandidateCvPanel", () => {
   });
 
   it("offers open and download only once a link exists", async () => {
-    getCandidateCvLink.mockResolvedValue(SAS);
+    getCandidateCvLink.mockResolvedValue(LINK);
     render(<CandidateCvPanel candidateUuid="cand-1" candidateName="Trần Bảo" />);
 
     const open = await screen.findByRole("link", { name: /Open/ });
     expect(open).toHaveAttribute("href", SAS);
-    // Cùng link đã ký, không dựng lại URL ở phía client — SAS hết hạn sau 15
-    // phút và chỉ máy chủ mới ký được cái mới.
-    expect(screen.getByRole("link", { name: /Download/ })).toHaveAttribute("href", SAS);
+    // Link đã ký từ máy chủ, không dựng lại URL ở phía client — SAS hết hạn
+    // sau 15 phút và chỉ máy chủ mới ký được cái mới. Nút Download dùng bản
+    // ký kèm Content-Disposition: attachment.
+    expect(screen.getByRole("link", { name: /Download/ })).toHaveAttribute("href", SAS_DOWNLOAD);
     expect(screen.getByTitle("Trần Bảo")).toBeInTheDocument();
   });
 
   it("reloads when the panel switches to another candidate", async () => {
-    getCandidateCvLink.mockResolvedValue(SAS);
+    getCandidateCvLink.mockResolvedValue(LINK);
     const { rerender } = render(<CandidateCvPanel candidateUuid="cand-1" />);
     await waitFor(() => expect(getCandidateCvLink).toHaveBeenCalledWith("cand-1"));
 

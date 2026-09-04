@@ -4,70 +4,86 @@
 // test chỉ muốn đọc giá trị token. Token là dữ liệu, không phải component.
 
 /**
- * Bảng màu duy nhất của SmartATS.
+ * Bảng màu duy nhất của SmartATS — nay là BIẾN CSS, không còn hex cứng.
  *
- * Trước đây app chạy song song HAI hệ màu: các trang dùng `D` lấy màu chính là
- * xanh dương #1B62F0, còn các trang dùng Tailwind hardcode màu chàm #4f46e5
- * (107 chỗ). Cùng một sản phẩm mà đổi màu thương hiệu khi chuyển trang. Nay
- * thống nhất về #4F46E5 — màu đã chiếm đa số và đã là `--primary` trong
- * globals.css.
+ * Mọi giá trị màu trỏ tới một biến khai trong app/globals.css. Bảng sáng nằm
+ * ở `:root`, bảng tối ở `[data-theme="dark"]`; đổi theme chỉ là đổi thuộc
+ * tính trên <html> (contexts/ThemeContext.tsx), 995 chỗ đang đọc `D.*` qua
+ * inline style tự đổi theo mà không phải sửa dòng nào.
  *
- * QUAN TRỌNG — giá trị phải là hex thật, KHÔNG được thay bằng `var(--x)`:
- * 14 file đang nối alpha vào token theo kiểu `${D.blue}28`. Đổi sang var()
- * sẽ tạo ra `var(--primary)28`, một chuỗi CSS vô nghĩa và trình duyệt bỏ qua
- * trong im lặng — màu biến mất mà không có lỗi nào.
- *
- * Bộ này phải khớp từng giá trị với `:root` trong app/globals.css.
- * `lib/__tests__/tokens.test.ts` canh việc đó, đừng sửa một bên rồi thôi.
+ * Hệ quả bắt buộc: KHÔNG được nối alpha vào token kiểu `${D.blue}28` nữa —
+ * `var(--primary)28` là chuỗi CSS vô nghĩa, trình duyệt bỏ qua trong im lặng
+ * và màu biến mất mà không có lỗi. Dùng `tint("blue", "28")` bên dưới; nó
+ * dựng `rgb(var(--primary-rgb) / 0.157)` từ kênh RGB tách sẵn.
+ * `lib/__tests__/tokens.test.ts` canh: mỗi biến phải có ở CẢ HAI bảng.
  */
 export const D = {
   // --- Nền, theo thứ tự từ xa tới gần người đọc ---
-  bg: "#F7F8FA",
-  canvas: "#FFFFFF",
-  surface: "#FAFBFC",
+  bg: "var(--background)",
+  canvas: "var(--card)",
+  surface: "var(--surface)",
 
   // --- Chữ, 4 mức tương phản ---
-  ink: "#0F1117",
-  sub: "#3D4451",
-  muted: "#6B7280",
-  dim: "#9CA3AF",
+  ink: "var(--foreground)",
+  sub: "var(--ink-sub)",
+  muted: "var(--muted-foreground)",
+  dim: "var(--ink-dim)",
 
   // --- Đường kẻ ---
-  line: "#E4E6EB",
-  lineSoft: "#EEF0F4",
+  line: "var(--border)",
+  lineSoft: "var(--border-soft)",
 
   // --- Màu chính (chàm) ---
   // Giữ tên `blue` vì 995 chỗ đang gọi tới. Đổi tên là một lượt sửa rời,
-  // không gộp vào đợt thống nhất màu này.
-  blue: "#4F46E5",
-  blueSoft: "rgba(79,70,229,0.09)",
-  blueMid: "rgba(79,70,229,0.18)",
-  blueDeep: "#4338CA", // trạng thái nhấn/hover, thay cho #4338ca hardcode
+  // không gộp vào đợt này.
+  blue: "var(--primary)",
+  blueSoft: "rgb(var(--primary-rgb) / 0.09)",
+  blueMid: "rgb(var(--primary-rgb) / 0.18)",
+  blueDeep: "var(--primary-hover)", // trạng thái nhấn/hover
 
   // --- Màu ngữ nghĩa ---
-  mint: "#0D9E6F",
-  mintSoft: "rgba(13,158,111,0.10)",
-  purple: "#7C3AED",
-  amber: "#D97706",
-  red: "#DC2626",
+  mint: "var(--mint)",
+  mintSoft: "rgb(var(--mint-rgb) / 0.10)",
+  purple: "var(--purple)",
+  amber: "var(--amber)",
+  red: "var(--destructive)",
 
   // --- Chữ ---
   // Inter nạp qua next/font trong app/layout.tsx và gắn vào biến này.
-  // Trước đây khai 'Inter' ở đây nhưng không nơi nào nạp, nên suốt thời gian
-  // qua app vẫn chạy bằng font hệ thống.
   font: "var(--font-inter), system-ui, -apple-system, sans-serif",
   mono: "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace",
 
   // --- Bo góc ---
-  r1: "6px",
-  r2: "10px",
-  r3: "14px",
+  r1: "var(--radius-1)",
+  r2: "var(--radius-2)",
+  r3: "var(--radius-3)",
 
-  // --- Đổ bóng: mềm và nông, để bề mặt tách nhau mà không bị "nổi" giả tạo ---
-  sh1: "0 1px 2px rgba(15,17,23,0.04)",
-  sh2: "0 2px 8px rgba(15,17,23,0.06)",
-  sh3: "0 8px 24px rgba(15,17,23,0.08)",
+  // --- Đổ bóng ---
+  sh1: "var(--shadow-1)",
+  sh2: "var(--shadow-2)",
+  sh3: "var(--shadow-3)",
 
   // --- Chuyển động ---
-  ease: "cubic-bezier(0.4, 0, 0.2, 1)",
+  ease: "var(--ease)",
 };
+
+/** Token có kênh RGB tách sẵn (`--x-rgb`) nên pha được độ mờ. */
+export type TintableToken = "blue" | "mint" | "purple" | "amber" | "red";
+
+const RGB_VAR: Record<TintableToken, string> = {
+  blue: "--primary-rgb",
+  mint: "--mint-rgb",
+  purple: "--purple-rgb",
+  amber: "--amber-rgb",
+  red: "--destructive-rgb",
+};
+
+/**
+ * Màu token pha độ mờ. `alpha` là 2 ký tự hex như cách viết cũ (`"28"` ≈ 16%)
+ * để codemod thay `${D.blue}28` thành `${tint("blue", "28")}` mà không phải
+ * tính lại từng chỗ; cũng nhận số 0–1.
+ */
+export function tint(token: TintableToken, alpha: string | number): string {
+  const a = typeof alpha === "number" ? alpha : parseInt(alpha, 16) / 255;
+  return `rgb(var(${RGB_VAR[token]}) / ${Math.round(a * 1000) / 1000})`;
+}

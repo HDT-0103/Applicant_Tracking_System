@@ -10,7 +10,7 @@ import {
   BookOpen, Briefcase, GraduationCap, ExternalLink, Zap,
   AlertCircle, Clock, Layers, Shield, GitBranch, Cpu, Globe,
 } from "lucide-react";
-import { D, Dot, Badge, SectionLabel, Divider } from "../../lib/shared";
+import { D, Dot, Badge, SectionLabel, Divider, tint } from "../../lib/shared";
 
 // ─── GitHub Accordion Card ────────────────────────────────────────────────────
 function GitHubCard({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
@@ -84,7 +84,7 @@ function GitHubCard({ expanded, onToggle }: { expanded: boolean; onToggle: () =>
             </p>
             <div style={{ display: "flex", gap: 5, marginTop: 7, flexWrap: "wrap", paddingLeft: 2 }}>
               {["microservices", "kafka", "distributed-consensus", "terraform", "k8s"].map((tag) => (
-                <span key={tag} style={{ fontSize: 9.5, fontFamily: D.mono, padding: "1px 6px", borderRadius: 3, background: `${D.blue}12`, border: `1px solid ${D.blue}22`, color: D.blue }}>#{tag}</span>
+                <span key={tag} style={{ fontSize: 9.5, fontFamily: D.mono, padding: "1px 6px", borderRadius: 3, background: `${tint("blue", "12")}`, border: `1px solid ${tint("blue", "22")}`, color: D.blue }}>#{tag}</span>
               ))}
             </div>
           </div>
@@ -130,7 +130,7 @@ function LinkedInCard({ expanded, onToggle }: { expanded: boolean; onToggle: () 
         <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12, animation: "fadeSlideIn 0.2s ease both" }}>
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
-            padding: "10px 13px", borderRadius: 6, background: D.mintSoft, border: `1px solid ${D.mint}28`,
+            padding: "10px 13px", borderRadius: 6, background: D.mintSoft, border: `1px solid ${tint("mint", "28")}`,
           }}>
             <CheckCircle2 size={16} strokeWidth={1.8} color={D.mint} />
             <div>
@@ -238,7 +238,7 @@ function EnrichmentPanel() {
         {/* Disclaimer */}
         <div style={{
           display: "flex", alignItems: "flex-start", gap: 6, padding: "8px 10px",
-          borderRadius: 5, background: `${D.amber}0B`, border: `1px solid ${D.amber}22`,
+          borderRadius: 5, background: `${tint("amber", "0B")}`, border: `1px solid ${tint("amber", "22")}`,
         }}>
           <AlertCircle size={11} strokeWidth={2} color={D.amber} style={{ marginTop: 0.5, flexShrink: 0 }} />
           <span style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.5 }}>
@@ -277,7 +277,7 @@ function EnrichedRadar() {
           onClick={() => setShowBoth(!showBoth)}
           style={{
             display: "flex", alignItems: "center", gap: 5, padding: "4px 10px",
-            border: `1px solid ${showBoth ? `${D.blue}30` : D.line}`,
+            border: `1px solid ${showBoth ? `${tint("blue", "30")}` : D.line}`,
             borderRadius: 5, background: showBoth ? D.blueSoft : D.canvas,
             cursor: "pointer", fontSize: 10.5,
             color: showBoth ? D.blue : D.sub, fontFamily: D.font,
@@ -360,8 +360,8 @@ function MatchConfidence() {
   return (
     <div style={{
       padding: "16px 18px", borderRadius: 8,
-      background: `linear-gradient(145deg, ${D.blue}0A 0%, ${D.canvas} 60%)`,
-      border: `1px solid ${D.blue}28`,
+      background: `linear-gradient(145deg, ${tint("blue", "0A")} 0%, ${D.canvas} 60%)`,
+      border: `1px solid ${tint("blue", "28")}`,
       display: "flex", alignItems: "center", gap: 20,
     }}>
       <div style={{ flexShrink: 0 }}>
@@ -384,7 +384,7 @@ function MatchConfidence() {
         <div style={{
           display: "inline-flex", alignItems: "center", gap: 5,
           padding: "4px 8px", borderRadius: 5,
-          background: D.mintSoft, border: `1px solid ${D.mint}28`, marginBottom: 10,
+          background: D.mintSoft, border: `1px solid ${tint("mint", "28")}`, marginBottom: 10,
         }}>
           <TrendingUp size={10} strokeWidth={2} color={D.mint} />
           <span style={{ fontSize: 10.5, fontWeight: 600, color: D.mint }}>+2.1 increase from external data enrichment</span>
@@ -438,7 +438,7 @@ function CareerTimeline() {
                   background: item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.dim,
                   border: `2px solid ${item.current ? D.blue : item.type === "edu" ? D.purple : item.verified ? D.mint : D.line}`,
                   transition: "transform 0.12s", transform: hovered === i ? "scale(1.5)" : "scale(1)",
-                  boxShadow: item.current ? `0 0 0 3px ${D.blue}18` : undefined,
+                  boxShadow: item.current ? `0 0 0 3px ${tint("blue", "18")}` : undefined,
                 }} />
               </div>
               <div style={{
@@ -451,7 +451,7 @@ function CareerTimeline() {
                   {item.type === "work" ? <Briefcase size={9.5} strokeWidth={2} color={item.current ? D.blue : D.muted} /> : <GraduationCap size={9.5} strokeWidth={2} color={D.purple} />}
                   <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink }}>{item.title}</span>
                   {item.current && <Badge color={D.blue} bg={D.blueSoft}>NOW</Badge>}
-                  {item.type === "edu" && <Badge color={D.purple} bg={`${D.purple}10`}>EDU</Badge>}
+                  {item.type === "edu" && <Badge color={D.purple} bg={`${tint("purple", "10")}`}>EDU</Badge>}
                   {item.verified && <Badge color={D.mint} bg={D.mintSoft}><CheckCircle2 size={8} strokeWidth={2} color={D.mint} />Verified</Badge>}
                 </div>
                 <div style={{ fontSize: 10.5, color: D.sub, marginBottom: 1 }}>{item.org}</div>

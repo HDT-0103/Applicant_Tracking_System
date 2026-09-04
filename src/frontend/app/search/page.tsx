@@ -4,13 +4,14 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Search, Sparkles, X } from "lucide-react";
 import { AppShell } from "../../components/AppShell";
-import { D } from "../../lib/shared";
+import { D, tint } from "../../lib/shared";
 import {
   MAX_TOP_K,
   searchCandidates,
   type SearchResult,
 } from "../../services/searchService";
 import { anonymousCandidateLabel, isMasked } from "../../lib/candidateLabel";
+import { useT } from "../../lib/i18n";
 
 /**
  * Screen 3 — Semantic Ranking Results (Design §5.2.3).
@@ -29,6 +30,7 @@ import { anonymousCandidateLabel, isMasked } from "../../lib/candidateLabel";
  */
 export default function SearchPage() {
   const router = useRouter();
+  const t = useT();
 
   const [summary, setSummary] = useState("");
   const [experience, setExperience] = useState("");
@@ -63,7 +65,7 @@ export default function SearchPage() {
       // ẩn sạch kết quả mới, và trông y như "không tìm thấy ai".
       setThreshold(0);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "The search could not run.");
+      setError(err instanceof Error ? err.message : t("search.error"));
     } finally {
       setSearching(false);
     }
@@ -87,11 +89,10 @@ export default function SearchPage() {
     <AppShell>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: D.ink, marginBottom: 6 }}>
-          Find candidates
+          {t("search.title")}
         </h1>
         <p style={{ fontSize: 13.5, color: D.muted, margin: 0 }}>
-          Describe the role in plain language. Candidates are ranked by semantic
-          relevance, not keyword overlap.
+          {t("search.subtitle")}
         </p>
       </div>
 
@@ -109,35 +110,34 @@ export default function SearchPage() {
       >
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: D.ink }}>
-            What does the role need? *
+            {t("search.summaryLabel")}
           </span>
           <textarea
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
-            placeholder="Senior backend engineer building REST APIs with Python, FastAPI and PostgreSQL…"
+            placeholder={t("search.summaryPlaceholder")}
             style={{ ...field, minHeight: 76, resize: "vertical" }}
           />
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: D.ink }}>
-            Experience expectations
+            {t("search.experienceLabel")}
           </span>
           <input
             value={experience}
             onChange={(e) => setExperience(e.target.value)}
-            placeholder="3+ years in production backend work, cloud deployment"
+            placeholder={t("search.experiencePlaceholder")}
             style={field}
           />
         </label>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: D.ink }}>
-            Must-have skills
+            {t("search.mustHaveLabel")}
           </span>
           <span style={{ fontSize: 11, color: D.muted, marginTop: -4 }}>
-            A hard filter — a candidate missing any of these is excluded no matter
-            how well the rest matches.
+            {t("search.mustHaveHint")}
           </span>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -149,7 +149,7 @@ export default function SearchPage() {
                   addSkill();
                 }
               }}
-              placeholder="Python"
+              placeholder={t("search.skillPlaceholder")}
               style={{ ...field, flex: 1 }}
             />
             <button
@@ -166,7 +166,7 @@ export default function SearchPage() {
                 cursor: "pointer",
               }}
             >
-              Add
+              {t("search.add")}
             </button>
           </div>
           {skills.length > 0 && (
@@ -189,7 +189,7 @@ export default function SearchPage() {
                   {skill}
                   <button
                     type="button"
-                    aria-label={`Remove ${skill}`}
+                    aria-label={t("search.removeSkill", { skill })}
                     onClick={() => setSkills(skills.filter((s) => s !== skill))}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, display: "flex" }}
                   >
@@ -204,7 +204,7 @@ export default function SearchPage() {
         <div style={{ display: "flex", alignItems: "flex-end", gap: 14 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: D.ink }}>
-              Results
+              {t("search.resultsLabel")}
             </span>
             <input
               type="number"
@@ -242,7 +242,7 @@ export default function SearchPage() {
             ) : (
               <Search size={14} strokeWidth={2} />
             )}
-            {searching ? "Searching…" : "Search"}
+            {searching ? t("search.searching") : t("search.search")}
           </button>
         </div>
 
@@ -252,8 +252,8 @@ export default function SearchPage() {
             style={{
               padding: "9px 12px",
               borderRadius: 6,
-              background: `${D.red}0D`,
-              border: `1px solid ${D.red}28`,
+              background: `${tint("red", "0D")}`,
+              border: `1px solid ${tint("red", "28")}`,
               color: D.red,
               fontSize: 12.5,
             }}
@@ -275,12 +275,12 @@ export default function SearchPage() {
             }}
           >
             <h2 style={{ fontSize: 17, fontWeight: 600, color: D.ink, margin: 0 }}>
-              {visible.length} of {results.length} candidates
+              {t("search.countOf", { visible: visible.length, total: results.length })}
             </h2>
             <span style={{ flex: 1 }} />
             <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 12, color: D.muted, whiteSpace: "nowrap" }}>
-                Minimum match
+                {t("search.minMatch")}
               </span>
               <input
                 type="range"
@@ -288,7 +288,7 @@ export default function SearchPage() {
                 max={100}
                 value={Math.round(threshold * 100)}
                 onChange={(e) => setThreshold(Number(e.target.value) / 100)}
-                aria-label="Minimum match score"
+                aria-label={t("search.minMatchAria")}
                 style={{ width: 180, accentColor: D.blue }}
               />
               <span
@@ -319,8 +319,8 @@ export default function SearchPage() {
                 }}
               >
                 {results.length === 0
-                  ? "No candidate matched this description."
-                  : `No candidate scores above ${Math.round(threshold * 100)}%. Lower the threshold to see the rest.`}
+                  ? t("search.noMatch")
+                  : t("search.noneAbove", { pct: Math.round(threshold * 100) })}
               </div>
             )}
 
@@ -347,6 +347,7 @@ function ResultCard({
   result: SearchResult;
   onOpen: () => void;
 }) {
+  const t = useT();
   const percent = Math.round(result.score * 100);
 
   return (
@@ -364,7 +365,7 @@ function ResultCard({
       }}
     >
       <div
-        title={`Semantic relevance ${percent}%`}
+        title={t("search.relevanceTitle", { pct: percent })}
         style={{
           flexShrink: 0,
           width: 54,
@@ -381,7 +382,7 @@ function ResultCard({
         <span style={{ fontSize: 16, fontWeight: 700, color: D.blue, fontFamily: D.mono }}>
           {percent}
         </span>
-        <span style={{ fontSize: 8.5, color: D.blue, opacity: 0.75 }}>MATCH</span>
+        <span style={{ fontSize: 8.5, color: D.blue, opacity: 0.75 }}>{t("search.matchBadge")}</span>
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -416,7 +417,7 @@ function ResultCard({
             }}
           >
             <Sparkles size={11} strokeWidth={1.8} />
-            Summary hidden — identifying text is masked for technical reviewers
+            {t("search.summaryHidden")}
           </div>
         ) : (
           <p
@@ -458,10 +459,10 @@ function ResultCard({
         {(result.strengths.length > 0 || result.weaknesses.length > 0) && (
           <div style={{ display: "flex", gap: 18, marginTop: 10, flexWrap: "wrap" }}>
             {result.strengths.length > 0 && (
-              <Evidence label="Strengths" items={result.strengths} tone={D.mint} />
+              <Evidence label={t("search.strengths")} items={result.strengths} tone={D.mint} />
             )}
             {result.weaknesses.length > 0 && (
-              <Evidence label="Gaps" items={result.weaknesses} tone={D.amber} />
+              <Evidence label={t("search.gaps")} items={result.weaknesses} tone={D.amber} />
             )}
           </div>
         )}

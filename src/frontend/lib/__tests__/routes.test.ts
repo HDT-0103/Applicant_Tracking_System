@@ -20,7 +20,7 @@ describe("isPublicRoute", () => {
 
   it("keeps every HR surface behind the login", () => {
     for (const path of ["/", "/admin", "/schedule", "/job-postings/create",
-                        "/job-postings/3f9a2b1c-4d5e-4f6a-8b9c-0d1e2f3a4b5c", "/onboarding/company",
+                        "/job-postings/3f9a2b1c-4d5e-4f6a-8b9c-0d1e2f3a4b5c", "/onboarding/company", "/settings",
                         "/candidate-profile", "/candidate-profile/enriched", "/ai-agent-prompt"]) {
       expect(isPublicRoute(path), path).toBe(false);
     }

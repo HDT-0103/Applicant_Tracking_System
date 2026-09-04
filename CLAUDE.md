@@ -184,6 +184,26 @@ tên thật nếu chưa bị che, ngược lại `Candidate #<8 ký tự uuid>`.
 fallback — dashboard từng hiện `***` cho mọi hồ sơ. Đừng tự ghép nhãn ở
 component.
 
+### Màu là biến CSS, có chế độ tối — đừng nối alpha vào token
+
+`D` trong `src/frontend/lib/tokens.ts` là `var(--x)` trỏ vào
+`app/globals.css`: bảng sáng ở `:root`, bảng tối ở `[data-theme="dark"]`.
+`contexts/ThemeContext.tsx` đặt `data-theme` lên `<html>` theo lựa chọn lưu
+trong localStorage (`smartats_theme`); trang công khai (login, register,
+careers) **luôn sáng**.
+
+- **`${D.blue}28` là chuỗi CSS vô nghĩa** (`var(--primary)28`), trình duyệt
+  bỏ qua và màu biến mất không báo lỗi. Dùng `tint("blue", "28")` — nó dựng
+  `rgb(var(--primary-rgb) / a)`. Prop màu không biết trước thì dùng
+  `color-mix(in srgb, ${color} 10%, transparent)`.
+- Thêm biến màu mới thì phải khai ở **cả hai** khối; `tokens.test.ts` bắt
+  thiếu một bên.
+- Trang viết bằng class Tailwind cứng (`bg-white`, `bg-[#f4f5f7]`,
+  `bg-emerald-50`…) được ánh xạ về biến ở cuối `globals.css` khi tối. Dùng
+  class mới thì thêm vào đó, hoặc dùng `bg-card` / `bg-muted`.
+- Hex cứng trong inline style (`#fff` cho chữ trên nền chàm) chỉ ổn khi nó là
+  màu chữ trên màu chính; `background: "#fff"` sẽ loé trắng trong chế độ tối.
+
 ### Cấu hình frontend nằm ở `src/frontend`, không phải gốc repo
 
 `next.config.ts`, `tailwind.config.ts` và `postcss.config.mjs` đều nằm trong
@@ -269,6 +289,8 @@ chọn.
 | Đăng ký công khai tự chọn `hr` hoặc `tech_lead` | Giữ theo quyết định của chủ dự án. `admin` KHÔNG tự cấp được — `RegisterRequest.role` là Literal hai giá trị, và service kiểm lại lần nữa |
 | **V009 phải chạy trên Supabase trước khi deploy** | `src/backend/migrations/V009__user_company.sql` thêm `users.company_name/company_website`. Thiếu cột: đăng ký 500, `/api/auth/me` 500. Đăng ký bắt buộc công ty; đăng nhập Google lần đầu tự tạo tài khoản `hr` rồi bắt điền ở `/onboarding/company` |
 | Tin có sẵn `created_by = NULL` | Sau khi tách dữ liệu theo người dùng, tin đó không HR nào thấy. Gán chủ bằng SQL trong `docs/DEPLOY.md` mục 2 |
+| Settings `/settings`, menu tài khoản, ⌘K, chế độ tối, EN/VI | `PATCH /api/auth/me` sửa tên/công ty/website; `POST /api/auth/change-password` chỉ cho tài khoản có mật khẩu (`AuthUser.has_password`). Tuỳ chọn thông báo **chưa làm** theo quyết định của chủ dự án |
+| Chatbot: Groq chính, Hugging Face dự phòng | `app/agents/router.py` dựng `FallbackLLMProvider(GroqProvider(), HFProvider())`. Dự phòng gánh **mọi** lỗi của Groq (401/400/429/timeout), không chỉ 429. `GROQ_API_KEY` trong `.env` đang **không hợp lệ** (401) nên thực tế HF phục vụ; `HF_MODEL` phải là model serverless trên router (`Qwen/Qwen2.5-72B-Instruct`; bản 7B bị đẩy sang Together đòi endpoint riêng). Thử nhanh: `tests/test_llm_fallback.py` |
 | `/ai-agent-prompt` là mockup tĩnh | Giữ theo quyết định của chủ dự án |
 | 5 component frontend chết | Chưa xoá, cần hỏi người viết |
 

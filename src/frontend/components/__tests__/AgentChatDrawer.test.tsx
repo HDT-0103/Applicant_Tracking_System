@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 /**
- * Nút chat với agent chỉ xuất hiện trong workspace.
+ * Nút chat với agent chỉ xuất hiện khi đã mở một ứng viên cụ thể.
  *
  * `user` được khôi phục từ localStorage ngay khi app mở, nên chỉ kiểm "có
  * user" là nút hiện cả trên trang đăng nhập (trong lúc AuthGuard đang chuyển
@@ -39,10 +39,16 @@ import { AgentChatDrawer, shouldShowAgentChat } from "../AgentChatDrawer";
 afterEach(cleanup);
 
 describe("shouldShowAgentChat", () => {
-  it("hiện trong workspace cho hr và tech_lead", () => {
-    expect(shouldShowAgentChat({ role: "hr" }, "/")).toBe(true);
-    expect(shouldShowAgentChat({ role: "tech_lead" }, "/search")).toBe(true);
-    expect(shouldShowAgentChat({ role: "hr" }, "/job-postings/abc")).toBe(true);
+  it("hiện khi đã mở một ứng viên cụ thể, cho cả hr lẫn tech_lead", () => {
+    expect(shouldShowAgentChat({ role: "hr" }, "/candidate-profile/enriched")).toBe(true);
+    expect(shouldShowAgentChat({ role: "tech_lead" }, "/candidate-profile")).toBe(true);
+  });
+
+  it("ẩn trên dashboard, tìm kiếm và tin tuyển dụng — chưa có ứng viên nào để hỏi", () => {
+    expect(shouldShowAgentChat({ role: "hr" }, "/")).toBe(false);
+    expect(shouldShowAgentChat({ role: "tech_lead" }, "/search")).toBe(false);
+    expect(shouldShowAgentChat({ role: "hr" }, "/job-postings/abc")).toBe(false);
+    expect(shouldShowAgentChat({ role: "hr" }, "/candidate-profilex")).toBe(false);
   });
 
   it("ẩn trên màn hình đăng nhập / đăng ký, kể cả khi còn user trong localStorage", () => {
@@ -63,8 +69,8 @@ describe("shouldShowAgentChat", () => {
 });
 
 describe("AgentChatDrawer", () => {
-  it("vẽ nút mở chat trên dashboard", () => {
-    pathname = "/";
+  it("vẽ nút mở chat trên trang ứng viên", () => {
+    pathname = "/candidate-profile/enriched";
     user = { role: "hr" };
     render(<AgentChatDrawer />);
     expect(screen.getByRole("button", { name: /open agent chat/i })).toBeInTheDocument();

@@ -188,6 +188,7 @@ class AuthService:
             picture=profile.get("picture"),
             company_name=db_user.get("company_name") if db_user else None,
             company_website=db_user.get("company_website") if db_user else None,
+            has_password=bool(db_user.get("password_hash")) if db_user else False,
         )
 
         jti = str(uuid.uuid4())
@@ -246,6 +247,7 @@ class AuthService:
             role=role,
             company_name=db_user.get("company_name"),
             company_website=db_user.get("company_website"),
+            has_password=True,
         )
 
         jti = str(uuid.uuid4())
@@ -323,6 +325,7 @@ class AuthService:
             role=normalise_role(db_user["role"]) or role,
             company_name=db_user.get("company_name") or company_name,
             company_website=db_user.get("company_website") or company_website,
+            has_password=True,
         )
 
         jti = str(uuid.uuid4())
@@ -351,7 +354,7 @@ class AuthService:
         """
         res = (
             self._supabase_client.table("users")
-            .select("id, email, name, role, picture, company_name, company_website")
+            .select("id, email, name, role, picture, company_name, company_website, password_hash")
             .eq("id", user.id)
             .limit(1)
             .execute()
@@ -368,16 +371,33 @@ class AuthService:
             jti=user.jti,
             company_name=row.get("company_name"),
             company_website=row.get("company_website"),
+            # Chỉ CÓ/KHÔNG. Hash không bao giờ rời khỏi service.
+            has_password=bool(row.get("password_hash")),
         )
 
-    async def update_company(
-        self, user: AuthUser, company_name: str, company_website: Optional[str]
+    async def update_profile(
+        self,
+        user: AuthUser,
+        *,
+        name: Optional[str] = None,
+        company_name: Optional[str] = None,
+        company_website: Optional[str] = None,
     ) -> AuthUser:
-        """Hoàn tất / sửa công ty của CHÍNH MÌNH. Không đổi được gì khác."""
-        payload = {
-            "company_name": company_name.strip(),
-            "company_website": (company_website or "").strip() or None,
-        }
+        """Sửa hồ sơ của CHÍNH MÌNH: tên, công ty, website. Không đổi được gì khác.
+
+        Trường `None` = giữ nguyên. Website gửi chuỗi rỗng = xoá (thành NULL),
+        vì "không có website" là một trạng thái hợp lệ cần ghi được.
+        """
+        payload: dict = {}
+        if name is not None:
+            payload["name"] = name.strip()
+        if company_name is not None:
+            payload["company_name"] = company_name.strip()
+        if company_website is not None:
+            payload["company_website"] = company_website.strip() or None
+        if not payload:
+            return await self.get_me(user)
+
         res = (
             self._supabase_client.table("users")
             .update(payload)
@@ -386,8 +406,47 @@ class AuthService:
         )
         if not res.data:
             raise LookupError(user.id)
-        logger.info("auth.company.updated", user_id=user.id)
+        logger.info("auth.profile.updated", user_id=user.id, fields=sorted(payload))
         return await self.get_me(user)
+
+    async def update_company(
+        self, user: AuthUser, company_name: str, company_website: Optional[str]
+    ) -> AuthUser:
+        """Giữ cho chỗ gọi cũ; nay là một trường hợp của update_profile."""
+        return await self.update_profile(
+            user, company_name=company_name, company_website=company_website or ""
+        )
+
+    async def change_password(
+        self, user: AuthUser, current_password: str, new_password: str
+    ) -> None:
+        """Đổi mật khẩu của CHÍNH MÌNH, phải chứng minh biết mật khẩu cũ.
+
+        Tài khoản Google không có `password_hash`: không có gì để đổi, và tạo
+        mật khẩu mới ở đây là mở thêm một cửa đăng nhập mà chủ tài khoản không
+        ngờ tới — từ chối rõ ràng.
+        """
+        res = (
+            self._supabase_client.table("users")
+            .select("id, password_hash")
+            .eq("id", user.id)
+            .limit(1)
+            .execute()
+        )
+        row = res.data[0] if res.data else None
+        if not row:
+            raise LookupError(user.id)
+        if not row.get("password_hash"):
+            raise ValueError("This account signs in with Google and has no password to change.")
+        if not PasswordService.verify_password(current_password, row["password_hash"]):
+            raise ValueError("Current password is incorrect.")
+        if PasswordService.verify_password(new_password, row["password_hash"]):
+            raise ValueError("New password must be different from the current one.")
+
+        self._supabase_client.table("users").update(
+            {"password_hash": PasswordService.hash_password(new_password)}
+        ).eq("id", user.id).execute()
+        logger.info("auth.password.changed", user_id=user.id)
 
     async def refresh_tokens(self, refresh_token: str) -> RefreshTokenResponse:
         user = self._jwt_service.decode_token(refresh_token, expected_type="refresh")

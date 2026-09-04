@@ -9,6 +9,7 @@ import {
 } from "../contexts/AuthContext";
 import { ADMIN_HOME, isAdminAllowedPath, landingPathForRole } from "../lib/rbac";
 import { isAuthRoute, isPublicRoute } from "../lib/routes";
+import { useT } from "../lib/i18n";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -16,6 +17,7 @@ interface AuthGuardProps {
 
 export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -79,7 +81,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Loading session&hellip;</p>
+        <p>{t("guard.loadingSession")}</p>
       </div>
     );
   }
@@ -88,7 +90,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to login&hellip;</p>
+        <p>{t("guard.redirectLogin")}</p>
       </div>
     );
   }
@@ -97,7 +99,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to workspace&hellip;</p>
+        <p>{t("guard.redirectWorkspace")}</p>
       </div>
     );
   }
@@ -106,7 +108,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to Admin Panel&hellip;</p>
+        <p>{t("guard.redirectAdmin")}</p>
       </div>
     );
   }
@@ -115,7 +117,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Completing your profile&hellip;</p>
+        <p>{t("guard.completingProfile")}</p>
       </div>
     );
   }

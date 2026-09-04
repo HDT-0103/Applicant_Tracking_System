@@ -68,6 +68,8 @@ SECRETS: dict[str, str] = {
     "SLACK_WEBHOOK_URL": "slack-webhook",
     "SMTP_USERNAME": "smtp-username",
     "SMTP_PASSWORD": "smtp-password",
+    # Chatbot agent gọi Hugging Face Router (app/services/llm_provider.py).
+    "HF_API_KEY": "hf-api-key",
 }
 
 # Bốn biến bắt buộc để app khởi động (modules/shared/infrastructure/config.py).
@@ -94,6 +96,7 @@ PLAIN_FROM_ENV = (
     "ADMIN_EMAILS",
     "RECRUITER_EMAIL_DOMAINS",
     "GEMINI_MODEL",
+    "HF_MODEL",
     "SMTP_HOST",
     "SMTP_PORT",
     "SMTP_FROM_EMAIL",

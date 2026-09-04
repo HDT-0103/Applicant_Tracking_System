@@ -3,6 +3,7 @@
 import React from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { D } from "../lib/shared";
+import { useT } from "../lib/i18n";
 
 /**
  * Hộp xác nhận cho hành động không lùi lại được.
@@ -19,7 +20,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "Confirm",
+  confirmLabel,
   busy = false,
   onCancel,
   onConfirm,
@@ -32,6 +33,8 @@ export function ConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const t = useT();
+
   // Esc để thoát: một hộp thoại phá huỷ mà chỉ đóng được bằng cách bấm đúng
   // nút "Cancel" là cái bẫy cho người dùng bàn phím.
   React.useEffect(() => {
@@ -88,7 +91,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            aria-label="Close"
+            aria-label={t("common.close")}
             style={{ background: "none", border: "none", cursor: busy ? "default" : "pointer", padding: 2, color: D.muted }}
           >
             <X size={16} strokeWidth={2} />
@@ -122,7 +125,7 @@ export function ConfirmDialog({
               color: D.sub,
             }}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -140,7 +143,7 @@ export function ConfirmDialog({
               opacity: busy ? 0.6 : 1,
             }}
           >
-            {busy ? "Working…" : confirmLabel}
+            {busy ? t("confirm.working") : (confirmLabel ?? t("confirm.confirm"))}
           </button>
         </div>
       </div>

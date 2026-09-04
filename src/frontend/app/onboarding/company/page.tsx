@@ -8,6 +8,7 @@ import { AuthShell } from "../../../components/auth/AuthShell";
 import { AuthField } from "../../../components/auth/AuthField";
 import { T } from "../../../components/auth/authTheme";
 import { submitStyle } from "../../../components/Login";
+import { useT } from "../../../lib/i18n";
 
 /**
  * Hoàn tất hồ sơ: công ty của người dùng.
@@ -20,6 +21,7 @@ import { submitStyle } from "../../../components/Login";
 export default function CompanyOnboardingPage() {
   const { user, updateCompany } = useAuth();
   const router = useRouter();
+  const t = useT();
 
   const [companyName, setCompanyName] = useState(user?.company_name ?? "");
   const [companyWebsite, setCompanyWebsite] = useState(user?.company_website ?? "");
@@ -29,7 +31,7 @@ export default function CompanyOnboardingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyName.trim()) {
-      setError("Please enter your company name.");
+      setError(t("onboarding.required"));
       return;
     }
     setIsSubmitting(true);
@@ -41,7 +43,7 @@ export default function CompanyOnboardingPage() {
       });
       router.replace(landingPathForRole(user?.role));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save your company.");
+      setError(err instanceof Error ? err.message : t("onboarding.couldNotSave"));
     } finally {
       setIsSubmitting(false);
     }
@@ -49,23 +51,17 @@ export default function CompanyOnboardingPage() {
 
   return (
     <AuthShell
-      heading="Tell us about your company"
-      subheading={
-        user?.name
-          ? `Welcome, ${user.name}. One last step before your workspace.`
-          : "One last step before your workspace."
-      }
+      heading={t("onboarding.title")}
+      subheading={user?.name ? t("onboarding.welcome", { name: user.name }) : t("onboarding.subtitle")}
       error={error}
       footer={
-        <span style={{ color: T.dim }}>
-          Shown next to your name and on the job postings you create.
-        </span>
+        <span style={{ color: T.dim }}>{t("onboarding.footer")}</span>
       }
     >
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <AuthField
           id="company-name"
-          label="Company name"
+          label={t("settings.companyName")}
           value={companyName}
           onChange={setCompanyName}
           placeholder="Acme Corp"
@@ -74,7 +70,7 @@ export default function CompanyOnboardingPage() {
         />
         <AuthField
           id="company-website"
-          label="Company website (optional)"
+          label={t("settings.companyWebsite")}
           type="url"
           value={companyWebsite}
           onChange={setCompanyWebsite}
@@ -88,11 +84,11 @@ export default function CompanyOnboardingPage() {
           {isSubmitting ? (
             <>
               <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} />
-              <span>Saving…</span>
+              <span>{t("common.saving")}</span>
             </>
           ) : (
             <>
-              <span>Continue</span>
+              <span>{t("common.continue")}</span>
               <ArrowRight size={16} />
             </>
           )}

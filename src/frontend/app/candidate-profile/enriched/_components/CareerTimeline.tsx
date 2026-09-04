@@ -2,12 +2,14 @@
 
 import React, { useState } from "react";
 import { CheckCircle2, ChevronDown, Briefcase, GraduationCap } from "lucide-react";
-import { D, Badge } from "@/lib/shared";
+import { D, Badge, tint } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import { experiencesToTimelineItems } from "../_lib/timeline";
 import type { EnrichedProfile } from "../types";
 
 // ─── Career Timeline (verified) ─────────────────────────────────────────────────
 export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(true);
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -40,10 +42,10 @@ export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
               letterSpacing: "-0.02em",
             }}
           >
-            Career Trajectory
+            {t("candidate.career.title")}
           </div>
           <div style={{ fontSize: 10.5, color: D.muted, marginTop: 1 }}>
-            Verified chronological milestones · LinkedIn cross-referenced
+            {t("candidate.career.subtitle")}
           </div>
         </div>
         <ChevronDown
@@ -94,7 +96,7 @@ export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
                       fontFamily: D.mono,
                     }}
                   >
-                    {item.year}
+                    {item.year === "Unknown" ? t("candidate.career.unknownYear") : item.year}
                   </div>
                   <div
                     style={{
@@ -124,7 +126,7 @@ export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
                         transition: "transform 0.12s",
                         transform: hovered === i ? "scale(1.5)" : "scale(1)",
                         boxShadow: item.current
-                          ? `0 0 0 3px ${D.blue}18`
+                          ? `0 0 0 3px ${tint("blue", "18")}`
                           : undefined,
                       }}
                     />
@@ -174,12 +176,12 @@ export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
                       </span>
                       {item.current && (
                         <Badge color={D.blue} bg={D.blueSoft}>
-                          NOW
+                          {t("candidate.career.now")}
                         </Badge>
                       )}
                       {item.type === "edu" && (
-                        <Badge color={D.purple} bg={`${D.purple}10`}>
-                          EDU
+                        <Badge color={D.purple} bg={`${tint("purple", "10")}`}>
+                          {t("candidate.career.edu")}
                         </Badge>
                       )}
                       {item.verified && (
@@ -189,7 +191,7 @@ export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
                             strokeWidth={2}
                             color={D.mint}
                           />
-                          Verified
+                          {t("candidate.career.verified")}
                         </Badge>
                       )}
                     </div>
@@ -206,7 +208,7 @@ export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
                         marginBottom: 3,
                       }}
                     >
-                      {item.period}
+                      {item.period.replace(/\bPresent\b/, t("candidate.career.present"))}
                     </div>
                     <div
                       style={{
@@ -233,7 +235,7 @@ export function CareerTimeline({ data }: { data: EnrichedProfile | null }) {
                 textAlign: "center",
               }}
             >
-              No career trajectory data available from LinkedIn enrichment
+              {t("candidate.career.empty")}
             </div>
           )}
         </div>

@@ -1,6 +1,7 @@
 import React from "react";
 import { Github, ChevronDown, BookOpen, ExternalLink } from "lucide-react";
-import { D, Dot, Badge } from "@/lib/shared";
+import { D, Dot, Badge, tint } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import type { GithubProfile } from "../types";
 
 // ─── GitHub Accordion Card ────────────────────────────────────────────────────
@@ -15,6 +16,7 @@ export function GitHubCard({
   data: GithubProfile | null;
   githubUsername: string | null;
 }) {
+  const t = useT();
   const getLangColor = (lang: string) => {
     const colors: Record<string, string> = {
       Python: "#3572A5",
@@ -91,7 +93,7 @@ export function GitHubCard({
             </span>
             <Badge color={D.mint} bg={D.mintSoft}>
               <Dot color={D.mint} />
-              Connected
+              {t("candidate.connected")}
             </Badge>
           </div>
           <span
@@ -106,7 +108,7 @@ export function GitHubCard({
           >
             {githubUsername
               ? `github.com/${githubUsername}`
-              : "repository data unavailable"}{" "}
+              : t("candidate.github.unavailable")}{" "}
             <ExternalLink size={9} strokeWidth={2} color={D.blue} />
           </span>
         </div>
@@ -152,7 +154,7 @@ export function GitHubCard({
                   marginBottom: 4,
                 }}
               >
-                Public Repos Analyzed
+                {t("candidate.github.publicRepos")}
               </div>
               <div
                 style={{
@@ -185,7 +187,7 @@ export function GitHubCard({
                   marginBottom: 6,
                 }}
               >
-                Top Languages
+                {t("candidate.github.topLanguages")}
               </div>
               {langs.length > 0 ? (
                 <div
@@ -229,7 +231,7 @@ export function GitHubCard({
                 </div>
               ) : (
                 <div style={{ fontSize: 10, color: D.muted, lineHeight: 1.5 }}>
-                  No repository language data available yet.
+                  {t("candidate.github.noLanguages")}
                 </div>
               )}
             </div>
@@ -296,7 +298,7 @@ export function GitHubCard({
                   color: D.blue,
                 }}
               >
-                Latest README.md Semantic Extraction
+                {t("candidate.github.readmeTitle")}
               </span>
             </div>
             <p
@@ -309,8 +311,8 @@ export function GitHubCard({
               }}
             >
               {semanticTags.length > 0
-                ? `Corroborated skills extracted from README: ${semanticTags.map((tag) => `#${tag}`).join(", ")}.`
-                : "No README content available yet for semantic extraction."}
+                ? t("candidate.github.readmeSkills", { tags: semanticTags.map((tag) => `#${tag}`).join(", ") })
+                : t("candidate.github.noReadme")}
             </p>
             <div
               style={{
@@ -329,8 +331,8 @@ export function GitHubCard({
                     fontFamily: D.mono,
                     padding: "1px 6px",
                     borderRadius: 3,
-                    background: `${D.blue}12`,
-                    border: `1px solid ${D.blue}22`,
+                    background: `${tint("blue", "12")}`,
+                    border: `1px solid ${tint("blue", "22")}`,
                     color: D.blue,
                   }}
                 >
