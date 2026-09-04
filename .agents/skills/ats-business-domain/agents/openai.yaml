@@ -18,7 +18,7 @@ tools:
           type: string
         new_status:
           type: string
-          enum: [SUBMITTED, SCREENING, INTERVIEW, OFFER, HIRED, REJECTED, WITHDRAWN]
+          enum: [CREATED, PARSED, QUEUED, IN_PROGRESS, ENRICHED, ENRICHMENT_FAILED]
         reason:
           type: string
       required:
@@ -29,3 +29,4 @@ env_vars:
   required:
     - SUPABASE_URL
     - SUPABASE_SERVICE_KEY
+

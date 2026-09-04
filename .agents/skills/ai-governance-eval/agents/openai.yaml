@@ -23,4 +23,5 @@ tools:
 
 env_vars:
   required:
-    - GOOGLE_API_KEY
+    - GEMINI_API_KEY
+

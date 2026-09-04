@@ -34,5 +34,6 @@ SUPABASE_SERVICE_KEY=eyJ...         # Service role key (for admin queries)
 ## 3. How It Works
 
 - `AuthService.resolve_role_from_supabase()` queries the `users` table
-- Only allows login if email exists AND role = 'admin' AND is_active = true
-- Uses `SUPABASE_SERVICE_KEY` (service role) to bypass RLS
+- Only allows login if email exists AND `role` is permitted (`hr`, `tech_lead`) AND `is_active = true`
+- Uses `SUPABASE_SERVICE_KEY` (service role) to bypass RLS for server-side verification
+

@@ -36,19 +36,23 @@ src/backend/modules/{domain}/
     └── {domain}_repository.py
 ```
 
+Entrypoint is located at `src/backend/apps/main.py` (FastAPI app, version 4.2.1).
+
 ---
 
 ## 2. API Design & Naming Conventions
 
-### URL Naming Guidelines
-- Use lower-case, plural nouns for collection resources: `/api/v1/candidates`, `/api/v1/job-postings`.
-- Use sub-resources for nested relations: `/api/v1/candidates/{uuid}/applications`.
-- Use specific verbs for actions: `/api/enrichment/{uuid}/sync`, `/api/auth/refresh`.
-- Always prefix public or internal API endpoints with `/api/v1` or `/api/{module}`.
+### Registered Routers & Endpoints
+- **Auth**: `/api/auth/google`, `/api/auth/refresh`
+- **Ingestion (Standard)**: `/api/ingestion/upload`
+- **Ingestion (Azure)**: `/api/v1/ingest`
+- **Enrichment**: `/api/enrichment/{candidate_uuid}/sync`, `/api/enrichment/{candidate_uuid}`
+- **WebSocket Analysis**: `/api/enrichment/ws/v1/analysis/{candidate_uuid}`
+- **Health Check**: `/health`
 
 ### HTTP Method Mapping
 - `GET`: Retrieve resource or collection (safe, idempotent).
-- `POST`: Create resource or trigger action execution.
+- `POST`: Create resource or trigger action execution (`202 Accepted` for background enrichment).
 - `PUT`: Replace resource entirely.
 - `PATCH`: Partial update of resource fields.
 - `DELETE`: Remove or soft-delete resource.
@@ -61,98 +65,62 @@ All request payloads and response bodies MUST use Pydantic v2 models with explic
 
 ```python
 # Pydantic Request Model
-class CandidateCreateRequest(BaseModel):
-    full_name: str = Field(..., min_length=2, max_length=100, example="Jane Doe")
-    email: EmailStr = Field(..., example="jane.doe@example.com")
-    phone: Optional[str] = Field(None, pattern=r"^\+?[1-9]\d{1,14}$")
-    linkedin_url: Optional[HttpUrl] = None
-    github_username: Optional[str] = Field(None, pattern=r"^[a-zA-Z0-9-]+$")
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(..., min_length=10)
 
 # Pydantic Response Model
-class CandidateResponse(BaseModel):
-    uuid: str
-    full_name: str
-    email: EmailStr
-    status: str
-    created_at: datetime
+class AuthTokenResponse(BaseModel):
+    accessToken: str
+    refreshToken: str
+    user: AuthUser
     
     model_config = ConfigDict(from_attributes=True)
 ```
 
 ---
 
-## 4. Standardized Error Responses (RFC 7807)
+## 4. Standardized Error Responses & Exception Handling
 
-API errors MUST follow a uniform JSON payload format:
+API errors throw FastAPI `HTTPException` with clear error messages:
 
 ```json
 {
-  "code": "HTTP_400_BAD_REQUEST",
-  "detail": "Validation failed: Document must be a valid PDF format constraint!",
-  "timestamp": "2026-07-29T09:30:00Z",
-  "path": "/api/v1/ingest"
+  "detail": "Validation failed: Document must be a valid PDF format constraint!"
 }
 ```
 
-### Exception Handling Rules
-- Throw FastAPI `HTTPException` with appropriate status code (`status.HTTP_400_BAD_REQUEST`, `status.HTTP_401_UNAUTHORIZED`, `status.HTTP_403_FORBIDDEN`, `status.HTTP_404_NOT_FOUND`).
-- Catch low-level infrastructure exceptions in service layer and re-raise as domain-friendly `ValueError` or `HTTPException`.
-- Never leak raw stack traces or internal secret strings in HTTP error responses.
+### CORS & Security Middleware (`main.py`)
+- CORS origins configured via `CORS_ORIGINS` setting.
+- In `development` mode, `allow_origin_regex` dynamically allows `https?://(localhost|127\.0\.0\.1)(:\d+)?`.
+- On Windows OS, sets `WindowsSelectorEventLoopPolicy` for Playwright subprocess compatibility.
 
 ---
 
-## 5. Pagination, Filtering, & Sorting Standard
-
-### Request Query Parameters
-```python
-@router.get("/api/v1/candidates", response_model=PaginatedResponse[CandidateResponse])
-async def list_candidates(
-    page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(20, ge=1, le=100, description="Items per page"),
-    status: Optional[str] = Query(None, description="Filter by candidate status"),
-    search: Optional[str] = Query(None, description="Search by name or email"),
-    sort_by: str = Query("created_at", description="Field to sort by"),
-    order: Literal["asc", "desc"] = Query("desc", description="Sort order")
-):
-    ...
-```
-
-### Standard Paginated Envelope
-```python
-T = TypeVar("T")
-
-class PaginatedResponse(BaseModel, Generic[T]):
-    items: List[T]
-    total: int
-    page: int
-    limit: int
-    pages: int
-```
-
----
-
-## 6. Dependency Injection & Service Layer Pattern
+## 5. Dependency Injection & Service Layer Pattern
 
 FastAPI `Depends` MUST be used to inject configurations, database instances, and authentication state:
 
 ```python
-def get_enrichment_service(
-    settings: Annotated[Settings, Depends(get_settings)]
-) -> EnrichmentService:
-    return EnrichmentService(settings=settings)
+def get_auth_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AuthService:
+    return AuthService(
+        settings=settings,
+        google_verifier=GoogleTokenVerifier(settings),
+        jwt_service=JwtService(settings),
+    )
 
-@router.post("/{candidate_uuid}/sync")
-async def sync_candidate(
-    candidate_uuid: str,
-    service: Annotated[EnrichmentService, Depends(get_enrichment_service)],
-    current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin", "hr_manager"))]
-):
-    return await service.run_sync(candidate_uuid, current_user)
+@router.post("/google", response_model=AuthTokenResponse)
+def google_login(
+    payload: GoogleLoginRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> AuthTokenResponse:
+    return auth_service.login_with_google(payload.credential)
 ```
 
 ---
 
-## 7. AI Agent Guidelines for Backend API Code
+## 6. AI Agent Guidelines for Backend API Code
 
 ### When Should AI Load This Skill?
 Load this skill when building new FastAPI routes, writing backend services, creating Pydantic schemas, or adding exception handlers.
@@ -163,6 +131,7 @@ Load this skill when building new FastAPI routes, writing backend services, crea
 - `database-schema-standards` (for persistence integration)
 
 ### Best Practices & Anti-Patterns
-- **Do NOT put SQL or external API calls inside route functions**: Route handlers should only validate input, call application services, and return responses.
-- **Do NOT return raw dictionary primitives**: Always return validated Pydantic response models.
+- **Do NOT put database queries or external scraping inside route functions**: Route handlers should only validate input, call application services, and return responses.
+- **Do NOT return raw untyped dictionaries**: Always return validated Pydantic response models.
 - **Always specify `response_model` and `status_code` in route decorators**.
+

@@ -50,10 +50,11 @@ from modules.shared.infrastructure.auth_dependencies import require_roles
 
 @router.post("/api/enrichment/{uuid}/sync")
 async def trigger_sync(
-    current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin", "hr_manager", "tech_lead"))]
+    current_user: Annotated[AuthUser, Depends(require_roles("recruiter", "admin", "hr", "hr_manager", "tech_lead"))]
 ):
     ...
 ```
+
 
 ### Attribute-Based Access Control (ABAC) & PII Masking
 ABAC rules dynamically mask candidate PII fields (phone, salary expectation, exact home address) depending on interviewer permissions or policy configuration in `abac_policies` table:

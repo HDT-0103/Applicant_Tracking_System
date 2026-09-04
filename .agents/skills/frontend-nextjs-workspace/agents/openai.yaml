@@ -1,6 +1,6 @@
 name: frontend-nextjs-workspace-agent
-version: 1.0.0
-description: Agent for SmartATS Next.js 15 frontend components, pages, and workspace UI
+version: 2.0.0
+description: Agent for Next.js 15 App Router UI components, split-screen ATS workspace, and Recharts visualization
 
 model:
   provider: openai

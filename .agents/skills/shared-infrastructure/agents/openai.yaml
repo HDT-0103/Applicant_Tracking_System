@@ -1,5 +1,5 @@
 name: shared-infrastructure-agent
-version: 1.0.0
+version: 2.0.0
 description: Agent for FastAPI app config, Supabase client, CORS, auth dependencies, and logging
 
 model:
@@ -35,7 +35,7 @@ tools:
       properties:
         user_role:
           type: string
-          enum: [admin, recruiter, interviewer]
+          enum: [recruiter, interviewer, admin, hr, hr_manager, tech_lead]
         required_roles:
           type: array
           items:
@@ -49,3 +49,4 @@ env_vars:
     - JWT_SECRET
     - SUPABASE_URL
     - SUPABASE_SERVICE_KEY
+

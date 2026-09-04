@@ -7,8 +7,7 @@ tech_stack:
   - FastAPI
   - Python 3.11+
   - Google Gemini 2.0 Flash
-  - LangChain
-  - Supabase (PostgreSQL + pgvector)
+  - Supabase (PostgreSQL)
   - Next.js 15
   - Recharts
 when_to_use:
@@ -31,9 +30,10 @@ src/backend/modules/enrichment/
 │   └── routes.py                  # GET /api/enrichment/{uuid}, WS /api/enrichment/ws/v1/analysis/{uuid}
 ├── application/
 │   ├── enrichment_service.py      # Master Orchestrator: GitHub + LinkedIn + Gemini
-│   ├── gemini_parser_service.py   # Gemini AI resume parsing
+│   ├── gemini_parser_service.py   # Gemini AI profile parsing
 │   ├── github_ingestion_service.py # GitHub repos, languages, README parsing
-│   ├── linkedin_ingestion_service.py # LinkedIn profile scraping
+│   ├── linkedin_ingestion_service.py # LinkedIn profile ingestion into Supabase
+│   ├── linkedin_scraper_service.py# Playwright / BeautifulSoup scraper
 │   └── supabase_candidate_service.py # Persistence adapter
 └── domain/
     └── models.py                  # EnrichedProfile, TechnicalSkillMatrix Pydantic models
@@ -44,26 +44,26 @@ src/backend/modules/enrichment/
 ## 2. End-to-End Processing Workflow
 
 ```
-[Uploaded PDF] ──► Ingestion Module (Azure Blob)
+[Uploaded PDF] ──► Ingestion Module (Azure Blob / Local)
                          │
                          ▼
              POST /api/enrichment/{uuid}/sync
                          │
         ┌────────────────┴────────────────┐
         ▼                                 ▼
-1. Gemini 2.0 Flash            2. Social Link Harvester
-   - Full Name, Email, Phone      - GitHub REST API (repos, languages, README)
-   - Skills & Work History        - LinkedIn Apify Scraper (headline, experience)
+1. PDF Link Harvester           2. Multi-Source Scraper
+   - GitHub username              - GitHub REST API (repos, top_languages, README)
+   - LinkedIn profile URL         - LinkedIn Apify Scraper (headline, experience, edu)
         │                                 │
         └────────────────┬────────────────┘
                          ▼
-             3. Skill Matrix Engine
-                - Scores 5 axes (Frontend, Backend, Cloud, Security, AI)
-                - Computes candidate affinity score (28-100)
+             3. Technical Skill Matrix Engine (`generate_analytics`)
+                - Computes 5 axes: Backend, Frontend, Cloud Dev, InfoSec, ML / AI
+                - Computes Match Confidence score & Score Increase
                          │
                          ▼
-             4. WebSocket Real-time Push
-                - Client receives ENRICHED status + JSON payload
+             4. WebSocket Real-time Broadcast (`/api/enrichment/ws/v1/analysis/{uuid}`)
+                - Client receives ENRICHED status + EnrichedProfile payload
 ```
 
 ---
@@ -71,16 +71,18 @@ src/backend/modules/enrichment/
 ## 3. Skill Matrix Computation Formula
 
 The skill matrix measures competency across 5 technical axes:
-1. `frontend_development` (React, Next.js, TypeScript, Tailwind)
-2. `backend_development` (Python, Go, Java, FastAPI, PostgreSQL)
-3. `devops_cloud` (Docker, Kubernetes, AWS, Azure, Terraform)
-4. `infosec` (OAuth, JWT, Encryption, ABAC, Security)
-5. `data_ai` (PyTorch, TensorFlow, Gemini, LangChain, Pandas)
+1. `Backend` (`backend_development`: Python, Go, Java, FastAPI, PostgreSQL, Node)
+2. `Frontend` (`frontend_development`: React, Next.js, TypeScript, Tailwind, CSS)
+3. `Cloud Dev` (`devops_cloud`: Docker, Kubernetes, AWS, Azure, Terraform)
+4. `InfoSec` (`infosec`: OAuth, JWT, Encryption, Authentication, Authorization)
+5. `ML / AI` (`data_ai`: PyTorch, TensorFlow, Pandas, NumPy, AI)
 
-### Scoring Formula
-$$\text{Score} = 25 + (\text{KeywordHits} \times 12) + (\text{LanguageBiasPct} \times 0.35)$$
+### Scoring Formula (`analyze_github_local_fallback`)
+$$\text{Score} = 25.0 + (\text{KeywordHits} \times 12.0) + \text{LanguageBonus}$$
 
-- **Affinity Score**: Weighted average of top 3 skill dimensions, normalized between 28 and 100.
+- `LanguageBonus`: Sum of top language percentage $\times 0.35$ for matching language biases.
+- Scores bounded between $0.0$ and $100.0$.
+- `pre_enrichment` baseline scores calculated as `round(post_enrichment * 0.75, 1)`.
 
 ---
 
@@ -88,9 +90,9 @@ $$\text{Score} = 25 + (\text{KeywordHits} \times 12) + (\text{LanguageBiasPct} \
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/api/enrichment/{uuid}/sync` | `recruiter`, `hr_manager`, `tech_lead`, `admin` | Trigger multi-source enrichment pipeline |
-| `GET` | `/api/enrichment/{uuid}` | `recruiter`, `hr_manager`, `tech_lead`, `admin` | Retrieve current enrichment status |
-| `WS` | `/api/enrichment/ws/v1/analysis/{uuid}` | Public / Session | Stream real-time enrichment updates |
+| `POST` | `/api/enrichment/{candidate_uuid}/sync` | `recruiter`, `admin`, `hr`, `hr_manager`, `tech_lead` | Trigger multi-source enrichment worker |
+| `GET` | `/api/enrichment/{candidate_uuid}` | `recruiter`, `admin`, `hr`, `hr_manager`, `tech_lead` | Retrieve current enrichment status |
+| `WS` | `/api/enrichment/ws/v1/analysis/{candidate_uuid}` | Public / Session | Stream real-time enrichment updates |
 
 ---
 
@@ -103,16 +105,17 @@ Load this skill when modifying CV parsing logic, tuning Gemini extraction prompt
 Automates manual resume screening, eliminates data entry overhead, enriches candidates with real technical evidence, and visualizes applicant skill fit.
 
 ### Dependent Modules & Required Skills:
-- `ingestion-azure-pipeline` (Provides PDF source binary)
+- `ingestion-azure-pipeline` (Provides PDF source binary & Blob URL)
 - `ats-business-domain` (Provides hiring stage transition targets)
 - `ai-governance-eval` (Provides LLM prompt versioning & fallback rules)
 - `shared-infrastructure` (Provides configuration & Supabase client)
 
 ### Which Files Should AI Modify vs Never Modify?
-- **Modify**: `modules/enrichment/application/*`, `modules/enrichment/domain/models.py`, `src/frontend/components/AiAnalyticsWorkspace.tsx`.
-- **Never Modify**: `modules/enrichment/domain/models.py` structural schema without updating frontend TypeScript interfaces.
+- **Modify**: `modules/enrichment/application/*`, `modules/enrichment/domain/models.py`, `src/frontend/app/candidate-profile/enriched/page.tsx`.
+- **Never Modify**: `modules/enrichment/domain/models.py` structural schema without updating frontend TypeScript interfaces in `enriched/page.tsx`.
 
 ### Common Anti-Patterns & Implementation Mistakes:
-- **Blocking HTTP Calls in Async Routes**: Always run long scraping tasks in background tasks or async routines.
-- **Ignoring Duplicate Sync Calls**: Always check if candidate is already in `QUEUED` or `IN_PROGRESS` status before starting new sync.
-- **Lack of Fallback Data**: Failing to load `FallbackDataWizard.tsx` when external APIs fail.
+- **Blocking Network Calls in Sockets**: Always run asynchronous scraper tasks using `httpx.AsyncClient` or `ApifyClientAsync`.
+- **Ignoring Existing Enrichment**: Always check if candidate is already `ENRICHED` or stored in Supabase before queueing duplicate background jobs.
+- **Lack of Fallback Data**: Failing to load `analyze_github_local_fallback` when external APIs or Gemini key are unavailable.
+

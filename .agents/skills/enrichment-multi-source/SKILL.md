@@ -8,11 +8,12 @@ tech_stack:
   - Python 3.11+
   - GitHub REST API
   - Apify Client (LinkedIn Scraper)
+  - Renidly API (LinkedIn Backup)
   - WebSocket Push Protocol
   - Supabase
 when_to_use:
   - "fetch public GitHub repositories, language statistics, or README files"
-  - "scrape candidate LinkedIn profiles via Apify Actor"
+  - "scrape candidate LinkedIn profiles via Apify Actor or Renidly API"
   - "orchestrate multi-channel enrichment workers"
   - "handle real-time WebSocket event pushes for candidate analysis"
 ---
@@ -25,40 +26,42 @@ The Multi-Source Enrichment module aggregates candidate footprints from external
 
 ```
                   ┌─────────────────────────────────────────┐
-                  │       POST /api/enrichment/{uuid}/sync  │
+                  │   POST /api/enrichment/{uuid}/sync      │
                   └────────────────────┬────────────────────┘
                                        │
                                        ▼
-                             [Enrichment Orchestrator]
+                             [enrichment_worker]
                                        │
          ┌─────────────────────────────┼─────────────────────────────┐
          ▼                             ▼                             ▼
-[GitHub Ingestion]            [LinkedIn Scraper]            [Gemini Resume Parser]
- - GET /users/{user}/repos     - Apify Actor `GOvL4O4...`    - PDF text extraction
- - Language % calculation      - Headline & Experience       - Structured skills & edu
- - README semantic scan        - Educations & Certificates
+[fetch_github_profile]       [fetch_linkedin_profile]      [Supabase Persistence]
+ - GET /users/{user}/repos     - Apify Actor `GOvL4O4...`    - UPSERT github_profiles
+ - Language % calculation      - Backup: Renidly API         - UPSERT linkedin_profiles
+ - README semantic scan        - Headline & Experiences      - UPSERT candidates table
          │                             │                             │
          └─────────────────────────────┼─────────────────────────────┘
                                        ▼
-                       [Technical Skill Matrix Engine]
+                        [generate_analytics Engine]
                                        │
                                        ▼
-                   [WebSocket Real-Time Push / Broadcast]
+                    [WebSocket Real-Time Broadcast]
 ```
 
 ---
 
 ## 2. External Integration Protocols
 
-### 1. GitHub Integration (`github_ingestion_service.py`)
+### 1. GitHub Integration (`fetch_github_profile`)
 - **Endpoint**: `https://api.github.com/users/{username}/repos`
-- **Extracted Fields**: Repository name, language, size, stargazers count, README content.
-- **Rate Limit Handling**: Requires `GITHUB_API_TOKEN` header. Fallback to public endpoints if unauthenticated.
+- **Extracted Fields**: Repository name, language, size, top language percentage calculations, README content.
+- **README Scanner**: Pulls `README.md` from the top 5 most recently updated repositories (up to 3000 chars per repo).
+- **Authentication**: Uses `GITHUB_API_TOKEN` header. Fallback to public unauthenticated rate-limited requests if omitted.
 
-### 2. LinkedIn Integration (`linkedin_ingestion_service.py`)
-- **Scraper Engine**: Apify Actor `GOvL4O4RwFqsdIqXF` via `ApifyClient`.
-- **Extracted Fields**: Profile headline, work experiences (title, company, dates, description), educations, certifications.
-- **Normalization**: Automatically strips `https://`, trailing slashes, and parameter strings from profile URLs.
+### 2. LinkedIn Integration (`fetch_linkedin_profile` & `linkedin_scraper.py`)
+- **Primary Scraper Engine**: `ApifyClientAsync(token=settings.apify_api_token)` calling Actor ID `GOvL4O4RwFqsdIqXF`.
+- **Secondary Scraper Engine**: Renidly API (`https://renidly.com/api/data/v1/people/profile`) using `X-renidly-apikey`.
+- **Extracted Fields**: Full name, headline, avatar URL, work experiences (title, company, dates, description), educations, certifications.
+- **URL Normalization**: Normalizes domain `://linkedin.com` to `://www.linkedin.com`, ensures trailing slash `/`, and preserves handle casing.
 
 ---
 
@@ -70,21 +73,28 @@ Client connects to `ws://{host}/api/enrichment/ws/v1/analysis/{candidate_uuid}`:
 {
   "status": "ENRICHED",
   "data": {
-    "candidate_uuid": "2f7c4b54-ed1e-4273-8b36-95e6999c8b50",
-    "full_name": "Alex Mercer",
-    "headline": "Senior Software Architect",
-    "github_profile": {
+    "github_username": "octocat",
+    "linkedin_url": "https://www.linkedin.com/in/octocat/",
+    "full_name": "Octo Cat",
+    "github": {
       "public_repos_count": 14,
       "top_languages": { "Python": 65.5, "TypeScript": 24.5, "Go": 10.0 }
     },
-    "linkedin_profile": {
+    "linkedin": {
+      "full_name": "Octo Cat",
+      "headline": "Lead Developer",
       "experiences": [
-        { "title": "Staff Engineer", "company": "Tech Corp", "is_current": true }
+        { "title": "Staff Engineer", "company": "GitHub Corp", "start_date": "Jan 2022", "end_date": "Present" }
       ]
     },
-    "technical_skill_matrix": {
-      "pre_enrichment": [55, 52, 48, 45, 50],
-      "post_enrichment": [72, 70, 66, 58, 64]
+    "analytics": {
+      "match_confidence_score": 89.5,
+      "score_increase": 4.2,
+      "semantic_tags": ["#python", "#fastapi", "#react"],
+      "technical_skill_matrix": {
+        "pre_enrichment": [55.0, 52.0, 48.0, 45.0, 50.0],
+        "post_enrichment": [73.3, 69.3, 64.0, 60.0, 66.7]
+      }
     }
   }
 }
@@ -106,6 +116,6 @@ Harvests external evidence to corroborate resume claims, computes objective skil
 - `ai-governance-eval` (Provides fallback strategies when APIs fail)
 
 ### Common Anti-Patterns & Implementation Mistakes:
-- **Unbounded Scraping**: Calling Apify without checking if LinkedIn URL is valid.
-- **Exhausting GitHub Rate Limits**: Forgetting to pass `GITHUB_API_TOKEN`.
+- **Unbounded Scraping**: Calling Apify without validating candidate LinkedIn URL format.
+- **Exhausting GitHub Rate Limits**: Forgetting to pass `GITHUB_API_TOKEN` header.
 - **Blocking Socket Loop**: Calling blocking synchronous network routines inside Starlette WebSocket event loops.

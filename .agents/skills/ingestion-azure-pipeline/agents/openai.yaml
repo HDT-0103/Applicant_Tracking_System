@@ -1,6 +1,6 @@
 name: ingestion-azure-pipeline-agent
-version: 1.0.0
-description: Agent for CV PDF upload, validation, Azure Blob storage, and Service Bus queuing
+version: 2.0.0
+description: Agent for handling PDF resume validation, Azure Blob Storage uploads, and Azure Service Bus messaging
 
 model:
   provider: openai
@@ -8,49 +8,50 @@ model:
   temperature: 0
 
 tools:
-  - name: validate_pdf
-    description: Validate PDF file size (<10MB), MIME type, and magic bytes
+  - name: validate_pdf_file
+    description: Validate PDF magic bytes (%PDF) and file size boundary limits (<=10MB)
     type: function
     parameters:
       type: object
       properties:
         file_bytes:
           type: string
-          description: Base64-encoded file bytes
+        filename:
+          type: string
       required:
         - file_bytes
+        - filename
 
-  - name: upload_to_azure_blob
-    description: Upload file to Azure Blob Storage container
+  - name: upload_blob_storage
+    description: Upload PDF file to Azure Blob Storage container candidate-cvs
     type: function
     parameters:
       type: object
       properties:
         container_name:
           type: string
-          default: resumes
-        file_name:
+          default: candidate-cvs
+        blob_name:
           type: string
-        file_bytes:
+        file_content:
           type: string
       required:
-        - file_name
-        - file_bytes
+        - blob_name
+        - file_content
 
-  - name: queue_ingestion_event
-    description: Send ingestion event to Azure Service Bus
+  - name: publish_service_bus_event
+    description: Publish event message to Azure Service Bus queue cv-received-queue
     type: function
     parameters:
       type: object
       properties:
-        candidate_uuid:
+        queue_name:
           type: string
-        event_type:
-          type: string
-          enum: [cv_uploaded, enrichment_requested]
+          default: cv-received-queue
+        event_payload:
+          type: object
       required:
-        - candidate_uuid
-        - event_type
+        - event_payload
 
   - name: create_candidate_record
     description: Create candidate record in Supabase

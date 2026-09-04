@@ -43,12 +43,14 @@ Uses `pydantic-settings` to auto-detect and load system environment variables fr
 ```python
 class Settings(BaseSettings):
     # App Configuration
-    app_name: str = Field(default="SmartATS", alias="APP_NAME")
+    app_name: str = Field(default="SmartATS Backend", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
-    cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+    app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
+    app_port: int = Field(default=8000, alias="APP_PORT")
+    cors_origins: str = Field(default="http://localhost:3000,http://127.0.0.1:3000", alias="CORS_ORIGINS")
     
     # JWT Security
-    jwt_secret: str = Field(..., alias="JWT_SECRET")
+    jwt_secret: str = Field(default="dev-secret-key-change-in-production-32chars", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
@@ -67,7 +69,9 @@ class Settings(BaseSettings):
     gemini_model: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL")
     github_api_token: str = Field(default="", alias="GITHUB_API_TOKEN")
     apify_api_token: str = Field(default="", alias="APIFY_API_TOKEN")
+    renidly_api_key: str = Field(default="", alias="RENIDLY_API_KEY")
 ```
+
 
 ---
 

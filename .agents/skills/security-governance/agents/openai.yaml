@@ -18,7 +18,7 @@ tools:
           type: object
         user_role:
           type: string
-          enum: [admin, recruiter, hr_manager, tech_lead, interviewer]
+          enum: [admin, recruiter, hr, hr_manager, tech_lead, interviewer]
       required:
         - candidate_data
         - user_role
@@ -26,3 +26,4 @@ tools:
 env_vars:
   required:
     - JWT_SECRET
+

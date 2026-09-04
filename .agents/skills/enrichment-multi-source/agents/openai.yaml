@@ -1,5 +1,5 @@
 name: enrichment-multi-source-agent
-version: 1.0.0
+version: 2.0.0
 description: Agent for orchestrating multi-source candidate enrichment (Gemini, GitHub, LinkedIn)
 
 model:
@@ -64,7 +64,9 @@ tools:
 
 env_vars:
   required:
-    - GOOGLE_API_KEY
-    - GEMINI_MODEL
+    - GEMINI_API_KEY
     - APIFY_API_TOKEN
     - GITHUB_API_TOKEN
+  optional:
+    - RENIDLY_API_KEY
+

@@ -101,17 +101,17 @@ dependencies:
 
 env_vars:
   required:
-    - GOOGLE_API_KEY
-    - GEMINI_MODEL
+    - GEMINI_API_KEY
     - SUPABASE_URL
     - SUPABASE_SERVICE_KEY
     - JWT_SECRET
   optional:
     - GITHUB_API_TOKEN
     - APIFY_API_TOKEN
+    - RENIDLY_API_KEY
     - AZURE_STORAGE_CONNECTION_STRING
     - AZURE_SERVICE_BUS_CONNECTION_STRING
-    - OPENAI_API_KEY
+
 
 mcp:
   enabled: true

@@ -9,7 +9,7 @@ tech_stack:
   - TypeScript 5+
   - Recharts
   - Lucide React Icons
-  - Pure CSS Modules & Tokens
+  - Pure CSS & Shared Design Tokens
 when_to_use:
   - "build or modify Next.js 15 App Router pages and components"
   - "implement split-screen candidate review workspace"
@@ -24,7 +24,7 @@ when_to_use:
 
 The SmartATS frontend is built with Next.js 15, React 19, and TypeScript. It features a high-density, split-screen workspace allowing recruiters to view candidate original PDF documents side-by-side with AI-driven skill matrices, radar charts, and career trajectory timelines.
 
-### Design System & Theme Tokens (`src/frontend/lib/shared.ts`)
+### Design System & Theme Tokens (`src/frontend/lib/shared.tsx`)
 ```typescript
 export const D = {
   ink: "#111827",       // Primary text
@@ -33,11 +33,11 @@ export const D = {
   line: "#e5e7eb",       // Border color
   canvas: "#ffffff",     // Card background
   surface: "#f9fafb",    // Page background
-  blue: "#4f46e5",       // Accent primary (Indigo/Blue)
+  blue: "#4f46e5",       // Primary accent (Indigo)
   mint: "#10b981",       // Success / Enriched green
-  amber: "#f59e0b",      // Warning / Processing
-  red: "#dc2626",        // Danger / Reject
-  purple: "#6366f1",     // Education / Secondary accent
+  amber: "#f59e0b",      // Warning / Processing amber
+  red: "#dc2626",        // Error / Danger red
+  purple: "#6366f1",     // Education accent purple
 };
 ```
 
@@ -48,25 +48,30 @@ export const D = {
 ```
 src/frontend/
 ├── app/
-│   ├── layout.tsx              # Root HTML & body wrapper
+│   ├── layout.tsx              # Root HTML & Providers wrapper
+│   ├── page.tsx                # Dashboard Home Page
 │   ├── providers.tsx           # AuthProvider + AuthGuard + WorkspaceProvider
-│   ├── page.tsx                # Dashboard Home Page (Recent candidates)
 │   ├── login/page.tsx          # Google OAuth Login view
-│   ├── careers/page.tsx        # Public Job Portal & CV upload
+│   ├── ai-agent-prompt/page.tsx# AI Prompt Configuration view
+│   ├── careers/[[...slug]]/page.tsx # Public Careers Portal
+│   ├── job-postings/create/page.tsx # Job Creation view
 │   └── candidate-profile/
-│       ├── page.tsx            # Classic view
+│       ├── page.tsx            # Candidate Profile overview
 │       └── enriched/page.tsx   # Enriched split-screen workspace
 ├── components/
 │   ├── AppHeader.tsx           # Global top navigation bar
 │   ├── LeftSidebar.tsx         # App navigation sidebar
-│   ├── AiAnalyticsWorkspace.tsx# Split-panel PDF + Radar chart view
+│   ├── AiAnalyticsWorkspace.tsx# Candidate review workspace component
 │   ├── AuthGuard.tsx           # Route protection guard
-│   └── FallbackDataWizard.tsx  # Manual data entry fallback UI
+│   ├── FallbackDataWizard.tsx  # Manual data entry fallback UI
+│   ├── IdleUploadZone.tsx      # PDF Drag-and-drop upload zone
+│   └── ProfileHeader.tsx       # Candidate profile header card
 ├── contexts/
-│   ├── AuthContext.tsx         # User authentication, tokens, roles
-│   └── WorkspaceContext.tsx    # Active candidate UUID, sync state, WebSocket listener
+│   ├── AuthContext.tsx         # User session, JWT tokens (`smartats_user`, `smartats_access_token`)
+│   └── WorkspaceContext.tsx    # Candidate upload (`/api/v1/ingest`) and sync (`/api/enrichment/{uuid}/sync`)
 └── services/
-    └── httpClient.ts           # Fetch wrapper with auto JWT token refresh
+    ├── httpClient.ts           # Fetch wrapper with auto JWT token refresh (`/api/auth/refresh`)
+    └── mockAnalyticsService.ts # Analytics data mocks
 ```
 
 ---
@@ -78,19 +83,21 @@ src/frontend/
    │
    ├── [AuthGuard] (Redirects to /login if unauthenticated)
    │     │
-   │     └── [WorkspaceProvider] (Holds active candidate UUID & state)
+   │     └── [WorkspaceProvider] (Holds candidate UUID & upload state)
    │           │
-   │           ├── [AppHeader] (Role badge, Search, User Avatar)
+   │           ├── [AppHeader] (Candidate name, User Avatar, Navigation)
    │           │
-   │           └── [Enriched Candidate Profile Page]
+   │           └── [EnrichedCandidateProfilePage] (`candidate-profile/enriched/page.tsx`)
    │                 │
-   │                 ├── [LeftPanel]: Original PDF Preview + Toolbar
+   │                 ├── [LeftSidebar]: System Navigation
    │                 │
-   │                 └── [RightPanel]:
-   │                       ├── [ProfileHeader]: Name, Score, Badges
+   │                 ├── [EnrichmentPanel]: GitHub Card + LinkedIn Card + Sync status
+   │                 │
+   │                 └── [EnrichedAnalytics]:
+   │                       ├── [MatchConfidence]: Ring progress + score delta
    │                       ├── [EnrichedRadar]: Recharts 5-axis Radar Chart
    │                       ├── [CareerTimeline]: Verified LinkedIn trajectory
-   │                       └── [DecisionBar]: Approve / Reject / Flag actions
+   │                       └── [Enrichment Impact Summary]: Repos/Roles/Skills metrics
 ```
 
 ---
@@ -100,8 +107,8 @@ src/frontend/
 `src/frontend/services/httpClient.ts` automatically attaches `Authorization: Bearer <access_token>` from `localStorage` (`smartats_access_token`). 
 
 When a `401 Unauthorized` response is received:
-1. Calls `/api/auth/refresh` sending `smartats_refresh_token`.
-2. On success, stores new access token and retries original request transparently.
+1. Calls `/api/auth/refresh` sending `{ refreshToken: getStoredRefreshToken() }`.
+2. On success, updates `smartats_access_token` + `smartats_refresh_token` and retries original request transparently.
 3. On failure, clears tokens and redirects to `/login`.
 
 ---
@@ -109,7 +116,7 @@ When a `401 Unauthorized` response is received:
 ## 5. AI Agent Instructions & Guidelines
 
 ### When Should AI Load This Skill?
-Load this skill when modifying Next.js pages, React components, CSS styles, Recharts radar charts, AuthContext, or httpClient logic.
+Load this skill when modifying Next.js pages, React components, CSS styles, Recharts radar charts, AuthContext, WorkspaceContext, or httpClient logic.
 
 ### What Problems Does This Skill Solve?
 Provides a high-performance, responsive UI for candidate evaluation, manages frontend state, handles OAuth sessions, and renders live WebSocket updates.
@@ -120,9 +127,10 @@ Provides a high-performance, responsive UI for candidate evaluation, manages fro
 - `cv-analysis-semantic-ranking` (Provides radar score payload schemas)
 
 ### Which Files Should AI Modify vs Never Modify?
-- **Modify**: Files in `src/frontend/app/`, `src/frontend/components/`, `src/frontend/contexts/`.
-- **Never Modify**: Do NOT introduce Tailwind CSS unless explicitly requested by user; SmartATS strictly uses Vanilla CSS & Design Tokens (`D`).
+- **Modify**: Files in `src/frontend/app/`, `src/frontend/components/`, `src/frontend/contexts/`, `src/frontend/services/`.
+- **Never Modify**: Do NOT introduce Tailwind CSS unless explicitly requested by user; SmartATS strictly uses Vanilla CSS & Design Tokens (`D` in `src/frontend/lib/shared.tsx`).
 
 ### Common Anti-Patterns & Implementation Mistakes:
 - **Direct Fetch Usage**: Never use raw `window.fetch` without auth headers; always use `api.get()` / `api.post()` from `httpClient.ts`.
-- **Memory Leak in WebSockets**: Always close WebSocket connections inside `useEffect` cleanup return function.
+- **Memory Leak in WebSockets**: Always close WebSocket connections inside `useEffect` cleanup return function and track manual disconnect flags.
+

@@ -6,13 +6,12 @@ author: SmartATS Database Architecture Team
 tech_stack:
   - PostgreSQL 15+
   - Supabase Database & Auth
-  - pgvector (Vector Embeddings)
   - PL/pgSQL Triggers
 when_to_use:
   - "create or alter Supabase PostgreSQL tables"
   - "write SQL migrations or schema definitions"
   - "configure Row Level Security (RLS) policies"
-  - "design foreign key indexes and vector search indexes"
+  - "design foreign key indexes and JSONB indexes"
   - "implement database audit logs or soft delete mechanisms"
 ---
 
@@ -20,31 +19,34 @@ when_to_use:
 
 ## 1. Architectural Principles
 
-SmartATS uses Supabase (PostgreSQL 15+) as its central relational and vector database. All schema changes must adhere to strict enterprise data standards to maintain performance, ACID compliance, data integrity, and multi-tenant security.
+SmartATS uses Supabase (PostgreSQL 15+) as its central database. All schema changes must adhere to strict enterprise data standards to maintain performance, ACID compliance, data integrity, and multi-tenant security.
 
 ---
 
 ## 2. Naming & Type Conventions
 
 ### Naming Standards
-- **Tables**: `snake_case`, plural noun names (e.g., `candidates`, `jobs_posting`, `applications`, `audit_logs`).
-- **Columns**: `snake_case` (e.g., `full_name`, `created_at`, `match_confidence_score`).
-- **Foreign Keys**: `singular_table_name_id` or `candidate_uuid` (e.g., `job_posting_id`, `candidate_uuid`, `resume_id`).
-- **Indexes**: `idx_{table}_{column(s)}` (e.g., `idx_applications_candidate_uuid`, `idx_candidates_email`).
-- **Custom Types/Enums**: `snake_case` (e.g., `public.role_type`, `public.application_status`).
+- **Tables**: `snake_case`, plural noun names (e.g., `users`, `candidates`, `github_profiles`, `linkedin_profiles`).
+- **Columns**: `snake_case` (e.g., `candidate_uuid`, `full_name`, `cv_file_path`, `top_languages`).
+- **Foreign Keys**: `candidate_uuid` or `singular_table_name_id`.
+- **Indexes**: `idx_{table}_{column(s)}` (e.g., `idx_candidates_email`, `idx_github_profiles_candidate_uuid`).
+- **Custom Types/Enums**: `snake_case` (e.g., `public.role_type`).
 
 ### Data Types & Constraints
-- **Primary Keys**: Always use `UUID` with `gen_random_uuid()` default (or `candidate_uuid` string for legacy compatibility).
+- **Primary Keys**: Always use `UUID` with `gen_random_uuid()` (or `uuid` string for candidate records).
 - **Timestamps**: Always use `TIMESTAMPTZ` (Timestamp with time zone) defaulting to `NOW()`.
-- **Text & Strings**: Prefer `text` or `varchar(255)`. Avoid unbounded arbitrary varchar limits without domain reason.
-- **JSON Data**: Use `JSONB` for unstructured external payloads (e.g., `github_profiles.repos`, `linkedin_profiles.experiences`).
+- **Text & Strings**: Prefer `text` or `varchar`.
+- **JSON Data**: Use `JSONB` for unstructured external payloads (`github_profiles.repos`, `linkedin_profiles.experiences`, `linkedin_profiles.educations`).
 
 ---
 
 ## 3. Core Schema Structure Reference (`public`)
 
 ```sql
--- 1. Users Table
+-- 1. Role Type Enum
+CREATE TYPE public.role_type AS ENUM ('admin', 'hr_manager', 'tech_lead', 'interviewer', 'candidate');
+
+-- 2. Users Table
 CREATE TABLE public.users (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   email varchar NOT NULL UNIQUE,
@@ -57,70 +59,72 @@ CREATE TABLE public.users (
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 
--- 2. Candidates Table
+-- 3. Candidates Table
 CREATE TABLE public.candidates (
   uuid varchar NOT NULL,
   full_name varchar,
   email varchar,
+  phone varchar,
   github_username varchar,
   linkedin_url text,
+  cv_file_path text,
   status varchar NOT NULL DEFAULT 'CREATED'::varchar,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT candidates_pkey PRIMARY KEY (uuid)
 );
 
--- 3. Applications Table
-CREATE TABLE public.applications (
+-- 4. GitHub Profiles Table
+CREATE TABLE public.github_profiles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   candidate_uuid varchar NOT NULL,
-  job_posting_id uuid NOT NULL,
-  resume_id uuid NOT NULL,
-  status varchar NOT NULL DEFAULT 'SUBMITTED'::varchar,
-  submitted_at timestamptz NOT NULL DEFAULT now(),
+  public_repos_count integer DEFAULT 0,
+  top_languages jsonb DEFAULT '{}'::jsonb,
+  readme_content text,
+  repos jsonb DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT applications_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_application_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid) ON DELETE CASCADE,
-  CONSTRAINT fk_application_job_posting FOREIGN KEY (job_posting_id) REFERENCES public.jobs_posting(id) ON DELETE CASCADE
+  CONSTRAINT github_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT uq_github_profile_candidate UNIQUE (candidate_uuid),
+  CONSTRAINT fk_github_profile_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid) ON DELETE CASCADE
 );
 
--- 4. Embeddings Table (Vector Search)
-CREATE TABLE public.embeddings (
+-- 5. LinkedIn Profiles Table
+CREATE TABLE public.linkedin_profiles (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  enrichment_profile_id uuid NOT NULL,
-  source_type varchar NOT NULL,
-  text_content text NOT NULL,
-  embedding vector(768) NOT NULL,
-  created_at timestamptz DEFAULT now(),
-  CONSTRAINT embeddings_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_embeddings_enrichment_profile FOREIGN KEY (enrichment_profile_id) REFERENCES public.enrichment_profiles(id) ON DELETE CASCADE
+  candidate_uuid varchar NOT NULL,
+  full_name varchar,
+  headline text,
+  profile_url text,
+  avatar_url text,
+  experiences jsonb DEFAULT '[]'::jsonb,
+  educations jsonb DEFAULT '[]'::jsonb,
+  certifications jsonb DEFAULT '[]'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT linkedin_profiles_pkey PRIMARY KEY (id),
+  CONSTRAINT uq_linkedin_profile_candidate UNIQUE (candidate_uuid),
+  CONSTRAINT fk_linkedin_profile_candidate FOREIGN KEY (candidate_uuid) REFERENCES public.candidates(uuid) ON DELETE CASCADE
 );
 ```
 
 ---
 
-## 4. Indexing & Vector Search Optimization
+## 4. Indexing & JSONB Optimization
 
 ### Standard B-Tree Indexes
 Always index foreign keys and frequently queried filter columns:
 ```sql
-CREATE INDEX idx_applications_candidate_uuid ON public.applications(candidate_uuid);
-CREATE INDEX idx_applications_job_posting_id ON public.applications(job_posting_id);
+CREATE INDEX idx_users_email ON public.users(email);
 CREATE INDEX idx_candidates_email ON public.candidates(email);
-CREATE INDEX idx_enrichment_profiles_status ON public.enrichment_profiles(enrichment_status);
+CREATE INDEX idx_github_profiles_candidate_uuid ON public.github_profiles(candidate_uuid);
+CREATE INDEX idx_linkedin_profiles_candidate_uuid ON public.linkedin_profiles(candidate_uuid);
 ```
 
 ### JSONB GIN Indexes
 For querying inside JSONB profile fields:
 ```sql
 CREATE INDEX idx_github_profiles_top_languages ON public.github_profiles USING GIN (top_languages);
-```
-
-### Vector Similarity Index (pgvector)
-For semantic embedding similarity search (`multilingual-e5-base` 768 dimensions):
-```sql
-CREATE INDEX idx_embeddings_vector ON public.embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 ```
 
 ---
@@ -132,16 +136,17 @@ All public tables MUST enable RLS in production:
 ```sql
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.candidates ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.github_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.linkedin_profiles ENABLE ROW LEVEL SECURITY;
 
--- Allow authenticated users with admin or hr role full read access
-CREATE POLICY p_admin_hr_full_access ON public.candidates
-  FOR ALL TO authenticated
+-- Allow authenticated users with allowed role read access
+CREATE POLICY p_admin_hr_read_access ON public.candidates
+  FOR SELECT TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM public.users
       WHERE users.email = auth.email()
-      AND users.role IN ('admin', 'hr', 'hr_manager', 'recruiter')
+      AND users.role IN ('admin', 'hr_manager', 'tech_lead', 'recruiter')
     )
   );
 ```
@@ -179,3 +184,4 @@ Load this skill whenever generating SQL migrations, modifying Pydantic database 
 - **Missing Foreign Key Indexes**: Forgetting to index FK columns causes full table scans during joins.
 - **Exposing Service Role Key**: Never put `SUPABASE_SERVICE_KEY` in frontend client code. Service key bypasses RLS and should only be used by backend services.
 - **Unbounded JSONB Growth**: Storing giant raw files in JSONB instead of storing files in Azure Blob Storage / Supabase Storage.
+

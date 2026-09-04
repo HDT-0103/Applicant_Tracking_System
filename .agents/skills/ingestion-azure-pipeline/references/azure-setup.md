@@ -8,6 +8,9 @@ az storage account create --name smartatsstorage --resource-group smartats-rg --
 
 # Get connection string
 az storage account show-connection-string --name smartatsstorage --resource-group smartats-rg
+
+# Create container candidate-cvs
+az storage container create --name candidate-cvs --account-name smartatsstorage
 ```
 
 Set `AZURE_STORAGE_CONNECTION_STRING` in .env.
@@ -18,8 +21,8 @@ Set `AZURE_STORAGE_CONNECTION_STRING` in .env.
 # Create namespace
 az servicebus namespace create --name smartats-queue --resource-group smartats-rg
 
-# Create queue
-az servicebus queue create --namespace-name smartats-queue --name smartats-events
+# Create queue cv-received-queue
+az servicebus queue create --namespace-name smartats-queue --name cv-received-queue
 ```
 
 Set `AZURE_SERVICE_BUS_CONNECTION_STRING` in .env.
@@ -27,10 +30,8 @@ Set `AZURE_SERVICE_BUS_CONNECTION_STRING` in .env.
 ## 3. Container Structure
 
 ```
-resumes/
+candidate-cvs/
 ├── {candidate_uuid}.pdf     # Raw uploaded CVs
-└── parsed/
-    └── {candidate_uuid}.json  # Extracted data (optional)
 ```
 
 ## 4. SAS URL Generation
@@ -43,10 +44,11 @@ from datetime import datetime, timedelta
 
 sas_url = generate_blob_sas(
     account_name="smartatsstorage",
-    container_name="resumes",
+    container_name="candidate-cvs",
     blob_name=f"{uuid}.pdf",
     account_key=account_key,
     permission=BlobSasPermissions(read=True),
     expiry=datetime.utcnow() + timedelta(hours=1)
 )
 ```
+
