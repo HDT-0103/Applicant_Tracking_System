@@ -16,6 +16,27 @@ class RecruiterDecisionNode(BaseNode):
     history_limit = 3
 
     @staticmethod
+    def _candidate_code(candidate_id: str) -> str:
+        return candidate_id[-4:].upper()
+
+    @classmethod
+    def _normalize_recommendation(
+        cls,
+        recommendation: CandidateRecommendation,
+        candidates_by_id: dict[str, CandidateContext],
+    ) -> CandidateRecommendation:
+        candidate = candidates_by_id.get(recommendation.candidate_id)
+        full_name = (candidate.full_name if candidate else None) or "Ứng viên"
+        code = cls._candidate_code(recommendation.candidate_id)
+        return recommendation.model_copy(
+            update={
+                "candidate_code": code,
+                "full_name": full_name,
+                "display_name": f"{full_name} (#{code})",
+            }
+        )
+
+    @staticmethod
     def _compact_candidate(candidate: CandidateContext) -> CandidateContext:
         return candidate.model_copy(
             update={
@@ -77,8 +98,8 @@ class RecruiterDecisionNode(BaseNode):
 
         if not state.candidate_search.candidates:
             state.candidate_search.final_decision = RecruiterDecisionOutput(
-                recommendations=[],
-                final_summary="No candidates were returned by the retrieval pipeline.",
+                candidates=[],
+                summary="No candidates were returned by the retrieval pipeline.",
             )
             self.record_action(
                 state=state,
@@ -111,7 +132,10 @@ class RecruiterDecisionNode(BaseNode):
                 decision_input,
                 RecruiterDecisionOutput,
             )
-            recommendations.extend(batch_output.recommendations)
+            recommendations.extend(
+                self._normalize_recommendation(item, {candidate.candidate_id: candidate for candidate in candidates})
+                for item in batch_output.candidates
+            )
 
         recommendations.sort(key=lambda item: item.confidence, reverse=True)
         top_recommendations = recommendations[:5]
@@ -121,8 +145,8 @@ class RecruiterDecisionNode(BaseNode):
             for item in top_recommendations
         )
         decision_output = RecruiterDecisionOutput(
-            recommendations=recommendations,
-            final_summary=(
+            candidates=recommendations,
+            summary=(
                 f"Evaluated {len(candidates)} candidates in "
                 f"{(len(candidates) + self.batch_size - 1) // self.batch_size} batches. "
                 f"Top matches: {recommendation_summary or 'No recommendations returned.'}"

@@ -39,7 +39,11 @@ from src.backend.app.agents.state import (
     Mission,
     MissionStatus,
 )
-from src.backend.app.services.llm_provider import GroqProvider
+from src.backend.app.services.llm_provider import (
+    FallbackLLMProvider,
+    GroqProvider,
+    HFProvider,
+)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 logger = logging.getLogger(__name__)
@@ -75,7 +79,10 @@ def _agent_graph(settings: Settings):
         ranking_service=RankingService(),
     )
     return build_graph(
-        llm_provider=GroqProvider(),
+        llm_provider=FallbackLLMProvider(
+            primary=GroqProvider(),
+            fallback=HFProvider(),
+        ),
         search_service=search_service,
         interaction_gateway=CLIInteractionGateway(),
     )
@@ -150,7 +157,7 @@ async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncI
         decision = _extract_final_decision(final_state)
         summary = "The agent completed without a recommendation."
         if decision:
-            summary = decision.get("final_summary", summary) if isinstance(decision, dict) else decision.final_summary
+            summary = decision.get("summary", summary) if isinstance(decision, dict) else decision.summary
 
         for index, word in enumerate(summary.split(" ")):
             yield _sse("delta", {"text": (" " if index else "") + word})

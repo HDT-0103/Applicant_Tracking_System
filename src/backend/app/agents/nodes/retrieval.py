@@ -57,6 +57,7 @@ class RetrievalNode(BaseNode):
             mapped_candidates.append(
                 CandidateContext(
                     candidate_id=str(get_val("candidate_id", "")),
+                    full_name=get_val("full_name"),
                     semantic_score=float(raw_score),
                     summary=str(get_val("summary", "")),
                     skills=list(get_val("skills", []) or []),
