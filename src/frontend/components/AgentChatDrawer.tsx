@@ -2,10 +2,29 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Bot, ChevronDown, ExternalLink, Loader2, Send, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAgentChat } from "../hooks/useAgentChat";
-import { useAuth } from "../contexts/AuthContext";
+import { COMPANY_ONBOARDING_PATH, useAuth } from "../contexts/AuthContext";
+import { isOperationalRole } from "../lib/rbac";
+import { isPublicRoute } from "../lib/routes";
 import { D } from "../lib/shared";
+
+/**
+ * Nút chat chỉ có mặt trong workspace: đã đăng nhập, role nghiệp vụ (hr /
+ * tech_lead), và không phải màn hình đăng nhập / đăng ký / careers /
+ * onboarding. Trước đây nó chỉ hỏi `user` có tồn tại không, mà `user` được
+ * khôi phục từ localStorage ngay khi app mở — nên nút hiện cả trên trang
+ * đăng nhập trong lúc AuthGuard còn đang chuyển hướng, và trên trang careers
+ * khi HR xem thử.
+ */
+export function shouldShowAgentChat(
+  user: { role: string } | null | undefined,
+  pathname: string | null | undefined,
+): boolean {
+  if (!user || !isOperationalRole(user.role as never)) return false;
+  if (!pathname || isPublicRoute(pathname) || pathname === COMPANY_ONBOARDING_PATH) return false;
+  return true;
+}
 
 function MarkdownMessage({ content }: { content: string }) {
   const renderInline = (text: string) => text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) => {
@@ -97,13 +116,14 @@ function MessageContent({ message }: { message: { role: "assistant" | "user" | "
 
 export function AgentChatDrawer() {
   const { user } = useAuth();
+  const pathname = usePathname();
   const { messages, isLoading, isOpen, setIsOpen, sendMessage, retry } = useAgentChat();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-  if (!user) return null;
+  if (!shouldShowAgentChat(user, pathname)) return null;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
