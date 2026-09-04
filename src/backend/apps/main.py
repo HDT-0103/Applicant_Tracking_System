@@ -17,6 +17,7 @@ from modules.scheduling.adapters.routes import router as scheduling_router
 from modules.review.adapters.routes import router as review_router
 from modules.search.adapters.routes import router as search_router
 from modules.scoring.adapters.routes import router as scoring_router
+from src.backend.app.agents.router import router as agents_router
 from modules.shared.infrastructure.config import get_settings
 
 structlog.configure(
@@ -60,6 +61,7 @@ app.include_router(scheduling_router)
 app.include_router(review_router)
 app.include_router(search_router)
 app.include_router(scoring_router)
+app.include_router(agents_router)
 
 
 @app.get("/health")

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 from typing_extensions import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 """
 ==========================================================
@@ -311,6 +311,8 @@ class CandidateContext(BaseModel):
 
     candidate_id: str
 
+    full_name: str | None = None
+
     semantic_score: float
 
     summary: str
@@ -346,6 +348,12 @@ class CandidateRecommendation(BaseModel):
 
     candidate_id: str
 
+    candidate_code: str = ""
+
+    display_name: str = ""
+
+    full_name: str = ""
+
     recommendation: Literal[
         "Strong Hire",
         "Hire",
@@ -353,7 +361,7 @@ class CandidateRecommendation(BaseModel):
         "Reject",
     ]
 
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
 
     reasoning: str
 
@@ -363,12 +371,40 @@ class CandidateRecommendation(BaseModel):
 
     risks: list[str]
 
+    @model_validator(mode="after")
+    def normalize_identity(self) -> "CandidateRecommendation":
+        code = self.candidate_id[-4:].upper()
+        self.candidate_code = code
+        if not self.full_name:
+            self.full_name = "Ứng viên"
+        self.display_name = f"{self.full_name} (#{code})"
+        return self
+
 
 class RecruiterDecisionOutput(BaseModel):
 
-    recommendations: list[CandidateRecommendation]
+    summary: str = ""
 
-    final_summary: str
+    candidates: list[CandidateRecommendation] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_field_names(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            values = dict(values)
+            if "candidates" not in values and "recommendations" in values:
+                values["candidates"] = values.pop("recommendations")
+            if "summary" not in values and "final_summary" in values:
+                values["summary"] = values.pop("final_summary")
+        return values
+
+    @property
+    def recommendations(self) -> list[CandidateRecommendation]:
+        return self.candidates
+
+    @property
+    def final_summary(self) -> str:
+        return self.summary
 
 
 # ==========================================================

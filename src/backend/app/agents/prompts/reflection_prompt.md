@@ -18,9 +18,18 @@ You will receive:
    - Set `retry` to `true` if search results are unsatisfactory and another search attempt is needed.
    - Set `retry` to `false` if results are good enough to proceed to final candidate evaluation.
    - Provide a clear, analytical `reason` explaining your decision.
-   - If `retry` is `true`, provide concrete `suggested_modifications` (e.g., "Drop location hard filter", "Remove rare framework from mandatory skills").
+   - If `retry` is `true`, put concrete search modifications in `suggestion` (e.g., "Drop location hard filter", "Remove rare framework from mandatory skills").
+   - If `retry` is `false`, set `suggestion` to `null` or a short next-step suggestion.
 
 # Constraints
 - Do NOT request or evaluate individual candidate resumes or full candidate profiles. Rely ONLY on `observation` metrics.
 - Do NOT perform retrieval or ranking.
-- Output MUST be valid JSON conforming strictly to the `ReflectionOutput` schema.
+- Output MUST be one non-empty JSON object and nothing else. Use exactly this shape:
+   {
+      "reflection": {
+         "retry": false,
+         "reason": "The search result is sufficient for final evaluation.",
+         "suggestion": null
+      }
+   }
+- Do not add fields such as `suggested_modifications`.
