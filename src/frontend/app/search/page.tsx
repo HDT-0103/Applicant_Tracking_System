@@ -7,10 +7,10 @@ import { AppShell } from "../../components/AppShell";
 import { D } from "../../lib/shared";
 import {
   MAX_TOP_K,
-  isMasked,
   searchCandidates,
   type SearchResult,
 } from "../../services/searchService";
+import { anonymousCandidateLabel, isMasked } from "../../lib/candidateLabel";
 
 /**
  * Screen 3 — Semantic Ranking Results (Design §5.2.3).
@@ -385,6 +385,22 @@ function ResultCard({
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Heading là nhãn ẩn danh theo uuid — cùng chuẩn với dashboard và
+            trang profile. Kết quả tìm kiếm không mang tên ứng viên cho bất kỳ
+            role nào, nên thiếu dòng này thì mọi card của tech lead đều mở đầu
+            bằng cùng một câu "Summary hidden" và không phân biệt được nhau. */}
+        <div
+          style={{
+            fontSize: 13.5,
+            fontWeight: 600,
+            color: D.ink,
+            fontFamily: D.mono,
+            marginBottom: 4,
+          }}
+        >
+          {anonymousCandidateLabel(result.candidate_uuid)}
+        </div>
+
         {/* Tóm tắt bị che với tech_lead — hiện lời giải thích thay vì ba dấu
             sao trần trụi, để người dùng biết đó là chính sách chứ không phải
             dữ liệu thiếu. */}

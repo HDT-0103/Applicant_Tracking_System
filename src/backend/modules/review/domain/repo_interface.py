@@ -1,4 +1,4 @@
-from typing import Dict, List, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 from .models import CvReview, PanelMember
 
@@ -35,23 +35,29 @@ class IReviewRepo:
         """Ghi sĩ số đã chốt, nếu hồ sơ chưa có. Gọi lại lần nữa KHÔNG ghi đè."""
         raise NotImplementedError
 
-    async def is_panel_member(self, candidate_uuid: str, reviewer_id: str) -> bool:
-        """Người này có trong hội đồng chấm ứng viên này không?
+    # ── Phạm vi (AsyncJobVisibilitySource) ─────────────────────────────────
+    # Bốn câu hỏi thuần dữ liệu. LUẬT ai-thấy-gì không ở đây mà ở
+    # `modules/shared/domain/job_visibility.py`; service ghép hai thứ lại.
 
-        Là câu hỏi gác cả quyền XEM chứ không chỉ quyền chấm: hồ sơ ứng viên
-        chứa PII, nên tech lead không được mời thì không có lý do nghiệp vụ nào
-        để nhìn thấy nó.
-        """
+    async def job_postings_created_by(self, user_id: str) -> List[str]:
+        """Tin do *user_id* tạo (`jobs_posting.created_by`)."""
         raise NotImplementedError
 
-    async def filter_accessible(
-        self, candidate_uuids: Sequence[str], reviewer_id: str
-    ) -> Set[str]:
-        """Lọc ra những ứng viên mà *reviewer_id* được xem, trong MỘT lượt.
+    async def job_postings_for_reviewer(self, reviewer_id: str) -> List[str]:
+        """Tin mà *reviewer_id* được mời vào hội đồng (`job_posting_reviewers`)."""
+        raise NotImplementedError
 
-        Bản gọi từng người (`is_panel_member`) đúng cho một hồ sơ, nhưng
-        dashboard hỏi 30 hồ sơ một lúc — gọi vòng lặp là 30 vòng khứ hồi trên
-        đường đi của mọi lần mở trang.
+    async def job_posting_of_candidate(self, candidate_uuid: str) -> Optional[str]:
+        """Tin mà ứng viên này nộp vào (đơn mới nhất). None nếu chưa nộp đâu."""
+        raise NotImplementedError
+
+    async def candidates_on_job_postings(
+        self, candidate_uuids: Sequence[str], job_posting_ids: Sequence[str]
+    ) -> Set[str]:
+        """Trong *candidate_uuids*, ai đã nộp vào một trong *job_posting_ids*.
+
+        Một lượt cho cả lô: dashboard hỏi 30 hồ sơ một lúc, gọi từng người là
+        30 vòng khứ hồi trên đường đi của mọi lần mở trang.
         """
         raise NotImplementedError
 

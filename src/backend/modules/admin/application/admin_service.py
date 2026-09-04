@@ -26,7 +26,7 @@ class AdminService:
     async def get_users(self) -> List[Dict[str, Any]]:
         res = (
             self.client.table("users")
-            .select("id, name, email, role, is_approved, created_at")
+            .select("id, name, email, role, is_approved, created_at, company_name")
             .order("created_at", desc=True)
             .execute()
         )
@@ -40,6 +40,7 @@ class AdminService:
                 "role": r.get("role"),
                 "is_approved": r.get("is_approved"),
                 "created_at": r.get("created_at"),
+                "company_name": r.get("company_name"),
             })
         return users
 

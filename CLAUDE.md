@@ -96,9 +96,13 @@ dưới). `search` là adapter nối Flow B từ cây `app/`.
 
 - Đặt tên field lệch từ vựng của whitelist là **bị che nhầm** — và default-deny
   che theo KIỂU: số → `0`, list → `[]`, chuỗi → `"***"`.
-- Từ vựng chuẩn: `candidate_uuid` (KHÔNG phải `candidate_id`), `title` (không
-  phải `job_title`), `company`, `skills_matrix`.
+- Từ vựng chuẩn: `candidate_uuid` (KHÔNG phải `candidate_id`), `company`,
+  `skills_matrix`, `applied_job_title` (tin ứng viên nộp vào).
 - Đã hai lần phải đổi tên field trong response chỉ để nó đi qua được ABAC.
+- `title` trong whitelist là **chức danh trong lịch sử làm việc** của ứng viên.
+  `CandidateCard` từng mượn tên đó cho tên tin tuyển dụng để lọt ABAC, và
+  frontend vẽ nó ngay dưới tên ứng viên — tech lead đọc thành vị trí hiện tại
+  của người đó. Nay là `applied_job_title`, whitelist riêng.
 
 Thêm field vào whitelist là quyết định bảo mật, không phải sửa lỗi kỹ thuật —
 ghi lý do vào comment.
@@ -150,6 +154,35 @@ sơ nhận **404**, và không có thông báo nào giải thích.
 Ngưỡng 80% nằm ở **một chỗ duy nhất**: `modules/review/domain/policy.py`.
 Backend tính sẵn `required_tl_approvals` và `panel_rule` rồi trả về trong
 `ReviewStatus` — **frontend hiển thị con số nhận được, không tự nhân 0.8**.
+
+### Phạm vi dữ liệu theo người dùng
+
+Luật ai-thấy-tin-nào nằm ở **một chỗ**:
+`modules/shared/domain/job_visibility.py`. `hr` thấy tin **mình tạo**
+(`jobs_posting.created_by`), `tech_lead` thấy tin mình **được mời chấm**
+(`job_posting_reviewers`), ứng viên đi theo tin. Catalog, review, search,
+scheduling, scoring, link CV đều hỏi qua đó; tin ngoài phạm vi trả **404**.
+
+- Trước đây `hr` là "không giới hạn": tài khoản vừa đăng ký thấy toàn bộ dữ
+  liệu của mọi người. `created_by` được ghi từ lâu nhưng chưa từng được đọc.
+- `created_by` **nullable**. Tin tạo trước khi có luật này có `NULL` và biến
+  mất khỏi màn hình mọi HR (chỉ admin còn thấy). Gán chủ bằng SQL trước khi
+  demo — xem `docs/DEPLOY.md` mục 2.
+- Smoke test ký token `hr` bằng **id chủ tin** và `tech_lead` bằng id một thành
+  viên hội đồng (`pick_identities`); id giả thì mọi phép kiểm theo phạm vi thấy
+  dữ liệu rỗng và trông y hệt hệ thống hỏng.
+- Test giả repo: fake phải trả lời 4 câu `job_postings_created_by`,
+  `job_postings_for_reviewer`, `job_posting_of_candidate`,
+  `candidates_on_job_postings`; `is_panel_member` / `filter_accessible` không
+  còn.
+
+### Nhãn ứng viên cho tech lead
+
+`src/frontend/lib/candidateLabel.ts` là **một** cách gọi tên cho mọi màn hình:
+tên thật nếu chưa bị che, ngược lại `Candidate #<8 ký tự uuid>`. ABAC trả
+`"***"` là chuỗi truthy nên `full_name || "Unknown"` không bao giờ rơi vào
+fallback — dashboard từng hiện `***` cho mọi hồ sơ. Đừng tự ghép nhãn ở
+component.
 
 ### Cấu hình frontend nằm ở `src/frontend`, không phải gốc repo
 
@@ -234,6 +267,8 @@ chọn.
 | Chỉ có 1 tech lead | Ngưỡng 80% thành 1/1, không minh hoạ được cơ chế hội đồng |
 | `RECRUITER_EMAIL_DOMAINS` rỗng | Đăng nhập Google **chỉ chạy cho `ADMIN_EMAILS`** |
 | Đăng ký công khai tự chọn `hr` hoặc `tech_lead` | Giữ theo quyết định của chủ dự án. `admin` KHÔNG tự cấp được — `RegisterRequest.role` là Literal hai giá trị, và service kiểm lại lần nữa |
+| **V009 phải chạy trên Supabase trước khi deploy** | `src/backend/migrations/V009__user_company.sql` thêm `users.company_name/company_website`. Thiếu cột: đăng ký 500, `/api/auth/me` 500. Đăng ký bắt buộc công ty; đăng nhập Google lần đầu tự tạo tài khoản `hr` rồi bắt điền ở `/onboarding/company` |
+| Tin có sẵn `created_by = NULL` | Sau khi tách dữ liệu theo người dùng, tin đó không HR nào thấy. Gán chủ bằng SQL trong `docs/DEPLOY.md` mục 2 |
 | `/ai-agent-prompt` là mockup tĩnh | Giữ theo quyết định của chủ dự án |
 | 5 component frontend chết | Chưa xoá, cần hỏi người viết |
 

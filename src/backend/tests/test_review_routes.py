@@ -37,9 +37,13 @@ class FakeReviewRepo(IReviewRepo):
         self.application_status: dict[str, str] = {}
         self.frozen_panel_size: dict[str, int] = {}
         self.panel: dict[str, list] = {}
-        #: Ai được xem hồ sơ nào. `None` = ai cũng được, để những test không
-        #: quan tâm tới hội đồng khỏi phải khai.
-        self.members: set[tuple[str, str]] | None = None
+        #: Phạm vi mặc định — đúng một tin `job-1` do `hr-1` tạo, `tech_lead-1`
+        #: trong hội đồng, và mọi ứng viên đều nộp vào tin đó. Test nào kiểm
+        #: ranh giới thì tự đổi ba bảng này.
+        self.owners: dict[str, str] = {"job-1": "hr-1"}
+        self.panels: dict[str, list[str]] = {"tech_lead-1": ["job-1"]}
+        self.candidate_jobs: dict[str, str | None] = {}
+        self.default_job: str | None = "job-1"
 
     async def get_reviews(self, candidate_uuid):
         return list(self.reviews.get(candidate_uuid, []))
@@ -65,15 +69,22 @@ class FakeReviewRepo(IReviewRepo):
     async def freeze_panel_size(self, candidate_uuid, size):
         self.frozen_panel_size.setdefault(candidate_uuid, size)
 
-    async def is_panel_member(self, candidate_uuid, reviewer_id):
-        if self.members is None:
-            return True
-        return (candidate_uuid, reviewer_id) in self.members
+    # AsyncJobVisibilitySource
+    async def job_postings_created_by(self, user_id):
+        return [job for job, owner in self.owners.items() if owner == user_id]
 
-    async def filter_accessible(self, candidate_uuids, reviewer_id):
-        if self.members is None:
-            return set(candidate_uuids)
-        return {c for c in candidate_uuids if (c, reviewer_id) in self.members}
+    async def job_postings_for_reviewer(self, reviewer_id):
+        return list(self.panels.get(reviewer_id, []))
+
+    async def job_posting_of_candidate(self, candidate_uuid):
+        return self.candidate_jobs.get(candidate_uuid, self.default_job)
+
+    async def candidates_on_job_postings(self, candidate_uuids, job_posting_ids):
+        allowed = set(job_posting_ids)
+        return {
+            c for c in candidate_uuids
+            if self.candidate_jobs.get(c, self.default_job) in allowed
+        }
 
     async def get_panel(self, job_posting_id):
         return list(self.panel.get(job_posting_id, []))
@@ -100,9 +111,11 @@ class FakeReviewRepo(IReviewRepo):
         self.application_status[candidate_uuid] = status
 
 
-def _user(role: str) -> AuthUser:
+def _user(role: str, user_id: str | None = None) -> AuthUser:
+    # Id cố định theo role: phạm vi (tin mình tạo / hội đồng mình được mời)
+    # so khớp theo id, nên id ngẫu nhiên sẽ không thấy gì cả.
     return AuthUser(
-        id=str(_uuid.uuid4()),
+        id=user_id or f"{role}-1",
         email=f"{role}@smartats.com",
         name=role.upper(),
         role=role,
@@ -149,8 +162,8 @@ def approving_panel(repo):
 def as_role():
     """Sign the caller in as a given role for the duration of one test."""
 
-    def _apply(role: str) -> None:
-        app.dependency_overrides[get_current_user] = lambda: _user(role)
+    def _apply(role: str, user_id: str | None = None) -> None:
+        app.dependency_overrides[get_current_user] = lambda: _user(role, user_id)
 
     yield _apply
     app.dependency_overrides.pop(get_current_user, None)
@@ -427,7 +440,7 @@ class TestPanelMembership:
     def test_a_tech_lead_off_the_panel_cannot_read_the_status(
         self, client, as_role, repo
     ):
-        repo.members = set()  # không ai trong hội đồng nào
+        repo.panels = {}  # không ai trong hội đồng nào
         as_role("tech_lead")
         r = client.get(f"/api/review/{CANDIDATE}")
         # 404 chứ không 403: 403 xác nhận ứng viên này CÓ TỒN TẠI, tức là tiết
@@ -435,32 +448,51 @@ class TestPanelMembership:
         assert r.status_code == 404
 
     def test_a_tech_lead_off_the_panel_cannot_submit(self, client, as_role, repo):
-        repo.members = set()
+        repo.panels = {}
         as_role("tech_lead")
         r = client.post(f"/api/review/{CANDIDATE}", json={"decision": "approved"})
         assert r.status_code == 403
         assert "panel" in r.json()["detail"].lower()
 
-    def test_hr_sees_every_candidate(self, client, as_role, repo):
-        repo.members = set()
+    def test_hr_sees_candidates_on_their_own_postings(self, client, as_role, repo):
+        # Hồ sơ đi theo tin: HR tạo tin thì thấy hồ sơ nộp vào tin đó, kể cả
+        # khi chưa có hội đồng nào.
+        repo.panels = {}
         as_role("hr")
         assert client.get(f"/api/review/{CANDIDATE}").status_code == 200
 
+    def test_another_hr_does_not_see_them(self, client, as_role, repo):
+        # Trước đây `hr` là True vô điều kiện: mọi HR trong hệ thống đọc được
+        # hồ sơ của mọi công ty khác.
+        as_role("hr", user_id="hr-elsewhere")
+        assert client.get(f"/api/review/{CANDIDATE}").status_code == 404
+
+    def test_a_candidate_who_applied_nowhere_is_visible_to_no_one(
+        self, client, as_role, repo
+    ):
+        repo.candidate_jobs[CANDIDATE] = None
+        as_role("hr")
+        assert client.get(f"/api/review/{CANDIDATE}").status_code == 404
+
     def test_the_batch_omits_candidates_off_the_panel(self, client, as_role, repo):
         mine, theirs = CANDIDATE, str(_uuid.uuid4())
-        repo.members = {(mine, "panel-member")}
-        app.dependency_overrides[get_current_user] = lambda: AuthUser(
-            id="panel-member", email="tl@smartats.com", name="TL", role="tech_lead"
-        )
-        try:
-            body = client.post(
-                "/api/review/batch", json={"candidate_uuids": [mine, theirs]}
-            ).json()
-        finally:
-            app.dependency_overrides.pop(get_current_user, None)
+        repo.candidate_jobs[theirs] = "job-2"
+        as_role("tech_lead")
+        body = client.post(
+            "/api/review/batch", json={"candidate_uuids": [mine, theirs]}
+        ).json()
 
         # Vắng hẳn, không phải trả về rỗng: một mục "đang chờ" cho ứng viên lạ
         # vẫn tiết lộ rằng người đó có ứng tuyển.
+        assert set(body) == {mine}
+
+    def test_the_batch_is_scoped_for_hr_too(self, client, as_role, repo):
+        mine, theirs = CANDIDATE, str(_uuid.uuid4())
+        repo.candidate_jobs[theirs] = "job-2"
+        as_role("hr")
+        body = client.post(
+            "/api/review/batch", json={"candidate_uuids": [mine, theirs]}
+        ).json()
         assert set(body) == {mine}
 
     def test_only_hr_may_invite_a_reviewer(self, client, as_role):
@@ -468,6 +500,23 @@ class TestPanelMembership:
         r = client.post("/api/review/panels/job-1", json={"reviewer_id": "tl-9"})
         # Để tech lead tự thêm mình vào hội đồng là để họ tự cấp quyền xem PII.
         assert r.status_code == 403
+
+    def test_only_the_posting_owner_manages_its_panel(self, client, as_role, repo):
+        # Một HR lập hội đồng cho tin của HR khác là tự cấp cho tech lead của
+        # mình quyền đọc hồ sơ của người khác. 404 chứ không 403.
+        as_role("hr", user_id="hr-elsewhere")
+        assert client.get("/api/review/panels/job-1").status_code == 404
+        r = client.post("/api/review/panels/job-1", json={"reviewer_id": "tl-9"})
+        assert r.status_code == 404
+        assert client.delete("/api/review/panels/job-1/tl-9").status_code == 404
+        assert repo.panel == {}
+
+    def test_a_tech_lead_reads_the_panel_of_postings_they_review(
+        self, client, as_role, repo
+    ):
+        as_role("tech_lead")
+        assert client.get("/api/review/panels/job-1").status_code == 200
+        assert client.get("/api/review/panels/job-2").status_code == 404
 
     def test_hr_invites_and_removes(self, client, as_role):
         as_role("hr")
@@ -551,6 +600,7 @@ class TestPanelLookupDoesNotGuessConstraintNames:
 
         assert [m["name"] for m in body] == ["An"]
 
-    def test_an_empty_panel_is_an_empty_list(self, client, as_role):
+    def test_an_empty_panel_is_an_empty_list(self, client, as_role, repo):
+        repo.owners["job-empty"] = "hr-1"
         as_role("hr")
         assert client.get("/api/review/panels/job-empty").json() == []

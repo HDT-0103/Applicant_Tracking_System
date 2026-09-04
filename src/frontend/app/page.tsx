@@ -10,6 +10,11 @@ import {
   candidateContext,
 } from "../lib/candidateSummary";
 import { getDashboard } from "../services/catalogService";
+import {
+  appliedForLabel,
+  candidateDisplayName,
+  candidateInitials,
+} from "../lib/candidateLabel";
 import { BarChart3, CalendarDays, Loader2, Send, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { getReviewStatuses, ReviewStatus } from "../services/reviewService";
@@ -18,8 +23,11 @@ import { SendDetailsModal } from "../components/SendDetailsModal";
 
 interface ExtendedCandidate {
   uuid: string;
+  /** Tên thật, hoặc `Candidate #1a2b3c4d` khi bị che / chưa có — xem lib/candidateLabel. */
   name: string;
+  initials: string;
   email?: string;
+  /** "Applying for: <tin tuyển dụng>" — KHÔNG phải chức danh hiện tại của ứng viên. */
   role: string;
   score: number | null;
   time: string;
@@ -101,9 +109,10 @@ export default function Dashboard() {
 
         return {
           uuid: c.candidate_uuid,
-          name: c.full_name || "Unknown Candidate",
+          name: candidateDisplayName(c.full_name, c.candidate_uuid),
+          initials: candidateInitials(c.full_name, c.candidate_uuid),
           email: c.email || undefined,
-          role: c.title || "General Application",
+          role: appliedForLabel(c.applied_job_title),
           score: c.match_confidence_score ?? null,
           time,
           scheduledSlot: futureSlot || null,
@@ -173,7 +182,7 @@ export default function Dashboard() {
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 14, fontWeight: 600, color: "#fff", flexShrink: 0,
       }}>
-        {c.name.split(" ").map((n) => n[0]).join("").substring(0, 2)}
+        {c.initials}
       </div>
       
       <div style={{ flex: 1, minWidth: 0 }}>

@@ -1,6 +1,4 @@
-from typing import Annotated, List
-
-from typing import Literal
+from typing import Annotated, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -36,13 +34,19 @@ def _build_service(repo=Depends(get_catalog_repo)) -> CatalogService:
 
 ServiceDep = Annotated[CatalogService, Depends(_build_service)]
 
+# 404 chứ không 403 cho tin ngoài phạm vi: 403 xác nhận tin đó tồn tại, và một
+# HR có thể dò id của người khác bằng cách đọc mã trạng thái.
+_NOT_FOUND = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found."
+)
+
 
 @router.get("/dashboard", response_model=DashboardData)
 async def get_dashboard(
     service: ServiceDep,
     user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> DashboardData:
-    """Ứng viên gần đây + lịch đã đặt, đã lọc hội đồng và đã che PII."""
+    """Ứng viên gần đây + lịch đã đặt, đã lọc theo phạm vi và đã che PII."""
     return service.get_dashboard(user_id=user.id, role=user.role)
 
 
@@ -58,23 +62,24 @@ async def list_candidate_options(
 @router.get("/job-postings", response_model=List[JobPostingSummary])
 async def list_job_postings(
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_operational_roles())],
+    user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> List[JobPostingSummary]:
-    return service.list_job_postings()
+    """Tin của người gọi: HR thấy tin mình tạo, tech lead thấy tin mình chấm."""
+    return service.list_job_postings(user_id=user.id, role=user.role)
 
 
 @router.get("/job-postings/{job_posting_id}", response_model=dict)
 async def get_job_posting(
     job_posting_id: str,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> dict:
+    """Chi tiết một tin. Tech lead trong hội đồng cũng đọc được — trang chi
+    tiết tin là chung cho cả hai role; phần ghi vẫn chỉ dành cho HR."""
     try:
-        return service.get_job_posting(job_posting_id)
+        return service.get_job_posting(job_posting_id, user_id=user.id, role=user.role)
     except LookupError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found."
-        )
+        raise _NOT_FOUND
 
 
 @router.post("/job-postings", response_model=dict, status_code=status.HTTP_201_CREATED)
@@ -83,7 +88,9 @@ async def create_job_posting(
     service: ServiceDep,
     user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> dict:
-    return service.save_job_posting(body, job_posting_id=None, created_by=user.id)
+    return service.save_job_posting(
+        body, job_posting_id=None, user_id=user.id, role=user.role
+    )
 
 
 @router.put("/job-postings/{job_posting_id}", response_model=dict)
@@ -93,17 +100,25 @@ async def update_job_posting(
     service: ServiceDep,
     user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> dict:
-    return service.save_job_posting(body, job_posting_id=job_posting_id, created_by=user.id)
+    try:
+        return service.save_job_posting(
+            body, job_posting_id=job_posting_id, user_id=user.id, role=user.role
+        )
+    except LookupError:
+        raise _NOT_FOUND
 
 
 @router.delete("/job-postings/{job_posting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_job_posting(
     job_posting_id: str,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> None:
     """Xoá tin tuyển dụng. Chỉ HR — tech lead chấm hồ sơ, không quản tin."""
-    service.delete_job_posting(job_posting_id)
+    try:
+        service.delete_job_posting(job_posting_id, user_id=user.id, role=user.role)
+    except LookupError:
+        raise _NOT_FOUND
 
 
 class SetStatusRequest(BaseModel):
@@ -115,10 +130,14 @@ async def set_job_posting_status(
     job_posting_id: str,
     body: SetStatusRequest,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> dict:
     try:
-        service.set_job_posting_status(job_posting_id, body.status)
+        service.set_job_posting_status(
+            job_posting_id, body.status, user_id=user.id, role=user.role
+        )
+    except LookupError:
+        raise _NOT_FOUND
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return {"status": body.status}
@@ -128,20 +147,20 @@ async def set_job_posting_status(
 async def duplicate_job_posting(
     job_posting_id: str,
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> JobPostingSummary:
     try:
-        return service.duplicate_job_posting(job_posting_id)
-    except LookupError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found."
+        return service.duplicate_job_posting(
+            job_posting_id, user_id=user.id, role=user.role
         )
+    except LookupError:
+        raise _NOT_FOUND
 
 
 @router.get("/analytics", response_model=AnalyticsData)
 async def get_analytics(
     service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_operational_roles())],
+    user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> AnalyticsData:
-    """Số liệu tổng hợp. Không mang tên hay email ra khỏi máy chủ."""
-    return service.get_analytics()
+    """Số liệu tổng hợp trong phạm vi của người gọi. Không mang tên hay email."""
+    return service.get_analytics(user_id=user.id, role=user.role)

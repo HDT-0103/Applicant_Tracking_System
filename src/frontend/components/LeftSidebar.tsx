@@ -18,7 +18,8 @@ import {
   Pencil,
   ExternalLink,
   Copy,
-  Pin
+  Pin,
+  Link2,
 } from "lucide-react";
 import {
   deleteJobPosting,
@@ -27,6 +28,7 @@ import {
   setJobPostingStatus,
 } from "../services/catalogService";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { buildJobPath, buildJobUrl } from "../lib/jobUrl";
 
 /** Bề rộng rail khi thu gọn — vừa đủ cho vùng bấm 36px và lề hai bên. */
 const RAIL_WIDTH = 56;
@@ -424,7 +426,7 @@ export const LeftSidebar: React.FC = () => {
               return (
                 <div
                   key={job.id}
-                  onClick={() => router.push(`/careers/${encodeURIComponent(job.title)}`)}
+                  onClick={() => router.push(`/job-postings/${job.id}`)}
                   onMouseEnter={() => setHoveredJobId(job.id)}
                   onMouseLeave={() => {
                     setHoveredJobId(null);
@@ -583,7 +585,9 @@ export const LeftSidebar: React.FC = () => {
                         onClick={(e) => {
                           e.stopPropagation();
                           setOpenMenuJobId(null);
-                          router.push(`/careers/${encodeURIComponent(job.title)}`);
+                          // Link mang id: link theo tên chỉ khớp tin PUBLISHED
+                          // (và chỉ khi tên là duy nhất).
+                          router.push(buildJobPath(job.id, job.title));
                         }}
                         style={{
                           display: "flex",
@@ -605,6 +609,42 @@ export const LeftSidebar: React.FC = () => {
                       >
                         <ExternalLink size={13} color={D.sub} />
                         <span>View Public Portal</span>
+                      </button>
+
+                      {/* Copy link: trước đây link chỉ hiện ở bước 3 của wizard
+                          và trong modal publish, nên vào lại tin là "mất". */}
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setOpenMenuJobId(null);
+                          try {
+                            await navigator.clipboard.writeText(buildJobUrl(job.id, job.title));
+                          } catch {
+                            /* clipboard bị chặn (http, iframe): mở trang chi tiết để copy tay */
+                            router.push(`/job-postings/${job.id}`);
+                          }
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          width: "100%",
+                          padding: "7px 10px",
+                          borderRadius: 6,
+                          background: "transparent",
+                          border: "none",
+                          fontSize: 11.5,
+                          fontWeight: 500,
+                          color: D.ink,
+                          cursor: "pointer",
+                          textAlign: "left"
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f4f5f7")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <Link2 size={13} color={D.sub} />
+                        <span>Copy Application Link</span>
                       </button>
 
                       {/* Option 3: Pause / Resume Applications */}

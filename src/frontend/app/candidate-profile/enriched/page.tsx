@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { ApiError, api, getStoredAccessToken } from "@/services/httpClient";
 import { getReviewStatus, type ReviewStatus } from "@/services/reviewService";
+import { candidateDisplayName } from "@/lib/candidateLabel";
 import { CandidateCvPanel } from "@/components/CandidateCvPanel";
 import { EnrichmentPanel } from "./_components/EnrichmentPanel";
 import { EnrichedAnalytics } from "./_components/EnrichedAnalytics";
@@ -335,12 +336,11 @@ export default function EnrichedCandidateProfilePage() {
   // trong response. Nay việc che là của ABAC ở backend: cùng một cây component,
   // dữ liệu tech_lead nhận về đã là "***".
   const isTechLead = hasRole("tech_lead");
-  const candidateLabel =
-    data?.full_name && data.full_name !== "***"
-      ? data.full_name
-      : isTechLead
-        ? `Candidate ${candidateUuid?.slice(0, 8) || ""}`
-        : null;
+  // Cùng một nhãn với dashboard và trang tìm kiếm (lib/candidateLabel), để
+  // tech lead thấy "Candidate #1a2b3c4d" ở mọi nơi thay vì mỗi trang một kiểu.
+  const candidateLabel = data
+    ? candidateDisplayName(data.full_name, candidateUuid)
+    : null;
 
   return (
     <div

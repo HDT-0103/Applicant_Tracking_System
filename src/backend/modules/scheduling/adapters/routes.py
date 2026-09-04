@@ -25,6 +25,9 @@ from modules.scheduling.infra.impl_supabase import SupabaseSchedulingRepo
 from modules.scheduling.application.sweep_line_service import SweepLineService
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles, require_roles
 from modules.auth.domain.models import AuthUser
+from modules.review.adapters.routes import get_review_repo
+from modules.review.application.review_service import ReviewService
+from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 from modules.scheduling.infra.google_oauth_service import GoogleOAuthService
@@ -74,6 +77,21 @@ def _build_service(
 
 
 ServiceDep = Annotated[SchedulingService, Depends(_build_service)]
+ReviewRepoDep = Annotated[IReviewRepo, Depends(get_review_repo)]
+
+
+async def _require_candidate_access(
+    review_repo: IReviewRepo, candidate_id: str, user: AuthUser
+) -> None:
+    """HR chỉ đặt lịch / gửi thư cho ứng viên nộp vào tin MÌNH tạo.
+
+    Cùng câu hỏi với enrichment và review (`may_access_candidate`), hỏi qua
+    cùng một repo. 404 chứ không 403: 403 xác nhận ứng viên đó tồn tại.
+    """
+    if not await ReviewService(repo=review_repo).may_access_candidate(
+        candidate_id, user.id, user.role
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found.")
 
 
 class UpdateKeyRequest(BaseModel):
@@ -253,6 +271,7 @@ async def query_slots(
 async def confirm_slot(
     body: ConfirmSlotRequest,
     service: ServiceDep,
+    review_repo: ReviewRepoDep,
     user: AuthUser = Depends(require_roles("hr")),
     oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
 ) -> ConfirmedSlot:
@@ -287,6 +306,8 @@ async def confirm_slot(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A valid candidate must be selected for scheduling. Please select a candidate from the dashboard.",
         )
+
+    await _require_candidate_access(review_repo, body.candidate_id, user)
 
     interviewer = await service.get_interviewer(user.id)
     api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else ""
@@ -332,9 +353,14 @@ async def send_interview_details(
     slot_id: str,
     body: SendDetailsRequest,
     service: ServiceDep,
-    _user: AuthUser = Depends(require_roles("hr")),
+    review_repo: ReviewRepoDep,
+    user: AuthUser = Depends(require_roles("hr")),
 ):
-    """Gửi phòng và địa chỉ phỏng vấn cho ứng viên."""
+    """Gửi phòng và địa chỉ phỏng vấn cho ứng viên — của lịch trong phạm vi mình."""
+    slot = await service.get_confirmed_slot(slot_id)
+    if slot is None:
+        raise HTTPException(status_code=404, detail="Confirmed slot not found")
+    await _require_candidate_access(review_repo, slot.candidate_id, user)
     try:
         email = await service.send_interview_details(
             slot_id=slot_id, room=body.room, address=body.address

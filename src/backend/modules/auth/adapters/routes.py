@@ -7,6 +7,8 @@ from supabase import Client
 from modules.auth.application.auth_service import AuthService
 from modules.auth.domain.models import (
     AuthTokenResponse,
+    AuthUser,
+    CompanyUpdateRequest,
     GoogleLoginRequest,
     LoginRequest,
     RefreshTokenRequest,
@@ -15,6 +17,7 @@ from modules.auth.domain.models import (
 )
 from modules.auth.infra.google_verifier import GoogleTokenVerifier
 from modules.auth.infra.jwt_service import JwtService
+from modules.shared.infrastructure.auth_dependencies import get_current_user
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.rate_limit import (
     login_rate_limit,
@@ -98,6 +101,8 @@ async def email_password_register(
             email=payload.email,
             password=payload.password,
             role=payload.role,
+            company_name=payload.company_name,
+            company_website=payload.company_website,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -110,6 +115,37 @@ async def email_password_register(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed due to a server error",
         ) from exc
+
+
+@router.get("/me", response_model=AuthUser)
+async def read_me(
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    current_user: Annotated[AuthUser, Depends(get_current_user)],
+) -> AuthUser:
+    """Hồ sơ của người đang đăng nhập, đọc từ DB (token không mang công ty)."""
+    try:
+        return await auth_service.get_me(current_user)
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+
+@router.patch("/me", response_model=AuthUser)
+async def update_my_company(
+    payload: CompanyUpdateRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    current_user: Annotated[AuthUser, Depends(get_current_user)],
+) -> AuthUser:
+    """Hoàn tất thông tin công ty (màn hình /onboarding/company) hoặc sửa nó.
+
+    Chỉ hai cột công ty. Role, email, is_approved KHÔNG đi qua đây — đó là
+    việc của admin.
+    """
+    try:
+        return await auth_service.update_company(
+            current_user, payload.company_name, payload.company_website
+        )
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
 
 @router.post("/refresh", response_model=RefreshTokenResponse)

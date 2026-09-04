@@ -118,45 +118,40 @@ class SupabaseReviewRepo(IReviewRepo):
             {"review_panel_size": size}
         ).eq("id", application["id"]).execute()
 
-    async def is_panel_member(self, candidate_uuid: str, reviewer_id: str) -> bool:
-        application = await self._get_application(candidate_uuid)
-        job_posting_id = application.get("job_posting_id") if application else None
-        if not job_posting_id:
-            return False
+    # ── Phạm vi (AsyncJobVisibilitySource) ─────────────────────────────────
 
+    async def job_postings_created_by(self, user_id: str) -> List[str]:
         res = (
-            self._client.table("job_posting_reviewers")
-            .select("reviewer_id")
-            .eq("job_posting_id", job_posting_id)
-            .eq("reviewer_id", reviewer_id)
-            .limit(1)
+            self._client.table("jobs_posting")
+            .select("id")
+            .eq("created_by", user_id)
             .execute()
         )
-        return bool(res.data)
+        return [row["id"] for row in res.data or []]
 
-    async def filter_accessible(
-        self, candidate_uuids: Sequence[str], reviewer_id: str
-    ) -> Set[str]:
-        if not candidate_uuids:
-            return set()
-
-        # (1) những tin tuyển dụng người này được mời chấm
-        panels = (
+    async def job_postings_for_reviewer(self, reviewer_id: str) -> List[str]:
+        res = (
             self._client.table("job_posting_reviewers")
             .select("job_posting_id")
             .eq("reviewer_id", reviewer_id)
             .execute()
         )
-        job_ids = [row["job_posting_id"] for row in panels.data or []]
-        if not job_ids:
-            return set()
+        return [row["job_posting_id"] for row in res.data or []]
 
-        # (2) trong danh sách được hỏi, ai nộp vào những tin đó
+    async def job_posting_of_candidate(self, candidate_uuid: str) -> Optional[str]:
+        application = await self._get_application(candidate_uuid)
+        return application.get("job_posting_id") if application else None
+
+    async def candidates_on_job_postings(
+        self, candidate_uuids: Sequence[str], job_posting_ids: Sequence[str]
+    ) -> Set[str]:
+        if not candidate_uuids or not job_posting_ids:
+            return set()
         apps = (
             self._client.table("applications")
             .select("candidate_uuid")
             .in_("candidate_uuid", list(candidate_uuids))
-            .in_("job_posting_id", job_ids)
+            .in_("job_posting_id", list(job_posting_ids))
             .execute()
         )
         return {row["candidate_uuid"] for row in apps.data or []}

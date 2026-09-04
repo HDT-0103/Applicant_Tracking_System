@@ -106,6 +106,13 @@ Ba điều script lo giúp, đừng tự làm tay:
 Thêm biến mới thì nhớ khai vào cả `.env.example`, nếu không
 `tests/test_env_contract.py` sẽ đỏ — cố ý như vậy.
 
+### 1.3b Migration chưa chạy thì đừng deploy
+
+Migration nằm ở `src/backend/migrations/V00x__*.sql`, chạy tay trong Supabase →
+**SQL Editor**. Code đọc/ghi cột mới ngay khi lên, nên thứ tự là **migration
+trước, deploy sau**. Gần nhất: `V009__user_company.sql` (đăng ký ghi
+`users.company_name` — thiếu cột là đăng ký trả 500).
+
 ### 1.4 Kiểm chứng — đừng tin màu xanh
 
 ```bash
@@ -175,6 +182,8 @@ az containerapp revision list --name $APP_NAME --resource-group $RG -o table
 | `exec format error` trong log | Image build trên máy Apple Silicon mà thiếu `--platform linux/amd64` |
 | Trang trắng, console báo lỗi Supabase | Project Supabase bị tạm dừng (gói Free ngủ sau 7 ngày) → dashboard bấm **Restore** |
 | Hồ sơ kẹt ở `waiting_for_tls`, tech lead mở nhận 404 | Tin tuyển dụng chưa có hội đồng chấm → `scripts/assign_review_panels.py --all` |
+| HR đăng nhập thấy dashboard và danh sách tin **rỗng**, admin vẫn thấy | Tin có `jobs_posting.created_by = NULL` (tạo trước khi tách dữ liệu theo người dùng). Gán chủ: `UPDATE jobs_posting SET created_by = (SELECT id FROM users WHERE email = '<email HR>') WHERE created_by IS NULL;` |
+| Smoke test: hàng loạt phép kiểm theo phạm vi thấy rỗng / 404 | Không có tin PUBLISHED nào có `created_by` → script không đóng vai chủ tin được. Gán chủ như dòng trên |
 
 ---
 

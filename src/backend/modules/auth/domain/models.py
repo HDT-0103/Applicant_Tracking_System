@@ -12,6 +12,11 @@ class AuthUser(BaseModel):
     role: UserRole
     picture: str | None = None
     jti: str | None = None
+    # Công ty của người dùng (V009). KHÔNG nằm trong JWT — token chỉ mang danh
+    # tính và role; công ty đọc từ bảng `users` lúc đăng nhập và qua /me.
+    # `None` = chưa khai: frontend đưa người đó tới /onboarding/company.
+    company_name: str | None = None
+    company_website: str | None = None
 
 
 
@@ -62,3 +67,14 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     role: SelfSignupRole = "hr"
+    # Bắt buộc từ V009: tài khoản nội bộ phải thuộc về một công ty. Website
+    # thì tuỳ chọn.
+    company_name: str = Field(min_length=2, max_length=200)
+    company_website: str | None = Field(default=None, max_length=500)
+
+
+class CompanyUpdateRequest(BaseModel):
+    """Hoàn tất / sửa thông tin công ty (PATCH /api/auth/me)."""
+
+    company_name: str = Field(min_length=2, max_length=200)
+    company_website: str | None = Field(default=None, max_length=500)

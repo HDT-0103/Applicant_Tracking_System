@@ -13,6 +13,8 @@ from modules.ingestion.infra.azure_blob_service import BLOB_CONTAINER_NAME, Azur
 from modules.ingestion.infra.azure_service_bus_service import AzureServiceBusService
 from modules.enrichment.application.enrichment_service import enrichment_worker
 from modules.auth.domain.models import AuthUser
+from modules.review.adapters.routes import get_review_repo
+from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles
 from modules.shared.infrastructure.rate_limit import ingest_rate_limit
 from modules.shared.infrastructure.config import Settings, get_settings
@@ -370,6 +372,7 @@ async def get_candidate_cv(
     candidate_uuid: str,
     settings: Annotated[Settings, Depends(get_settings)],
     _user: Annotated[AuthUser, Depends(require_operational_roles())],
+    review_repo: Annotated[IReviewRepo, Depends(get_review_repo)],
 ) -> CandidateCvLink:
     """Cấp một đường dẫn tạm để xem CV của ứng viên.
 
@@ -386,14 +389,14 @@ async def get_candidate_cv(
     Hạn link cũng rút từ 1 giờ xuống 15 phút: SAS URL không kiểm tra danh tính
     người mở, nên thời gian sống của nó chính là cửa sổ để nó bị chuyển tiếp.
     """
-    # Hồ sơ CV là PII: tech lead ngoài hội đồng không được xem, cùng luật với
-    # màn hình enrichment. 404 chứ không 403 — 403 xác nhận ứng viên tồn tại.
+    # Hồ sơ CV là PII: chỉ người trong phạm vi (HR tạo tin, tech lead trong
+    # hội đồng) được xem, cùng luật với màn hình enrichment. 404 chứ không 403
+    # — 403 xác nhận ứng viên tồn tại. Repo review nhận qua dependency chứ
+    # không tự dựng: đây là ranh giới bảo mật, và một ranh giới không thay thế
+    # được thì không kiểm thử được.
     from modules.review.application.review_service import ReviewService
-    from modules.review.infra.impl_supabase import SupabaseReviewRepo
 
-    review = ReviewService(
-        repo=SupabaseReviewRepo(get_supabase_client(settings, use_admin=True))
-    )
+    review = ReviewService(repo=review_repo)
     if not await review.may_access_candidate(candidate_uuid, _user.id, _user.role):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="CV file for this candidate was not found."

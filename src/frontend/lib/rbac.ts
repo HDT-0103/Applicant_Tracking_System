@@ -5,9 +5,13 @@
 // Hệ thống có đúng 3 role:
 //
 //   admin      — chỉ Admin Panel (/admin). Bị chặn khỏi mọi màn hình nghiệp vụ.
-//   hr         — workspace đầy đủ, thấy toàn bộ dữ liệu ứng viên.
-//   tech_lead  — workspace Y HỆT hr; khác biệt duy nhất là PII ứng viên đã bị
-//                backend che (***) trước khi trả về.
+//   hr         — workspace đầy đủ; thấy tin MÌNH tạo và hồ sơ nộp vào đó, với
+//                đầy đủ PII.
+//   tech_lead  — workspace Y HỆT hr; thấy tin mình được mời vào hội đồng, và
+//                PII ứng viên đã bị backend che (***) trước khi trả về.
+//
+// Phạm vi dữ liệu (ai thấy tin nào) quyết ở backend, một chỗ duy nhất:
+// src/backend/modules/shared/domain/job_visibility.py.
 //
 // Không thêm nhánh giao diện riêng cho tech_lead: nếu để UI tự ẩn thì PII vẫn
 // nằm trong network response. Việc che là của tầng ABAC ở backend.

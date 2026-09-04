@@ -101,6 +101,45 @@ class TestRequestBoundary:
 
     def test_the_request_model_defaults_to_hr(self):
         payload = RegisterRequest(
-            name="Someone", email="someone@example.com", password=PASSWORD
+            name="Someone",
+            email="someone@example.com",
+            password=PASSWORD,
+            company_name="Acme",
         )
         assert payload.role == "hr"
+
+    def test_a_company_is_required_at_signup(self):
+        # V009: tài khoản nội bộ phải thuộc về một công ty. Website thì không.
+        with pytest.raises(ValidationError):
+            RegisterRequest(name="Someone", email="someone@example.com", password=PASSWORD)
+        payload = RegisterRequest(
+            name="Someone", email="someone@example.com", password=PASSWORD, company_name="Acme"
+        )
+        assert payload.company_website is None
+
+
+class TestCompanyAtSignup:
+    @pytest.mark.asyncio
+    async def test_the_company_is_written_with_the_user_row(self):
+        service, table = _service(inserted_role="hr")
+
+        result = await service.register_user(
+            "Someone", "someone@example.com", PASSWORD,
+            company_name="  Acme Corp ", company_website="https://acme.example",
+        )
+
+        row = table.insert.call_args_list[0][0][0]
+        assert row["company_name"] == "Acme Corp"
+        assert row["company_website"] == "https://acme.example"
+        # Không dùng tên cột `company`: đó là từ trong whitelist ABAC (công ty
+        # trong lịch sử làm việc của ỨNG VIÊN).
+        assert "company" not in row
+        assert result.user.company_name == "Acme Corp"
+
+    @pytest.mark.asyncio
+    async def test_scripts_that_predate_v009_still_register(self):
+        # Service còn được gọi từ seed/script không biết tới công ty.
+        service, table = _service(inserted_role="hr")
+        await service.register_user("Someone", "someone@example.com", PASSWORD)
+        row = table.insert.call_args_list[0][0][0]
+        assert "company_name" not in row

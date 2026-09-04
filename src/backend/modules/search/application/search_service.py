@@ -30,6 +30,8 @@ from modules.search.infra.legacy_bridge import (
     SearchRequirementDTO,
     SoftRequirementDTO,
 )
+from modules.search.infra.scope import SupabaseSearchScope
+from modules.shared.domain.job_visibility import visible_job_posting_ids
 from modules.shared.infrastructure.abac import apply_abac
 
 logger = structlog.get_logger(__name__)
@@ -66,6 +68,7 @@ class SearchService:
             embedding_service=embedding_service,
             ranking_service=RankingService(),
         )
+        self._scope = SupabaseSearchScope(client)
 
     async def search(
         self,
@@ -75,6 +78,7 @@ class SearchService:
         required_skills: Optional[List[str]] = None,
         top_k: int,
         min_score: float,
+        user_id: str,
         role: str,
     ) -> List[dict]:
         requirement = SearchRequirementDTO(
@@ -90,6 +94,19 @@ class SearchService:
         # đổi liên tục, và lọc sau khi đã hợp nhất điểm cho phép đổi ngưỡng mà
         # không phải chạy lại truy vấn vector.
         kept = [r for r in results if r.score >= min_score]
+
+        # Thu về phạm vi của người gọi: chỉ ứng viên đã nộp vào tin mà người
+        # này được thấy (HR: tin mình tạo; tech lead: hội đồng). Tầng vector
+        # xếp hạng trên toàn bộ ứng viên và không biết ai đang hỏi — không lọc
+        # ở đây thì màn hình tìm kiếm là đường vòng qua mọi ranh giới dữ liệu.
+        allowed_jobs = visible_job_posting_ids(role, user_id, self._scope)
+        if allowed_jobs is not None:
+            if not allowed_jobs:
+                return []
+            accessible = self._scope.candidates_on_job_postings(
+                [r.candidate_id for r in kept], allowed_jobs
+            )
+            kept = [r for r in kept if r.candidate_id in accessible]
 
         # Che PII theo role. `app/` không biết gì về ABAC — bỏ bước này là mở
         # một đường vòng qua toàn bộ lớp che dữ liệu của hệ thống.

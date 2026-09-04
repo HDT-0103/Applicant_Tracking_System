@@ -237,7 +237,12 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
           }}>{user?.name.charAt(0).toUpperCase()}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
             <span style={{ fontSize: 11.5, fontWeight: 500, color: D.ink, lineHeight: 1.1 }}>{user?.name}</span>
-            <span style={{ fontSize: 9.5, color: D.dim, lineHeight: 1.2 }}>{user?.role ? ROLE_LABELS[user.role] : ''}</span>
+            {/* Role · Công ty. Công ty khai lúc đăng ký / onboarding (V009). */}
+            <span style={{ fontSize: 9.5, color: D.dim, lineHeight: 1.2 }}>
+              {[user?.role ? ROLE_LABELS[user.role] : "", user?.company_name ?? ""]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
           </div>
         </div>
       </div>

@@ -48,6 +48,7 @@ interface UserRow {
   role: UserRole | string;
   is_approved: boolean;
   created_at: string | null;
+  company_name?: string | null;
 }
 
 interface Policy {
@@ -373,6 +374,9 @@ export default function AdminDashboard() {
                           <td style={tdStyle}>
                             <div style={{ fontWeight: 600, color: D.ink }}>{u.name}</div>
                             <div style={{ fontSize: 11.5, color: D.muted }}>{u.email}</div>
+                            {u.company_name && (
+                              <div style={{ fontSize: 11, color: D.dim }}>{u.company_name}</div>
+                            )}
                           </td>
                           <td style={tdStyle}><RoleBadge role={u.role} /></td>
                           <td style={tdStyle}>

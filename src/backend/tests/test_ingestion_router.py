@@ -131,6 +131,48 @@ class TestCandidateCvLink:
     bằng fetch có token thay vì bằng điều hướng trần.
     """
 
+    @pytest.fixture(autouse=True)
+    def in_scope(self):
+        """Người gọi được thấy ứng viên (chủ tin / trong hội đồng).
+
+        Ranh giới phạm vi là của module review; ở đây chỉ cần nó trả lời "được"
+        để các test bên dưới kiểm đúng một điều: hình dạng của link trả về.
+        """
+        from modules.review.adapters.routes import get_review_repo
+
+        class _InScope:
+            async def job_postings_created_by(self, user_id):
+                return ["job-1"]
+
+            async def job_postings_for_reviewer(self, reviewer_id):
+                return ["job-1"]
+
+            async def job_posting_of_candidate(self, candidate_uuid):
+                return "job-1"
+
+        app.dependency_overrides[get_review_repo] = lambda: _InScope()
+        yield
+        app.dependency_overrides.pop(get_review_repo, None)
+
+    def test_an_hr_outside_the_scope_gets_a_404(self, client, as_role):
+        # HR chỉ xem được CV của ứng viên nộp vào tin MÌNH tạo. Trước đây `hr`
+        # qua cửa vô điều kiện, nên mọi HR tải được CV của mọi ứng viên.
+        from modules.review.adapters.routes import get_review_repo
+
+        class _OutOfScope:
+            async def job_postings_created_by(self, user_id):
+                return []
+
+            async def job_postings_for_reviewer(self, reviewer_id):
+                return []
+
+            async def job_posting_of_candidate(self, candidate_uuid):
+                return "job-1"
+
+        app.dependency_overrides[get_review_repo] = lambda: _OutOfScope()
+        as_role("hr")
+        assert client.get("/api/v1/candidates/candidate-99/cv").status_code == 404
+
     @staticmethod
     def _supabase_returning(rows):
         client = MagicMock()

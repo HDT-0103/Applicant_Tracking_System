@@ -66,16 +66,29 @@ class AuthService:
             raise ValueError("Authentication failed due to a database error.")
 
     def resolve_role(self, email: str) -> UserRole:
+        """Role cho một tài khoản Google CHƯA có trong bảng `users`.
+
+        `ADMIN_EMAILS` → admin. Còn lại là `hr`, cùng mặc định với đăng ký
+        công khai (`PUBLIC_SIGNUP_ROLE`) — đăng ký bằng email đã cho người lạ
+        tự tạo tài khoản `hr`, nên chặn riêng đường Google không thêm được lớp
+        bảo vệ nào, chỉ làm nút "Sign in with Google" lần đầu luôn báo lỗi.
+
+        `RECRUITER_EMAIL_DOMAINS` là DANH SÁCH TRẮNG khi được đặt: có giá trị
+        thì chỉ domain trong đó mới tự tạo được tài khoản; rỗng thì không giới
+        hạn. Dữ liệu đã tách theo người tạo, nên tài khoản mới không thấy gì
+        của ai cho tới khi tự tạo tin.
+        """
         normalized_email = email.strip().lower()
         domain = normalized_email.split("@")[-1]
 
         if normalized_email in self._settings.admin_email_list:
             return "admin"
 
-        if domain in self._settings.recruiter_domain_list:
-            return "hr"
+        allowed_domains = self._settings.recruiter_domain_list
+        if allowed_domains and domain not in allowed_domains:
+            raise ValueError("Authentication failed. Invalid credentials or user not allowed.")
 
-        raise ValueError("Authentication failed. Invalid credentials or user not allowed.")
+        return PUBLIC_SIGNUP_ROLE
 
     @staticmethod
     def _reject_unapproved(email: str) -> None:
@@ -109,32 +122,39 @@ class AuthService:
         profile = self._google_verifier.verify_credential(credential)
         email = profile["email"]
 
-        role_from_supabase = None
-        try:
-            role_from_supabase = self.resolve_role_from_supabase(email)
-        except ValueError as e:
-            raise ValueError(str(e))
-
         res = self._supabase_client.table("users").select("*").eq("email", email).limit(1).execute()
         db_user = res.data[0] if res.data else None
 
-        if not db_user:
-            resolved_role = role_from_supabase or self.resolve_role(email)
+        role_from_supabase = None
+        if db_user:
+            # Tài khoản đã có: role lấy từ bảng (đã quy đổi từ vựng cũ), và
+            # tài khoản bị khoá thì dừng ở đây.
+            role_from_supabase = self.resolve_role_from_supabase(email)
+            if not db_user.get("is_approved", True):
+                self._reject_unapproved(email)
+        else:
+            # Lần đăng nhập Google ĐẦU TIÊN: tạo tài khoản.
+            #
+            # Nhánh này từng nằm SAU `resolve_role_from_supabase`, mà hàm đó
+            # ném lỗi khi chưa có dòng `users` — nên nó chưa bao giờ chạy tới,
+            # và "Sign in with Google" với người mới luôn là 401. Không có
+            # `company_name`: người này sẽ được đưa tới /onboarding/company.
+            resolved_role = self.resolve_role(email)
             ins_res = (
                 self._supabase_client.table("users")
                 .insert({
                     "name": profile["name"],
                     "email": email,
                     "role": resolved_role,
-                    "is_approved": True,
+                    "is_approved": PUBLIC_SIGNUP_AUTO_APPROVED,
                 })
                 .select("*")
                 .execute()
             )
             db_user = ins_res.data[0] if ins_res.data else None
+            if not db_user:
+                raise ValueError("Failed to create user record.")
             logger.info("auth.google.auto_register", email=email, role=resolved_role)
-        elif not db_user.get("is_approved", True):
-            self._reject_unapproved(email)
 
         # Normalise before building AuthUser. `AuthUser.role` is a Literal of the
         # three canonical roles, so handing it a legacy value straight from the
@@ -166,6 +186,8 @@ class AuthService:
             name=profile["name"],
             role=role,
             picture=profile.get("picture"),
+            company_name=db_user.get("company_name") if db_user else None,
+            company_website=db_user.get("company_website") if db_user else None,
         )
 
         jti = str(uuid.uuid4())
@@ -222,6 +244,8 @@ class AuthService:
             email=db_user["email"],
             name=db_user["name"],
             role=role,
+            company_name=db_user.get("company_name"),
+            company_website=db_user.get("company_website"),
         )
 
         jti = str(uuid.uuid4())
@@ -245,6 +269,8 @@ class AuthService:
         email: str,
         password: str,
         role: UserRole = PUBLIC_SIGNUP_ROLE,
+        company_name: Optional[str] = None,
+        company_website: Optional[str] = None,
     ) -> AuthTokenResponse:
         # Kiểm lại ở đây dù `RegisterRequest` đã chặn bằng kiểu.
         #
@@ -260,15 +286,24 @@ class AuthService:
             raise ValueError("Email already registered")
 
         password_hash = PasswordService.hash_password(password)
+        row = {
+            "name": name,
+            "email": email,
+            "role": role,
+            "password_hash": password_hash,
+            "is_approved": PUBLIC_SIGNUP_AUTO_APPROVED,
+        }
+        # Chỉ ghi khi có: `RegisterRequest` bắt buộc `company_name`, nhưng
+        # service còn được gọi từ script/seed chưa biết tới V009.
+        company_name = (company_name or "").strip() or None
+        company_website = (company_website or "").strip() or None
+        if company_name:
+            row["company_name"] = company_name
+        if company_website:
+            row["company_website"] = company_website
         ins_res = (
             self._supabase_client.table("users")
-            .insert({
-                "name": name,
-                "email": email,
-                "role": role,
-                "password_hash": password_hash,
-                "is_approved": PUBLIC_SIGNUP_AUTO_APPROVED,
-            })
+            .insert(row)
             .select("*")
             .execute()
         )
@@ -286,6 +321,8 @@ class AuthService:
             # defence rather than a fix — but a database trigger or default
             # rewriting the value would otherwise turn signup into a 500.
             role=normalise_role(db_user["role"]) or role,
+            company_name=db_user.get("company_name") or company_name,
+            company_website=db_user.get("company_website") or company_website,
         )
 
         jti = str(uuid.uuid4())
@@ -302,6 +339,55 @@ class AuthService:
             refreshToken=refresh_token,
             user=user,
         )
+
+    # ── Hồ sơ của chính mình ──────────────────────────────────────────────
+
+    async def get_me(self, user: AuthUser) -> AuthUser:
+        """Hồ sơ hiện tại đọc từ bảng `users`, không từ token.
+
+        Token không mang công ty (và không nên: đổi công ty mà phải đăng nhập
+        lại là vô lý). Frontend gọi ở lúc khôi phục phiên để biết người này đã
+        hoàn tất hồ sơ chưa.
+        """
+        res = (
+            self._supabase_client.table("users")
+            .select("id, email, name, role, picture, company_name, company_website")
+            .eq("id", user.id)
+            .limit(1)
+            .execute()
+        )
+        row = res.data[0] if res.data else None
+        if not row:
+            raise LookupError(user.id)
+        return AuthUser(
+            id=str(row["id"]),
+            email=row["email"],
+            name=row.get("name") or user.name,
+            role=normalise_role(row.get("role")) or user.role,
+            picture=row.get("picture"),
+            jti=user.jti,
+            company_name=row.get("company_name"),
+            company_website=row.get("company_website"),
+        )
+
+    async def update_company(
+        self, user: AuthUser, company_name: str, company_website: Optional[str]
+    ) -> AuthUser:
+        """Hoàn tất / sửa công ty của CHÍNH MÌNH. Không đổi được gì khác."""
+        payload = {
+            "company_name": company_name.strip(),
+            "company_website": (company_website or "").strip() or None,
+        }
+        res = (
+            self._supabase_client.table("users")
+            .update(payload)
+            .eq("id", user.id)
+            .execute()
+        )
+        if not res.data:
+            raise LookupError(user.id)
+        logger.info("auth.company.updated", user_id=user.id)
+        return await self.get_me(user)
 
     async def refresh_tokens(self, refresh_token: str) -> RefreshTokenResponse:
         user = self._jwt_service.decode_token(refresh_token, expected_type="refresh")

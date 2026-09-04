@@ -57,6 +57,11 @@ class SchedulingService:
     async def get_interviewer(self, interviewer_id: str) -> Optional[Interviewer]:
         return self._repo.get_interviewer(interviewer_id)
 
+    async def get_confirmed_slot(self, slot_id: str) -> Optional[ConfirmedSlot]:
+        """Một lịch đã đặt — route dùng để biết lịch này của ứng viên nào
+        trước khi cho gửi thư, vì HR chỉ được gửi cho ứng viên trong phạm vi."""
+        return self._repo.get_confirmed_slot(slot_id)
+
     async def send_interview_details(
         self, slot_id: str, room: str, address: str
     ) -> str:

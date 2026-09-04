@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { User, Mail, KeyRound, Loader2, ArrowRight } from "lucide-react";
+import { User, Mail, KeyRound, Loader2, ArrowRight, Building2, Globe } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   ROLE_LABELS,
@@ -24,19 +24,26 @@ export default function RegisterPage() {
   // Mặc định `hr` — cũng là mặc định của backend khi thiếu trường này, nên hai
   // bên không lệch nhau nếu ai đó gọi API thẳng.
   const [role, setRole] = useState<SelfSignupRole>("hr");
+  // Công ty là bắt buộc (V009): tài khoản nội bộ phải thuộc về một công ty và
+  // tên đó hiện ở header cùng trang tin tuyển dụng. Website thì tuỳ chọn.
+  const [companyName, setCompanyName] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !password) {
-      setError("Please fill in all fields.");
+    if (!name || !email || !password || !companyName.trim()) {
+      setError("Please fill in all required fields.");
       return;
     }
     setIsSubmitting(true);
     setError(null);
     try {
-      await registerWithEmailPassword(name, email, password, role);
+      await registerWithEmailPassword(name, email, password, role, {
+        company_name: companyName.trim(),
+        company_website: companyWebsite.trim() || null,
+      });
       // Redirect is handled in AuthContext (recruiters land on the workspace).
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
@@ -88,6 +95,26 @@ export default function RegisterPage() {
           placeholder="Min. 6 characters"
           icon={KeyRound}
           autoComplete="new-password"
+        />
+        <AuthField
+          id="company-name"
+          label="Company name"
+          value={companyName}
+          onChange={setCompanyName}
+          placeholder="Acme Corp"
+          icon={Building2}
+          autoComplete="organization"
+        />
+        <AuthField
+          id="company-website"
+          label="Company website (optional)"
+          type="url"
+          value={companyWebsite}
+          onChange={setCompanyWebsite}
+          placeholder="https://acme.example"
+          icon={Globe}
+          autoComplete="url"
+          required={false}
         />
 
         <fieldset style={{ border: "none", padding: 0, margin: 0 }}>

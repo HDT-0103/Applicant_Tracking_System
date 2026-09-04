@@ -1,5 +1,5 @@
 import uuid
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import structlog
 
@@ -13,6 +13,7 @@ from modules.review.domain.models import (
 )
 from modules.review.domain.models import PanelMember
 from modules.review.domain.repo_interface import IReviewRepo
+from modules.shared.domain.job_visibility import visible_job_posting_ids_async
 
 logger = structlog.get_logger(__name__)
 
@@ -30,21 +31,35 @@ class ReviewService:
 
     # ── Quyền ──────────────────────────────────────────────────────────────
 
+    async def _visible_job_postings(self, user_id: str, role: str) -> Optional[List[str]]:
+        """Tin mà người này được thấy. `None` = tất cả. Luật ở job_visibility.py."""
+        return await visible_job_posting_ids_async(role, user_id, self._repo)
+
+    async def may_access_job_posting(
+        self, job_posting_id: str, user_id: str, role: str
+    ) -> bool:
+        """Người này có được thấy tin này không (đọc hội đồng, mở trang tin)?"""
+        allowed = await self._visible_job_postings(user_id, role)
+        return allowed is None or job_posting_id in allowed
+
     async def may_access_candidate(self, candidate_uuid: str, user_id: str, role: str) -> bool:
         """Người này có được XEM hồ sơ ứng viên này không?
 
-        `hr` thấy mọi hồ sơ — đó là công việc của họ. `tech_lead` chỉ thấy hồ
-        sơ ứng tuyển vào tin mà họ được mời chấm: hồ sơ chứa PII, và một tech
-        lead không nằm trong hội đồng thì không có lý do nghiệp vụ nào để mở nó.
+        Hồ sơ đi theo tin: `hr` thấy hồ sơ nộp vào tin MÌNH tạo, `tech_lead`
+        thấy hồ sơ nộp vào tin mình được mời chấm. Trước đây `hr` là `True`
+        vô điều kiện — mọi HR trong hệ thống đọc được PII của mọi ứng viên,
+        kể cả của công ty khác.
 
         Vai trò lạ trả về False. Fail-closed: thêm một role mới mà quên khai ở
-        đây thì nó KHÔNG được cấp quyền theo mặc định.
+        job_visibility.py thì nó KHÔNG được cấp quyền theo mặc định.
         """
-        if role == "hr":
+        allowed = await self._visible_job_postings(user_id, role)
+        if allowed is None:
             return True
-        if role != "tech_lead":
+        if not allowed:
             return False
-        return await self._repo.is_panel_member(candidate_uuid, user_id)
+        job_posting_id = await self._repo.job_posting_of_candidate(candidate_uuid)
+        return job_posting_id is not None and job_posting_id in allowed
 
     # ── Hội đồng ───────────────────────────────────────────────────────────
 
@@ -91,11 +106,12 @@ class ReviewService:
         if not unique:
             return {}
 
-        if role == "tech_lead":
-            allowed = await self._repo.filter_accessible(unique, user_id)
-            unique = [u for u in unique if u in allowed]
-        elif role != "hr":
-            return {}
+        allowed_jobs = await self._visible_job_postings(user_id, role)
+        if allowed_jobs is not None:
+            if not allowed_jobs:
+                return {}
+            accessible = await self._repo.candidates_on_job_postings(unique, allowed_jobs)
+            unique = [u for u in unique if u in accessible]
 
         if not unique:
             return {}

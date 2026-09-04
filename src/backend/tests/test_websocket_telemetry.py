@@ -38,8 +38,14 @@ class _PanelStub:
     việc phân hội đồng — nên chúng cấp sẵn quyền và để test riêng lo phần kia.
     """
 
-    async def is_panel_member(self, candidate_uuid, reviewer_id):
-        return True
+    async def job_postings_created_by(self, user_id):
+        return ["job-1"]
+
+    async def job_postings_for_reviewer(self, reviewer_id):
+        return ["job-1"]
+
+    async def job_posting_of_candidate(self, candidate_uuid):
+        return "job-1"
 
 
 @pytest.fixture(autouse=True)
@@ -236,8 +242,14 @@ def test_a_tech_lead_off_the_panel_is_disconnected(client):
     from modules.review.adapters.routes import get_review_repo
 
     class _OffPanel:
-        async def is_panel_member(self, candidate_uuid, reviewer_id):
-            return False
+        async def job_postings_created_by(self, user_id):
+            return []
+
+        async def job_postings_for_reviewer(self, reviewer_id):
+            return []
+
+        async def job_posting_of_candidate(self, candidate_uuid):
+            return "job-1"
 
     app.dependency_overrides[get_review_repo] = lambda: _OffPanel()
     try:

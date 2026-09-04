@@ -38,6 +38,26 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   picture?: string;
+  /** Công ty của người dùng (V009). `null`/thiếu = chưa hoàn tất hồ sơ. */
+  company_name?: string | null;
+  company_website?: string | null;
+}
+
+export interface CompanyProfile {
+  company_name: string;
+  company_website?: string | null;
+}
+
+/** Màn hình bắt điền công ty; xem `needsCompanyOnboarding`. */
+export const COMPANY_ONBOARDING_PATH = "/onboarding/company";
+
+/**
+ * Ai còn phải khai công ty. Admin thì không: họ quản trị hệ thống, không đại
+ * diện cho công ty nào.
+ */
+export function needsCompanyOnboarding(user: AuthUser | null | undefined): boolean {
+  if (!user || user.role === "admin") return false;
+  return !(user.company_name && user.company_name.trim());
 }
 
 interface GoogleAuthResponse {
@@ -57,7 +77,10 @@ interface AuthContextValue {
     email: string,
     password: string,
     role: SelfSignupRole,
+    company: CompanyProfile,
   ) => Promise<void>;
+  /** Hoàn tất / sửa công ty của chính mình (PATCH /api/auth/me). */
+  updateCompany: (company: CompanyProfile) => Promise<void>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
   canUpload: boolean;
@@ -123,6 +146,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       // "refreshable": access đã chết nhưng refresh còn. Vào bình thường —
       // lượt gọi API đầu tiên sẽ tự gia hạn, người dùng không thấy gì cả.
       setUser(storedUser);
+      // Làm mới hồ sơ từ DB. Token không mang công ty, và bản trong
+      // localStorage là ảnh chụp lúc đăng nhập — người vừa khai công ty ở
+      // tab khác, hay admin vừa sửa, phải được thấy ở đây mà không cần đăng
+      // nhập lại. Hỏng thì giữ bản cũ: đây là tiện nghi, không phải cổng.
+      api
+        .get<AuthUser>("/api/auth/me")
+        .then((fresh) => {
+          const role = normaliseRole(fresh.role);
+          if (!role) return;
+          const merged = { ...storedUser, ...fresh, role };
+          persistUser(merged);
+          setUser(merged);
+        })
+        .catch(() => undefined);
     } else if (state === "expired") {
       // Dọn sạch tàn dư để lần sau không rơi lại vào trạng thái nửa vời.
       clearStoredTokens();
@@ -177,14 +214,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const registerWithEmailPassword = useCallback(
-    async (name: string, email: string, password: string, role: SelfSignupRole) => {
+    async (
+      name: string,
+      email: string,
+      password: string,
+      role: SelfSignupRole,
+      company: CompanyProfile,
+    ) => {
       // Người đăng ký chọn giữa `hr` và `tech_lead`. Backend KHÔNG tin giá trị
       // này một cách mù quáng: `RegisterRequest.role` là Literal hai giá trị,
       // nên "admin" gửi lên bị trả 422 — kiểu ở đây chỉ để giao diện không gửi
       // nhầm, không phải là chốt chặn bảo mật.
       const data = await api.post<GoogleAuthResponse>(
         "/api/auth/register",
-        { name, email, password, role },
+        {
+          name,
+          email,
+          password,
+          role,
+          company_name: company.company_name,
+          company_website: company.company_website || null,
+        },
         { skipAuth: true },
       );
 
@@ -194,6 +244,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       router.replace(landingPathForRole(data.user.role));
     },
     [router],
+  );
+
+  const updateCompany = useCallback(
+    async (company: CompanyProfile) => {
+      const fresh = await api.patch<AuthUser>("/api/auth/me", {
+        company_name: company.company_name,
+        company_website: company.company_website || null,
+      });
+      setUser((current) => {
+        const merged = { ...(current ?? fresh), ...fresh, role: current?.role ?? fresh.role };
+        persistUser(merged);
+        return merged;
+      });
+    },
+    [],
   );
 
   const logout = useCallback(() => {
@@ -225,11 +290,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       loginWithGoogle,
       loginWithEmailPassword,
       registerWithEmailPassword,
+      updateCompany,
       logout,
       hasRole,
       canUpload,
     }),
-    [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, logout, hasRole, canUpload],
+    [user, isLoading, loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword, updateCompany, logout, hasRole, canUpload],
   );
 
   return (

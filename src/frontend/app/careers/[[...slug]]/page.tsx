@@ -16,6 +16,7 @@ import { D } from "../../../lib/shared";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { buildJobPath, parseJobId } from "../../../lib/jobUrl";
+import { getJobPosting } from "../../../services/catalogService";
 import {
   AVAILABILITY_OPTIONS,
   MOTIVATION_OPTIONS,
@@ -464,10 +465,12 @@ function ResultsPanel({ jobTitle, updated, onReset }: { jobTitle: string; update
   );
 }
 
-function ApplicationForm({ job, onSubmit, existing }: {
+function ApplicationForm({ job, onSubmit, existing, preview = false }: {
   job: JobPosting;
   onSubmit: (d: FormData) => void;
   existing?: ExistingApplication | null;
+  /** HR/tech lead xem đúng form ứng viên thấy, nhưng không gửi được gì. */
+  preview?: boolean;
 }) {
   const editing = !!existing;
   const [form, setForm] = useState<FormData>({
@@ -699,7 +702,7 @@ function ApplicationForm({ job, onSubmit, existing }: {
 
       <div>
         <button
-          type="submit" disabled={!form.consent}
+          type="submit" disabled={!form.consent || preview}
           className="w-full h-11 rounded-md bg-primary text-white font-semibold text-sm
             hover:bg-primary-hover active:scale-[0.99] transition-all shadow-sm
             disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100
@@ -875,6 +878,10 @@ export default function CareersPortalPage() {
   // Set when this browser already applied to the selected job → edit mode.
   const [existingApp, setExistingApp] = useState<ExistingApplication | null>(null);
   const [justUpdated, setJustUpdated] = useState(false);
+  // `?preview=1` + đã đăng nhập: trang chi tiết tin nhúng trang này để HR /
+  // tech lead xem đúng thứ ứng viên thấy — kể cả tin DRAFT, thứ anon key không
+  // đọc được. Không có gì được gửi đi ở chế độ này.
+  const [previewMode, setPreviewMode] = useState(false);
 
   useEffect(() => {
     const listOpenJobs = async () => {
@@ -890,6 +897,20 @@ export default function CareersPortalPage() {
     const loadJobData = async () => {
       setLoading(true);
       try {
+        // 0. Xem trước từ trang chi tiết tin (đã đăng nhập). Đi qua backend
+        //    vì tin DRAFT/CLOSED bị RLS che khỏi anon key, mà HR cần xem form
+        //    TRƯỚC khi đăng.
+        const wantsPreview =
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).get("preview") === "1";
+        if (jobId && wantsPreview && isAuthenticated) {
+          const row = await getJobPosting(jobId);
+          setSelectedJob(row as JobPosting);
+          setPreviewMode(true);
+          setResolution('ok');
+          return;
+        }
+
         // 1. Canonical link — /careers/<title-slug>-<uuid>. The UUID is authoritative,
         //    so a renamed job keeps working and a title clash can never misroute a CV.
         if (jobId) {
@@ -947,7 +968,7 @@ export default function CareersPortalPage() {
       }
     };
     loadJobData();
-  }, [slug, jobId]);
+  }, [slug, jobId, isAuthenticated]);
 
 /** Câu duy nhất ứng viên nhìn thấy khi nộp hỏng.
  *
@@ -1003,6 +1024,7 @@ const UPDATE_FAILED_MESSAGE =
   };
 
   const handleSubmit = async (form: FormData) => {
+    if (previewMode) return; // xem trước: nút đã bị khoá, đây là chốt thứ hai
     if (!selectedJob) {
       setError('No job selected for this application.');
       return;
@@ -1188,12 +1210,21 @@ const UPDATE_FAILED_MESSAGE =
                         {selectedJob.location || "Location"} &nbsp;·&nbsp; {selectedJob.department || "Department"} / {selectedJob.employment_type || "Type"} / {selectedJob.work_mode || "On-site"}
                       </p>
                     </div>
+                    {previewMode && (
+                      <div
+                        role="status"
+                        className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800"
+                      >
+                        Preview — this is exactly what a candidate sees. Submitting is disabled here.
+                      </div>
+                    )}
                     <div className="bg-white rounded-xl border border-border p-8 shadow-sm">
                       <ApplicationForm
                         key={existingApp?.ref.applicationId ?? "new"}
                         job={selectedJob}
                         onSubmit={handleSubmit}
                         existing={existingApp}
+                        preview={previewMode}
                       />
                     </div>
                   </>

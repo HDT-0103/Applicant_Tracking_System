@@ -84,6 +84,11 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "position",
         "duration",
         "highlights",
+        # Tên tin tuyển dụng mà ứng viên nộp vào (CandidateCard trên dashboard).
+        # Không phải PII: tech lead vốn thấy danh sách tin và được mời vào hội
+        # đồng của đúng tin đó. Tách tên riêng thay vì dùng lại `title` để
+        # không lẫn với chức danh trong lịch sử công việc của ứng viên.
+        "applied_job_title",
         # Analytics / chấm điểm
         "analytics",
         "match_confidence_score",
