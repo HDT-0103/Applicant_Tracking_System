@@ -140,8 +140,7 @@ class RecruiterDecisionNode(BaseNode):
         recommendations.sort(key=lambda item: item.confidence, reverse=True)
         top_recommendations = recommendations[:5]
         recommendation_summary = "; ".join(
-            f"{item.candidate_id}: {item.recommendation} "
-            f"({item.confidence:.0%}) - {item.reasoning[:180]}"
+            f"{item.display_name}: {item.recommendation} ({item.confidence:.0%})"
             for item in top_recommendations
         )
         decision_output = RecruiterDecisionOutput(

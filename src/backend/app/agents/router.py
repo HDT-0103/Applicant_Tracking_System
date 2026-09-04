@@ -36,6 +36,7 @@ from src.backend.app.agents.nodes.interaction import CLIInteractionGateway
 from src.backend.app.agents.state import (
     ATSState,
     CandidateSearchState,
+    RecruiterDecisionOutput,
     Mission,
     MissionStatus,
 )
@@ -155,14 +156,17 @@ async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncI
             raise RuntimeError("Agent completed without a result")
 
         decision = _extract_final_decision(final_state)
-        summary = "The agent completed without a recommendation."
-        if decision:
-            summary = decision.get("summary", summary) if isinstance(decision, dict) else decision.summary
+        if decision is None:
+            result = {"summary": "The agent completed without a recommendation.", "candidates": []}
+        elif isinstance(decision, dict):
+            result = RecruiterDecisionOutput.model_validate(decision).model_dump(mode="json")
+        else:
+            result = decision.model_dump(mode="json")
 
-        for index, word in enumerate(summary.split(" ")):
-            yield _sse("delta", {"text": (" " if index else "") + word})
-            await asyncio.sleep(0)
-        yield _sse("done", {"conversation_id": str(request.conversation_id)})
+        yield _sse(
+            "done",
+            {"conversation_id": str(request.conversation_id), "result": result},
+        )
     except Exception as exc:
         logger.exception("Agent stream failed", extra={"error_type": type(exc).__name__})
         yield _sse("error", {"message": _agent_error_message(exc)})

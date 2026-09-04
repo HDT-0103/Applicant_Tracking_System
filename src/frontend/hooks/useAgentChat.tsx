@@ -84,11 +84,16 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
         for (const event of events) {
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
-          const data = JSON.parse(dataLine.slice(6)) as { text?: string; message?: string };
+          const data = JSON.parse(dataLine.slice(6)) as { text?: string; message?: string; result?: unknown };
           if (event.includes("event: delta") && data.text) {
             setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: item.content + data.text } : item));
           }
           if (event.includes("event: error")) throw new Error(data.message ?? "Agent request failed");
+          if (event.includes("event: done") && data.result) {
+            setMessages((current) => current.map((item) => item.id === assistantId
+              ? { ...item, content: JSON.stringify(data.result) }
+              : item));
+          }
         }
       }
     } catch (error) {

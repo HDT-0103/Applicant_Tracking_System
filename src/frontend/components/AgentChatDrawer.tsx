@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Bot, ChevronDown, Loader2, Send, X } from "lucide-react";
+import { Bot, ChevronDown, ExternalLink, Loader2, Send, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { useAuth } from "../contexts/AuthContext";
 import { D } from "../lib/shared";
@@ -47,6 +48,53 @@ function MarkdownMessage({ content }: { content: string }) {
   );
 }
 
+type CandidateResult = {
+  candidate_id: string;
+  candidate_code: string;
+  display_name: string;
+  recommendation: "Strong Hire" | "Hire" | "Consider" | "Reject";
+  confidence: number;
+  reasoning: string;
+  key_strengths: string[];
+  missing_requirements: string[];
+  risks: string[];
+};
+
+type AgentResult = { summary: string; candidates: CandidateResult[] };
+
+function parseAgentResult(content: string): AgentResult | null {
+  try {
+    const result = JSON.parse(content) as AgentResult;
+    return typeof result.summary === "string" && Array.isArray(result.candidates) ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function CandidateCards({ result }: { result: AgentResult }) {
+  const router = useRouter();
+  return <div style={{ display: "grid", gap: 8 }}>
+    <div style={{ lineHeight: 1.45 }}>{result.summary}</div>
+    {result.candidates.map((candidate) => {
+      const tone = candidate.recommendation === "Reject" ? D.red : candidate.recommendation === "Consider" ? D.amber : D.mint;
+      const concerns = [...candidate.missing_requirements, ...candidate.risks];
+      return <article key={candidate.candidate_id} style={{ border: `1px solid ${D.line}`, borderLeft: `3px solid ${tone}`, borderRadius: 6, padding: 10, background: D.surface }}>
+        <div style={{ display: "flex", alignItems: "start", gap: 8 }}><strong style={{ flex: 1 }}>{candidate.display_name || `Ứng viên (#${candidate.candidate_code})`}</strong><span style={{ color: tone, fontWeight: 700, fontSize: 11 }}>{candidate.recommendation}</span></div>
+        <div style={{ color: D.muted, fontSize: 11, marginTop: 4 }}>Confidence: {(candidate.confidence * 100).toFixed(0)}%</div>
+        <div style={{ marginTop: 8, lineHeight: 1.45 }}>{candidate.reasoning}</div>
+        {candidate.key_strengths.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>{candidate.key_strengths.map((item) => <span key={item} style={{ padding: "3px 6px", borderRadius: 3, background: D.mintSoft, color: D.sub, fontSize: 10 }}>{item}</span>)}</div>}
+        {concerns.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 17, color: D.muted, fontSize: 11 }}>{concerns.map((item) => <li key={item}>{item}</li>)}</ul>}
+        <button type="button" onClick={() => router.push(`/candidate-profile/enriched?uuid=${encodeURIComponent(candidate.candidate_id)}`)} style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 9, border: 0, padding: 0, background: "transparent", color: D.blue, cursor: "pointer", fontSize: 11 }}><ExternalLink size={12} /> View profile</button>
+      </article>;
+    })}
+  </div>;
+}
+
+function MessageContent({ message }: { message: { role: "assistant" | "user" | "error"; content: string } }) {
+  const result = message.role === "assistant" ? parseAgentResult(message.content) : null;
+  return result ? <CandidateCards result={result} /> : <MarkdownMessage content={message.content} />;
+}
+
 export function AgentChatDrawer() {
   const { user } = useAuth();
   const { messages, isLoading, isOpen, setIsOpen, sendMessage, retry } = useAgentChat();
@@ -72,7 +120,7 @@ export function AgentChatDrawer() {
         <header style={{ padding: "14px 15px", display: "flex", alignItems: "center", gap: 9, borderBottom: `1px solid ${D.line}` }}><Bot size={17} color={D.blue} /><strong style={{ flex: 1, fontSize: 13 }}>ATS Agent</strong><button type="button" aria-label="Minimize agent chat" title="Minimize" onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><ChevronDown size={16} /></button><button type="button" aria-label="Close agent chat" title="Close" onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><X size={15} /></button></header>
         <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
           {messages.length === 0 && <div style={{ color: D.muted, fontSize: 12, textAlign: "center", margin: "auto 12px" }}>Ask the agent to search candidates or explain a recommendation.</div>}
-          {messages.map((message) => <div key={message.id} style={{ alignSelf: message.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", padding: "9px 11px", borderRadius: 7, background: message.role === "user" ? D.blue : message.role === "error" ? "#fff1f2" : D.canvas, color: message.role === "user" ? "white" : message.role === "error" ? "#be123c" : D.ink, fontSize: 12 }}>{message.role === "error" ? <><div>{message.content}</div><button type="button" onClick={() => message.retryMessage && retry(message.retryMessage)} disabled={isLoading} style={{ marginTop: 8, border: "1px solid currentColor", background: "transparent", borderRadius: 4, padding: "4px 8px", color: "inherit", cursor: "pointer" }}>Retry</button></> : <MarkdownMessage content={message.content} />}</div>)}
+          {messages.map((message) => <div key={message.id} style={{ alignSelf: message.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", padding: "9px 11px", borderRadius: 7, background: message.role === "user" ? D.blue : message.role === "error" ? "#fff1f2" : D.canvas, color: message.role === "user" ? "white" : message.role === "error" ? "#be123c" : D.ink, fontSize: 12 }}>{message.role === "error" ? <><div>{message.content}</div><button type="button" onClick={() => message.retryMessage && retry(message.retryMessage)} disabled={isLoading} style={{ marginTop: 8, border: "1px solid currentColor", background: "transparent", borderRadius: 4, padding: "4px 8px", color: "inherit", cursor: "pointer" }}>Retry</button></> : <MessageContent message={message} />}</div>)}
           {isLoading && <div style={{ alignSelf: "flex-start", color: D.muted, fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={13} style={{ animation: "spin .8s linear infinite" }} /> Agent is thinking...</div>}
           <div ref={bottomRef} />
         </div>
