@@ -20,12 +20,14 @@ from groq import (
 )
 from modules.auth.domain.models import AuthUser
 from modules.search.application.search_service import get_embedding_service
+from modules.search.application.scoped_search import ScopedCandidateSearchService
 from modules.search.infra.legacy_bridge import (
     CandidateSearchRepository,
-    CandidateSearchService,
     EnrichmentRepository,
     RankingService,
 )
+from modules.search.infra.scope import SupabaseSearchScope
+from modules.shared.domain.job_visibility import visible_job_posting_ids
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.rate_limit import agent_rate_limit
@@ -46,11 +48,9 @@ from src.backend.app.agents.state import (
     Mission,
     MissionStatus,
 )
-from src.backend.app.services.llm_provider import (
-    FallbackLLMProvider,
-    GroqProvider,
-    HFProvider,
-)
+from src.backend.app.schemas.orchestrator import IntentType, OrchestratorDecision
+from src.backend.app.services.llm_provider import build_default_llm_provider
+from src.backend.app.services.orchestrator import OrchestratorService
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 logger = logging.getLogger(__name__)
@@ -75,6 +75,13 @@ class AgentChatRequest(BaseModel):
     #: viên: chỉ tin TRƯỚC của người dùng khi họ trả lời câu hỏi làm rõ (planner
     #: chỉ đọc tin cuối nên phải ghép lại).
     history: list[Union[str, HistoryTurn]] = Field(default_factory=list, max_length=12)
+    #: Đang trả lời câu hỏi làm rõ của agent: `history` khi đó là tin gốc của
+    #: người dùng, được ghép vào tin này thành một yêu cầu và bỏ qua bộ điều
+    #: phối. Không có cờ thì `history` chỉ là ngữ cảnh cho bộ điều phối / hỏi
+    #: đáp ứng viên — không bao giờ bị ghép vào mục tiêu tìm kiếm.
+    clarification_reply: bool = False
+    #: Tiêu chí bộ điều phối bóc sẵn; route tự điền, client không cần gửi.
+    initial_search_criteria: Optional[dict[str, object]] = None
 
     def user_history(self) -> list[str]:
         return [h if isinstance(h, str) else h.content for h in self.history
@@ -106,7 +113,7 @@ class HttpInteractionGateway(HumanInteractionGateway):
         raise ClarificationNeeded(question)
 
 
-def _agent_graph(settings: Settings):
+def _agent_graph(settings: Settings, user: AuthUser | None = None):
     # Import lazily because graph.py imports the route decision functions from
     # this module while the application is importing the router.
     from src.backend.app.agents.graph import build_graph
@@ -118,17 +125,19 @@ def _agent_graph(settings: Settings):
             detail="Agent search is unavailable: the database is not configured.",
         )
 
-    search_service = CandidateSearchService(
+    # Tìm trong phạm vi người gọi (tin mình tạo / hội đồng mình ở trong), như
+    # màn hình /search. Không có user → role None → không thấy ai (fail-closed).
+    search_service = ScopedCandidateSearchService(
+        scope=SupabaseSearchScope(client),
+        user_id=user.id if user else "",
+        role=user.role if user else None,
         search_repository=CandidateSearchRepository(client),
         enrichment_repository=EnrichmentRepository(client),
         embedding_service=get_embedding_service(),
         ranking_service=RankingService(),
     )
     return build_graph(
-        llm_provider=FallbackLLMProvider(
-            primary=GroqProvider(),
-            fallback=HFProvider(),
-        ),
+        llm_provider=_llm_provider(),
         search_service=search_service,
         interaction_gateway=HttpInteractionGateway(),
     )
@@ -177,7 +186,45 @@ def _extract_final_decision(value: object):
 
 
 def _llm_provider():
-    return FallbackLLMProvider(primary=GroqProvider(), fallback=HFProvider())
+    return build_default_llm_provider()
+
+
+def _orchestrator() -> OrchestratorService:
+    return OrchestratorService(_llm_provider())
+
+
+#: Trần số tin đưa vào prompt tổng quan — đủ cho một HR, không phình prompt.
+MAX_OVERVIEW_JOBS = 20
+
+
+def _workspace_overview(settings: Settings, user: AuthUser | None) -> str:
+    """Vài dòng về tin và số hồ sơ người này được thấy, cho câu trả lời chung
+    ("tin nào nhiều ứng viên nhất?"). Hỏng thì trả rỗng — chat vẫn chạy, chỉ
+    không có số liệu; KHÔNG bịa số."""
+    if user is None:
+        return ""
+    try:
+        client = get_supabase_admin_client(settings)
+        if client is None:
+            return ""
+        scope = SupabaseSearchScope(client)
+        allowed = visible_job_posting_ids(user.role, user.id, scope)
+        if allowed is not None and not allowed:
+            return "The user has no job postings in their workspace yet."
+        # Cùng cách đếm nhúng `applications(count)` mà sidebar dùng: 1 truy vấn.
+        query = client.table("jobs_posting").select("id, job_title, status, applications(count)")
+        if allowed is not None:
+            query = query.in_("id", allowed[:MAX_OVERVIEW_JOBS])
+        rows = query.limit(MAX_OVERVIEW_JOBS).execute().data or []
+        lines = []
+        for row in rows:
+            counts = row.get("applications") or []
+            count = counts[0].get("count", 0) if isinstance(counts, list) and counts else 0
+            lines.append(f"- {row.get('job_title')} [{row.get('status')}]: {count} applications")
+        return f"Role: {user.role}. Job postings visible ({len(rows)}):\n" + "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001 — tổng quan là tuỳ chọn
+        logger.warning("workspace overview unavailable", extra={"error_type": type(exc).__name__})
+        return ""
 
 
 async def _candidate_access(candidate_uuid: str, user: AuthUser | None, settings: Settings) -> bool:
@@ -239,12 +286,45 @@ async def _stream_agent(
             yield chunk
         return
     try:
-        graph = _agent_graph(settings)
         # Trả lời câu hỏi làm rõ: ghép tin trước với tin này thành một yêu cầu.
-        prior = request.user_history()
+        prior = request.user_history() if request.clarification_reply else []
+        criteria = request.initial_search_criteria
+        if not prior:
+            # Lượt đầu của một yêu cầu: hỏi bộ điều phối trước. "Xin chào" hay
+            # "hệ thống chấm điểm thế nào" được trả lời ngay, không vào planner
+            # để rồi bị hỏi ngược "bạn tuyển vị trí nào". Khi đang TRẢ LỜI câu
+            # hỏi làm rõ (prior ≠ ∅) thì bỏ qua: "Senior Python, HCMC" đứng một
+            # mình dễ bị xếp nhầm thành trò chuyện.
+            yield _sse("status", {"message": "Understanding your request..."})
+            overview = await asyncio.to_thread(_workspace_overview, settings, user)
+            decision: OrchestratorDecision = await asyncio.to_thread(
+                _orchestrator().classify,
+                request.message,
+                [f"{t.role}: {t.content}" for t in request.turns()],
+                lang=request.context.lang,
+                overview=overview,
+            )
+            if decision.intent == IntentType.GENERAL_CHAT:
+                yield _sse(
+                    "done",
+                    {
+                        "conversation_id": str(request.conversation_id),
+                        "mode": "chat",
+                        "result": {
+                            "summary": decision.direct_response or "How can I help with your hiring?",
+                            "candidates": [],
+                            "suggestions": decision.suggestions[:3],
+                        },
+                    },
+                )
+                return
+            criteria = decision.initial_search_criteria or criteria
+
+        graph = _agent_graph(settings, user)
         objective = "\n".join([*prior, request.message]) if prior else request.message
         initial_state = ATSState(
             messages=[objective],
+            initial_search_criteria=criteria,
             candidate_search=CandidateSearchState(
                 mission=Mission(
                     objective=objective,
@@ -268,6 +348,7 @@ async def _stream_agent(
                 "done",
                 {
                     "conversation_id": str(request.conversation_id),
+                    "mode": "search",
                     "result": {"summary": need.question, "candidates": []},
                     "clarification": True,
                 },
@@ -287,7 +368,7 @@ async def _stream_agent(
 
         yield _sse(
             "done",
-            {"conversation_id": str(request.conversation_id), "result": result},
+            {"conversation_id": str(request.conversation_id), "mode": "search", "result": result},
         )
     except Exception as exc:
         logger.exception("Agent stream failed", extra={"error_type": type(exc).__name__})

@@ -14,8 +14,9 @@ from fastapi.testclient import TestClient
 
 from apps.main import app
 from modules.auth.domain.models import AuthUser
-from modules.catalog.adapters.routes import get_catalog_repo
+from modules.catalog.adapters.routes import get_catalog_repo, get_job_embedding_hook
 from modules.catalog.domain.models import (
+    RankedCandidate,
     CandidateCard,
     CandidateOption,
     ConfirmedSlotSummary,
@@ -63,6 +64,20 @@ class FakeCatalogRepo:
         self.updated: list[tuple[str, dict]] = []
         self.created: list[dict] = []
         self.status_changes: list[tuple[str, str]] = []
+        self.ranked = {
+            JOB_MINE: [
+                RankedCandidate(candidate_uuid="cand-1", application_id="app-1", application_status="SUBMITTED",
+                                full_name="Trần Bảo", email="bao@example.com", overall_score=0.81,
+                                summary_score=0.8, experience_score=0.82, skills=["Python"],
+                                skills_matrix={"must_have": {"matched": ["Python"], "missing": []}}),
+                RankedCandidate(candidate_uuid="cand-3", application_id="app-3", application_status="SUBMITTED",
+                                full_name="Ngô Vy", email="vy@example.com", overall_score=None),
+            ],
+            JOB_THEIRS: [
+                RankedCandidate(candidate_uuid="cand-2", application_id="app-2", full_name="Lê An",
+                                email="an@example.com", overall_score=0.5),
+            ],
+        }
 
     # JobVisibilitySource
     def job_postings_for_reviewer(self, reviewer_id):
@@ -76,6 +91,9 @@ class FakeCatalogRepo:
             return list(self.cards)
         allowed = set(job_posting_ids)
         return [c for c in self.cards if c.job_posting_id in allowed]
+
+    def list_ranked_candidates(self, job_posting_id):
+        return list(self.ranked.get(job_posting_id, []))
 
     def list_candidate_options(self, limit, job_posting_ids=None):
         return [
@@ -153,6 +171,19 @@ def repo():
     app.dependency_overrides[get_catalog_repo] = lambda: fake
     yield fake
     app.dependency_overrides.pop(get_catalog_repo, None)
+
+
+@pytest.fixture(autouse=True)
+def embedding_hook():
+    """Ghi lại tin nào được đưa đi nhúng, thay vì nạp mô hình 1 GB sau response."""
+    calls: list[str] = []
+
+    async def _record(job_id, settings):
+        calls.append(job_id)
+
+    app.dependency_overrides[get_job_embedding_hook] = lambda: _record
+    yield calls
+    app.dependency_overrides.pop(get_job_embedding_hook, None)
 
 
 @pytest.fixture
@@ -357,3 +388,62 @@ class TestAnalytics:
         assert body["locations"] == {"HCMC": 1}
         # Màn hình này vẽ số liệu tổng hợp; tên và email không có lý do rời máy chủ.
         assert "candidates" not in body
+
+
+class TestRanking:
+    """Bảng xếp hạng ứng viên của một tin: điểm pipeline CV ghi trên `applications`."""
+
+    def test_hr_reads_the_ranking_with_names(self, client, sign_in):
+        sign_in("hr")
+        body = client.get(f"/api/catalog/job-postings/{JOB_MINE}/ranking").json()
+        assert [r["candidate_uuid"] for r in body] == ["cand-1", "cand-3"]
+        assert body[0]["full_name"] == "Trần Bảo" and body[0]["overall_score"] == 0.81
+        # Chưa chấm thì để trống, không phải 0 — 0 nghĩa là "không hợp".
+        assert body[1]["overall_score"] is None
+
+    def test_a_tech_lead_on_the_panel_sees_scores_but_not_identity(self, client, sign_in):
+        sign_in("tech_lead", user_id="tl-on")
+        body = client.get(f"/api/catalog/job-postings/{JOB_MINE}/ranking").json()
+        top = body[0]
+        assert top["full_name"] == "***" and top["email"] == "***"
+        # Thứ tech lead cần để biết chấm ai trước thì phải còn nguyên.
+        assert top["overall_score"] == 0.81 and top["summary_score"] == 0.8
+        assert top["application_id"] == "app-1" and top["application_status"] == "SUBMITTED"
+        assert top["skills"] == ["Python"]
+        assert top["skills_matrix"]["must_have"]["matched"] == ["Python"]
+
+    def test_the_ranking_follows_the_posting_scope(self, client, sign_in):
+        sign_in("hr")
+        assert client.get(f"/api/catalog/job-postings/{JOB_THEIRS}/ranking").status_code == 404
+        sign_in("tech_lead", user_id="tl-off")
+        assert client.get(f"/api/catalog/job-postings/{JOB_MINE}/ranking").status_code == 404
+
+
+class TestJobEmbeddingHook:
+    """Lưu/đăng tin thì vector của tin phải được làm mới ở nền.
+
+    Trước đây chỉ có `POST /api/v1/jobs/{id}/embeddings` mà không ai gọi, nên
+    `job_embeddings` rỗng và mọi đơn nhận overall_score NULL.
+    """
+
+    def test_creating_a_posting_schedules_its_embedding(self, client, sign_in, repo, embedding_hook):
+        sign_in("hr")
+        r = client.post("/api/catalog/job-postings", json={"job_title": "Data Engineer"})
+        assert r.status_code == 201
+        assert embedding_hook == [r.json()["id"]]
+
+    def test_editing_the_jd_re_embeds(self, client, sign_in, embedding_hook):
+        sign_in("hr")
+        assert client.put(f"/api/catalog/job-postings/{JOB_MINE}", json={"job_title": "Backend v2"}).status_code == 200
+        assert embedding_hook == [JOB_MINE]
+
+    def test_publishing_embeds_but_closing_does_not(self, client, sign_in, embedding_hook):
+        sign_in("hr")
+        assert client.patch(f"/api/catalog/job-postings/{JOB_MINE}/status", json={"status": "PUBLISHED"}).status_code == 200
+        assert client.patch(f"/api/catalog/job-postings/{JOB_MINE}/status", json={"status": "CLOSED"}).status_code == 200
+        assert embedding_hook == [JOB_MINE]
+
+    def test_a_rejected_write_schedules_nothing(self, client, sign_in, embedding_hook):
+        sign_in("hr")
+        assert client.put(f"/api/catalog/job-postings/{JOB_THEIRS}", json={"job_title": "x"}).status_code == 404
+        assert embedding_hook == []

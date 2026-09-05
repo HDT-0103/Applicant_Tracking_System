@@ -137,3 +137,28 @@ export async function duplicateJobPosting(
 export async function getAnalytics(): Promise<AnalyticsData> {
   return api.get<AnalyticsData>("/api/catalog/analytics");
 }
+
+/**
+ * Một dòng trong bảng xếp hạng của tin. `overall_score` nằm trên đơn ứng tuyển
+ * (do pipeline CV tính, cosine CV↔tin trong [0,1]); `null` là CHƯA chấm, khác
+ * với 0 là "không hợp". Tech lead nhận `full_name`/`email` = "***".
+ */
+export interface RankedCandidate {
+  candidate_uuid: string;
+  application_id: string;
+  application_status: string | null;
+  submitted_at: string | null;
+  full_name: string | null;
+  email: string | null;
+  overall_score: number | null;
+  summary_score: number | null;
+  experience_score: number | null;
+  github_score: number | null;
+  match_confidence_score: number | null;
+  skills_matrix: Record<string, unknown> | null;
+  skills: string[];
+}
+
+export async function getJobRanking(jobPostingId: string): Promise<RankedCandidate[]> {
+  return api.get<RankedCandidate[]>(`/api/catalog/job-postings/${jobPostingId}/ranking`);
+}

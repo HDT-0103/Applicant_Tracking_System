@@ -266,6 +266,14 @@ CREATE TABLE public.applications (
   skill_ratings jsonb NOT NULL DEFAULT '{}'::jsonb,
   portfolio_url text,
   proudest_project text,
+  -- Điểm khớp CV↔tin, do CVProcessingPipeline ghi (modules/scoring/application/cv_pipeline.py).
+  -- Cosine trong [0,1]; NULL = chưa chấm (khác 0.0 = không hợp).
+  summary_score double precision,
+  experience_score double precision,
+  github_score double precision,
+  overall_score double precision,
+  github_project text,
+  github_embedding USER-DEFINED,
   motivation_reason character varying CHECK (motivation_reason IS NULL OR (motivation_reason::text = ANY (ARRAY['growth'::character varying, 'promotion'::character varying, 'pivot'::character varying, 'other'::character varying]::text[]))),
   motivation_other text,
   conflict_story text,

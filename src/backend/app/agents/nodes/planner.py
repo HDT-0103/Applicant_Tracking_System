@@ -24,6 +24,7 @@ class PlannerNode(BaseNode):
             history=history,
             reflection=reflection,
             user_query=user_query,
+            initial_search_criteria=state.initial_search_criteria,
         )
 
         # 3. Call LLM

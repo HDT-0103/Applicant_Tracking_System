@@ -10,7 +10,13 @@ from modules.search.application.search_service import (
     SearchService,
     get_embedding_service,
 )
+from src.backend.app.dtos.find_candidate import FindCandidateRequest, FindCandidateResult
+from src.backend.app.repositories.candidate_search_repository import CandidateSearchRepository
+from src.backend.app.services.find_candidate_service import FindCandidateService
+from modules.search.infra.scope import SupabaseSearchScope
+from modules.shared.domain.job_visibility import visible_job_posting_ids
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles
+from modules.shared.infrastructure.abac import apply_abac
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 
@@ -30,7 +36,45 @@ def get_search_service(
     return SearchService(client=client, embedding_service=get_embedding_service())
 
 
+def get_find_candidate_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FindCandidateService:
+    client = get_supabase_client(settings, use_admin=True)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Candidate search is unavailable: the database is not configured.",
+        )
+    repository = CandidateSearchRepository(client)
+    return FindCandidateService(
+        search_repository=repository,
+        candidate_repository=repository,
+        embedding_service=get_embedding_service(),
+    )
+
+
+def get_search_scope(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SupabaseSearchScope:
+    """Phạm vi dữ liệu của người gọi (tin mình tạo / hội đồng mình ở trong).
+
+    Tách thành dependency để test thay bằng scope giả — cùng cách
+    `test_search_routes.py` làm với `/api/search`.
+    """
+    client = get_supabase_client(settings, use_admin=True)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Candidate search is unavailable: the database is not configured.",
+        )
+    return SupabaseSearchScope(client)
+
+
 ServiceDep = Annotated[SearchService, Depends(get_search_service)]
+FindCandidateServiceDep = Annotated[
+    FindCandidateService, Depends(get_find_candidate_service)
+]
+ScopeDep = Annotated[SupabaseSearchScope, Depends(get_search_scope)]
 
 
 class SearchRequest(BaseModel):
@@ -87,3 +131,40 @@ async def search_candidates(
     return SearchResponse(
         results=results, total=len(results), min_score=body.min_score
     )
+
+
+@router.post("/find", response_model=list[FindCandidateResult])
+async def find_candidates(
+    body: FindCandidateRequest,
+    service: FindCandidateServiceDep,
+    scope: ScopeDep,
+    user: Annotated[AuthUser, Depends(require_operational_roles())],
+) -> list[FindCandidateResult]:
+    """Tìm kiếm lai (từ khoá + vector), ad-hoc, không tạo hay sửa application.
+
+    Cùng hai luật với `/api/search`: (1) chỉ ứng viên đã nộp vào tin người gọi
+    được thấy — bản đầu của endpoint này quét cả bảng `candidates` và trả tên,
+    email, số điện thoại của mọi ứng viên cho bất kỳ HR nào; (2) che PII theo
+    role trước khi trả.
+    """
+    allowed_jobs = visible_job_posting_ids(user.role, user.id, scope)
+    scope_ids: Optional[List[str]] = None
+    if allowed_jobs is not None:
+        if not allowed_jobs:
+            return []
+        scope_ids = scope.candidates_for_job_postings(allowed_jobs)
+        if not scope_ids:
+            return []
+
+    results = await service.find(body, scope_candidate_ids=scope_ids)
+    logger.info(
+        "search.find.completed",
+        user_id=user.id,
+        role=user.role,
+        returned=len(results),
+        scoped=scope_ids is not None,
+    )
+    return [
+        FindCandidateResult.model_validate(apply_abac(result.model_dump(), user.role))
+        for result in results
+    ]

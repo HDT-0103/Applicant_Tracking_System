@@ -10,17 +10,15 @@ import { isPublicRoute } from "../lib/routes";
 import { D, tint } from "../lib/shared";
 import { useT } from "../lib/i18n";
 
-/** Agent trả lời về ứng viên đang mở, nên nút chat chỉ sống ở trang ứng viên. */
-export const AGENT_CHAT_PATH_PREFIX = "/candidate-profile";
-
 /**
- * Nút chat chỉ có mặt khi đã mở MỘT ứng viên cụ thể: đã đăng nhập với role
- * nghiệp vụ (hr / tech_lead) và đang ở `/candidate-profile/*`.
+ * Nút chat có mặt trên MỌI màn hình đã đăng nhập với role nghiệp vụ
+ * (hr / tech_lead). Ở dashboard / tin tuyển dụng nó tìm ứng viên và trả lời
+ * câu hỏi chung; mở một hồ sơ thì chuyển sang hỏi đáp về đúng người đó.
  *
- * Trước đây nó chỉ hỏi `user` có tồn tại không, mà `user` được khôi phục từ
- * localStorage ngay khi app mở — nên nút hiện cả trên trang đăng nhập trong
- * lúc AuthGuard còn đang chuyển hướng, trên trang careers khi HR xem thử, và
- * trên dashboard / tin tuyển dụng nơi không có ứng viên nào để hỏi.
+ * Vẫn ẩn ở đăng nhập / đăng ký / careers / onboarding: `user` được khôi phục
+ * từ localStorage ngay khi app mở, nên chỉ hỏi "có user" là nút hiện cả trên
+ * trang đăng nhập trong lúc AuthGuard đang chuyển hướng và trên trang careers
+ * khi HR xem thử. Admin không có dữ liệu ứng viên để hỏi.
  */
 export function shouldShowAgentChat(
   user: { role: string } | null | undefined,
@@ -28,7 +26,7 @@ export function shouldShowAgentChat(
 ): boolean {
   if (!user || !isOperationalRole(user.role as never)) return false;
   if (!pathname || isPublicRoute(pathname) || pathname === COMPANY_ONBOARDING_PATH) return false;
-  return pathname === AGENT_CHAT_PATH_PREFIX || pathname.startsWith(`${AGENT_CHAT_PATH_PREFIX}/`);
+  return true;
 }
 
 function MarkdownMessage({ content }: { content: string }) {
@@ -165,16 +163,19 @@ export function AgentChatDrawer() {
   }, [messages]);
   if (!shouldShowAgentChat(user, pathname)) return null;
 
-  // Câu hỏi mở đầu: theo ứng viên đang mở và theo role. Tech lead không thấy
-  // PII nên thay câu dễ dính danh tính bằng đánh giá kỹ thuật qua GitHub.
+  // Câu hỏi mở đầu theo chế độ. Trang ứng viên: tóm tắt và đào sâu về đúng
+  // người đó (tech lead không thấy PII nên thay câu dễ dính danh tính bằng
+  // đánh giá qua GitHub). Dashboard: khái quát — tổng quan tin của mình, tìm
+  // người, cách hệ thống chấm.
   const starters = activeCandidate
     ? (user?.role === "tech_lead"
-        ? ["candidate.chat.starter.github", "candidate.chat.starter.gaps", "candidate.chat.starter.interview", "candidate.chat.starter.risks"]
-        : ["candidate.chat.starter.strengths", "candidate.chat.starter.gaps", "candidate.chat.starter.interview", "candidate.chat.starter.risks"])
-    : ["candidate.chat.starter.findBest", "candidate.chat.starter.findBackend", "candidate.chat.starter.findSkills"];
+        ? ["candidate.chat.starter.summary", "candidate.chat.starter.github", "candidate.chat.starter.gaps", "candidate.chat.starter.interview", "candidate.chat.starter.risks"]
+        : ["candidate.chat.starter.summary", "candidate.chat.starter.strengths", "candidate.chat.starter.gaps", "candidate.chat.starter.interview", "candidate.chat.starter.risks"])
+    : ["candidate.chat.starter.overview", "candidate.chat.starter.findBest", "candidate.chat.starter.findSkills", "candidate.chat.starter.howScoring"];
   const subtitle = activeCandidate
     ? t("candidate.chat.about", { code: activeCandidate.slice(0, 8) })
     : t("candidate.chat.general");
+  const emptyText = activeCandidate ? t("candidate.chat.emptyCandidate") : t("candidate.chat.empty");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -201,7 +202,7 @@ export function AgentChatDrawer() {
         <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
           {messages.length === 0 && (
             <div style={{ margin: "auto 0", display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ color: D.muted, fontSize: 12, textAlign: "center", padding: "0 12px" }}>{t("candidate.chat.empty")}</div>
+              <div style={{ color: D.muted, fontSize: 12, textAlign: "center", padding: "0 12px" }}>{emptyText}</div>
               <Chips label={activeCandidate ? t("candidate.chat.starters") : t("candidate.chat.startersGeneral")} items={starters.map((k) => t(k))} onPick={(q) => void sendMessage(q)} disabled={isLoading} />
             </div>
           )}

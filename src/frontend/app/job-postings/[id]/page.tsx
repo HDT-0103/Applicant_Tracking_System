@@ -12,6 +12,7 @@ import {
   Loader2,
   MapPin,
   Pencil,
+  Trophy,
   Users,
 } from "lucide-react";
 import { AppShell } from "../../../components/AppShell";
@@ -20,7 +21,8 @@ import { ShareLinkBox } from "../../../components/ShareLinkBox";
 import { useAuth } from "../../../contexts/AuthContext";
 import { D, tint } from "../../../lib/shared";
 import { buildJobPath, buildJobUrl } from "../../../lib/jobUrl";
-import { getJobPosting } from "../../../services/catalogService";
+import { getJobPosting, getJobRanking, type RankedCandidate } from "../../../services/catalogService";
+import { candidateDisplayName, isMasked } from "../../../lib/candidateLabel";
 import { getPanel, type PanelMember } from "../../../services/panelService";
 import { useLang, useT, type Vars } from "@/lib/i18n";
 
@@ -62,7 +64,7 @@ interface JobDetail {
   created_by_company: string | null;
 }
 
-type Tab = "posting" | "candidate";
+type Tab = "posting" | "candidate" | "ranking";
 
 type T = (key: string, vars?: Vars) => string;
 
@@ -226,6 +228,7 @@ export default function JobPostingDetailPage() {
         <div role="tablist" className="flex items-center gap-2 mb-6 border-b border-border pb-3">
           {tabButton("posting", t("jobs.detail.tab.posting"), FileText)}
           {tabButton("candidate", t("jobs.detail.tab.candidate"), Eye)}
+          {tabButton("ranking", t("jobs.detail.tab.ranking"), Trophy)}
           <a
             href={publicPath}
             target="_blank"
@@ -298,6 +301,8 @@ export default function JobPostingDetailPage() {
             </div>
           </div>
         )}
+
+        {tab === "ranking" && <RankingTab jobPostingId={job.id} locale={locale} />}
 
         {tab === "candidate" && (
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -376,5 +381,164 @@ function SkillRow({ label, skills, strong = false }: { label: string; skills: st
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Bảng xếp hạng ứng viên của tin, theo `applications.overall_score`.
+ *
+ * Điểm là cosine CV↔tin do pipeline CV tính khi hồ sơ nộp vào; `null` là chưa
+ * chấm (pipeline đang chạy nền, hoặc CV không có text) — hiện "Chưa chấm",
+ * KHÔNG hiện 0%. Tên bị ABAC che thì dùng nhãn `Candidate #xxxxxxxx` chung.
+ */
+function RankingTab({ jobPostingId, locale }: { jobPostingId: string; locale: string }) {
+  const t = useT();
+  const router = useRouter();
+  const [rows, setRows] = useState<RankedCandidate[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    setError(null);
+    getJobRanking(jobPostingId)
+      .then((data) => alive && setRows(data))
+      .catch((err) => alive && setError(err instanceof Error ? err.message : t("jobs.ranking.loadError")));
+    return () => {
+      alive = false;
+    };
+    // t đổi theo ngôn ngữ không cần tải lại bảng.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobPostingId]);
+
+  if (error) {
+    return (
+      <div role="alert" style={{ padding: "12px 14px", borderRadius: 8, border: `1px solid ${tint("red", "30")}`, background: tint("red", "0A"), color: D.red, fontSize: 13 }}>
+        {error}
+      </div>
+    );
+  }
+  if (rows === null) {
+    return (
+      <div style={{ padding: 40, textAlign: "center" }}>
+        <Loader2 size={24} className="animate-spin" color={D.blue} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 12, color: D.muted }}>{t("jobs.ranking.note")}</div>
+      {rows.length === 0 ? (
+        <section style={card}>
+          <div style={{ fontSize: 13, color: D.muted }}>{t("jobs.ranking.empty")}</div>
+        </section>
+      ) : (
+        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          {rows.map((r, index) => (
+            <RankingRow
+              key={r.application_id}
+              rank={index + 1}
+              row={r}
+              locale={locale}
+              onOpen={() => router.push(`/candidate-profile/enriched?uuid=${r.candidate_uuid}`)}
+            />
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function readMustHaveCoverage(matrix: Record<string, unknown> | null): { matched: number; total: number } | null {
+  const mustHave = matrix && typeof matrix === "object" ? (matrix as { must_have?: unknown }).must_have : null;
+  if (!mustHave || typeof mustHave !== "object") return null;
+  const { matched, missing } = mustHave as { matched?: unknown; missing?: unknown };
+  if (!Array.isArray(matched) || !Array.isArray(missing)) return null;
+  const total = matched.length + missing.length;
+  return total > 0 ? { matched: matched.length, total } : null;
+}
+
+function RankingRow({
+  rank,
+  row,
+  locale,
+  onOpen,
+}: {
+  rank: number;
+  row: RankedCandidate;
+  locale: string;
+  onOpen: () => void;
+}) {
+  const t = useT();
+  const scored = typeof row.overall_score === "number";
+  const percent = scored ? Math.round((row.overall_score as number) * 100) : null;
+  const coverage = readMustHaveCoverage(row.skills_matrix);
+  const submitted = row.submitted_at
+    ? new Date(row.submitted_at).toLocaleDateString(locale, { day: "2-digit", month: "short" })
+    : null;
+  const tone = percent === null ? D.muted : percent >= 70 ? D.mint : percent >= 40 ? D.amber : D.red;
+
+  return (
+    <li
+      onClick={onOpen}
+      style={{
+        ...card,
+        padding: "12px 16px",
+        display: "grid",
+        gridTemplateColumns: "32px minmax(0, 1fr) 160px",
+        gap: 14,
+        alignItems: "center",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ fontSize: 15, fontWeight: 700, color: D.muted, textAlign: "center" }}>{rank}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, color: D.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {candidateDisplayName(row.full_name, row.candidate_uuid)}
+        </div>
+        <div style={{ fontSize: 11.5, color: D.muted, display: "flex", gap: 10, flexWrap: "wrap", marginTop: 2 }}>
+          {row.email && !isMasked(row.email) && <span>{row.email}</span>}
+          {submitted && <span>{t("jobs.ranking.submitted", { date: submitted })}</span>}
+          {coverage && (
+            <span>
+              {t("jobs.ranking.mustHave")} {coverage.matched}/{coverage.total}
+            </span>
+          )}
+        </div>
+        {row.skills.length > 0 && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+            {row.skills.slice(0, 8).map((skill) => (
+              <span key={skill} style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: 999, background: D.surface, border: `1px solid ${D.lineSoft}`, color: D.ink }}>
+                {skill}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        {percent === null ? (
+          <div style={{ fontSize: 12, color: D.muted, textAlign: "right" }}>{t("jobs.ranking.unscored")}</div>
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+              <span style={{ color: D.muted }}>{t("jobs.ranking.match")}</span>
+              <span style={{ fontWeight: 700, color: tone }}>{percent}%</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 999, background: D.surface, overflow: "hidden" }}>
+              <div style={{ width: `${percent}%`, height: "100%", background: tone }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: D.muted, marginTop: 4 }}>
+              <span>
+                {t("jobs.ranking.summary")} {row.summary_score === null ? "–" : Math.round(row.summary_score * 100)}
+              </span>
+              <span>
+                {t("jobs.ranking.experience")} {row.experience_score === null ? "–" : Math.round(row.experience_score * 100)}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </li>
   );
 }

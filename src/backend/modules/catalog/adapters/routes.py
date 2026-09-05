@@ -1,11 +1,12 @@
 from typing import Annotated, List, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from modules.auth.domain.models import AuthUser
 from modules.catalog.application.catalog_service import CatalogService
 from modules.catalog.domain.models import (
+    RankedCandidate,
     AnalyticsData,
     CandidateOption,
     DashboardData,
@@ -13,6 +14,7 @@ from modules.catalog.domain.models import (
     JobPostingSummary,
 )
 from modules.catalog.infra.impl_supabase import SupabaseCatalogRepo
+from modules.scoring.application.cv_pipeline import refresh_job_embeddings
 from modules.shared.infrastructure.auth_dependencies import (
     require_operational_roles,
     require_roles,
@@ -33,6 +35,18 @@ def _build_service(repo=Depends(get_catalog_repo)) -> CatalogService:
 
 
 ServiceDep = Annotated[CatalogService, Depends(_build_service)]
+
+
+def get_job_embedding_hook():
+    """Việc nền sau khi lưu tin: nhúng vector cho tìm kiếm/chấm điểm.
+
+    Là dependency để test thay bằng hàm rỗng — nếu không, mỗi test lưu tin
+    sẽ nạp mô hình 1 GB và gọi Supabase thật ngay sau response.
+    """
+    return refresh_job_embeddings
+
+
+HookDep = Annotated[object, Depends(get_job_embedding_hook)]
 
 # 404 chứ không 403 cho tin ngoài phạm vi: 403 xác nhận tin đó tồn tại, và một
 # HR có thể dò id của người khác bằng cách đọc mã trạng thái.
@@ -87,10 +101,15 @@ async def create_job_posting(
     body: JobPostingDraft,
     service: ServiceDep,
     user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    background_tasks: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+    hook: HookDep,
 ) -> dict:
-    return service.save_job_posting(
+    row = service.save_job_posting(
         body, job_posting_id=None, user_id=user.id, role=user.role
     )
+    _schedule_embedding(background_tasks, hook, row.get("id"), settings)
+    return row
 
 
 @router.put("/job-postings/{job_posting_id}", response_model=dict)
@@ -99,13 +118,19 @@ async def update_job_posting(
     body: JobPostingDraft,
     service: ServiceDep,
     user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    background_tasks: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+    hook: HookDep,
 ) -> dict:
     try:
-        return service.save_job_posting(
+        row = service.save_job_posting(
             body, job_posting_id=job_posting_id, user_id=user.id, role=user.role
         )
     except LookupError:
         raise _NOT_FOUND
+    # Sửa JD là đổi thứ mà CV được so khớp; vector cũ trở thành sai.
+    _schedule_embedding(background_tasks, hook, job_posting_id, settings)
+    return row
 
 
 @router.delete("/job-postings/{job_posting_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -131,6 +156,9 @@ async def set_job_posting_status(
     body: SetStatusRequest,
     service: ServiceDep,
     user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    background_tasks: BackgroundTasks,
+    settings: Annotated[Settings, Depends(get_settings)],
+    hook: HookDep,
 ) -> dict:
     try:
         service.set_job_posting_status(
@@ -140,7 +168,28 @@ async def set_job_posting_status(
         raise _NOT_FOUND
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if body.status == "PUBLISHED":
+        # Tin mở nhận hồ sơ là lúc chắc chắn cần vector: CV đầu tiên có thể về
+        # ngay sau đó.
+        _schedule_embedding(background_tasks, hook, job_posting_id, settings)
     return {"status": body.status}
+
+
+@router.get("/job-postings/{job_posting_id}/ranking", response_model=List[RankedCandidate])
+async def rank_candidates(
+    job_posting_id: str,
+    service: ServiceDep,
+    user: Annotated[AuthUser, Depends(require_operational_roles())],
+) -> List[RankedCandidate]:
+    """Ứng viên của tin, xếp theo điểm khớp CV↔tin do pipeline tính.
+
+    Cả HR (chủ tin) lẫn tech lead (trong hội đồng) đều đọc được; tech lead
+    nhận bản đã che danh tính.
+    """
+    try:
+        return service.rank_candidates(job_posting_id, user_id=user.id, role=user.role)
+    except LookupError:
+        raise _NOT_FOUND
 
 
 @router.post("/job-postings/{job_posting_id}/duplicate", response_model=JobPostingSummary)
@@ -155,6 +204,11 @@ async def duplicate_job_posting(
         )
     except LookupError:
         raise _NOT_FOUND
+
+
+def _schedule_embedding(background_tasks: BackgroundTasks, hook, job_id, settings: Settings) -> None:
+    if job_id:
+        background_tasks.add_task(hook, str(job_id), settings)
 
 
 @router.get("/analytics", response_model=AnalyticsData)

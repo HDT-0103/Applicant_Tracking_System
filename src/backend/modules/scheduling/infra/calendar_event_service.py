@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -20,14 +19,13 @@ class CalendarEventService:
         end_time: datetime,
         attendee_emails: list[str],
     ) -> Optional[str]:
+        # Không có token thì KHÔNG có sự kiện. Trước đây chỗ này trả một uuid
+        # giả và ghi vào `confirmed_slots.calendar_event_id`, nên màn hình báo
+        # "đã tạo lịch" cho một lịch không tồn tại — 0/15 slot trên DB thật có
+        # sự kiện Google nào đứng sau id đó.
         if not api_key:
-            fake_id = str(uuid.uuid4())
-            logger.info(
-                "scheduling.calendar_event.mock_no_key",
-                event_id=fake_id,
-                summary=summary,
-            )
-            return fake_id
+            logger.warning("scheduling.calendar_event.no_key", summary=summary)
+            return None
 
         payload = {
             "summary": summary,
@@ -70,15 +68,17 @@ class CalendarEventService:
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise e
-            fake_id = str(uuid.uuid4())
-            logger.info("scheduling.calendar_event.mock_fallback", event_id=fake_id, error=str(e))
-            return fake_id
-        except Exception as e:
-            fake_id = str(uuid.uuid4())
-            logger.info(
-                "scheduling.calendar_event.mock_fallback",
-                event_id=fake_id,
-                error=str(e),
+            logger.error(
+                "scheduling.calendar_event.failed",
+                status_code=e.response.status_code,
+                error=str(e)[:200],
                 summary=summary,
             )
-            return fake_id
+            return None
+        except Exception as e:
+            logger.error(
+                "scheduling.calendar_event.failed",
+                error=str(e)[:200],
+                summary=summary,
+            )
+            return None

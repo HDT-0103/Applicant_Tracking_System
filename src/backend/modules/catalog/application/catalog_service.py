@@ -17,6 +17,7 @@ from typing import List, Optional
 import structlog
 
 from modules.catalog.domain.models import (
+    RankedCandidate,
     AnalyticsData,
     CandidateOption,
     DashboardData,
@@ -176,6 +177,18 @@ class CatalogService:
         return self._repo.duplicate_job_posting(job_posting_id, created_by=user_id)
 
     # ── Analytics ──────────────────────────────────────────────────────────
+
+    def rank_candidates(
+        self, job_posting_id: str, user_id: str, role: str
+    ) -> List[RankedCandidate]:
+        """Bảng xếp hạng ứng viên của một tin, theo `applications.overall_score`.
+
+        Cùng luật phạm vi với chi tiết tin (404 ngoài phạm vi) và cùng luật che
+        PII: tech lead trong hội đồng thấy điểm và kỹ năng, không thấy tên/email.
+        """
+        self._require_visible(job_posting_id, user_id, role)
+        rows = self._repo.list_ranked_candidates(job_posting_id)
+        return [RankedCandidate(**apply_abac(r.model_dump(), role)) for r in rows]
 
     def get_analytics(self, user_id: str, role: str) -> AnalyticsData:
         allowed = self._visible_job_postings(user_id, role)

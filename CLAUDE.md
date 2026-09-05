@@ -25,8 +25,8 @@ mac**.
 ## Test
 
 ```bash
-./venv/bin/python -m pytest -q            # 371 test — GỘP cả hai bộ
-npm test                                  # 199 test — vitest, chạy từ GỐC repo
+./venv/bin/python -m pytest -q            # ~480 test — GỘP cả hai bộ
+npm test                                  # ~270 test — vitest, chạy từ GỐC repo
 ```
 
 **`npm test` phải chạy ở gốc repo.** Script `test` khai trong `package.json` ở
@@ -49,10 +49,14 @@ bỏ qua trừ khi `RUN_INTEGRATION_TESTS=true`.
 BASE=https://... ./venv/bin/python src/backend/scripts/smoke_flows.py
 ```
 
-35 phép kiểm HTTP qua 4 luồng SRS, **khẳng định kết quả chứ không chỉ mã trạng
-thái**. Nó bắt được thứ pytest không thấy: sai tên cột, thiếu biến môi trường,
-RPC chưa tạo, router rơi khỏi `main.py`. Đã hai lần tìm ra lỗi 500 mà toàn bộ
-bộ test cho qua.
+44 phép kiểm HTTP qua 4 luồng SRS + Flow B2 (tìm kiếm lai) + Flow E (pipeline
+CV → điểm khớp → xếp hạng), **khẳng định kết quả chứ không chỉ mã trạng thái**. Nó bắt được thứ
+pytest không thấy: sai tên cột, thiếu biến môi trường, RPC chưa tạo, router
+rơi khỏi `main.py`, mô hình nhúng không chạy. Đã ba lần tìm ra lỗi mà toàn bộ
+bộ test cho qua (lần gần nhất: numpy 2 trên macOS Intel, xem bên dưới).
+
+Flow E nộp một CV có text thật và chờ tới **150 giây** cho task nền (nạp mô
+hình e5 ~7 s + gọi LLM). Nó cần `GROQ_API_KEY` hoặc `HF_API_KEY` hợp lệ.
 
 ---
 
@@ -63,7 +67,7 @@ bộ test cho qua.
 | Cây | Vai trò |
 |---|---|
 | `src/backend/modules/*` | Kiến trúc hiện tại. `apps/main.py` nạp 9 router từ đây. |
-| `src/backend/app/*` | 84 file của nhóm AI agent: LangGraph, MCP tool, pipeline xếp hạng. |
+| `src/backend/app/*` | Cây của nhóm AI agent: LangGraph (chatbot), pipeline xử lý CV, tìm kiếm ngữ nghĩa, cụm matching GitHub (chưa nối). |
 
 Cây thứ hai import bằng tiền tố `src.backend.app.*`, cần **gốc repo** trên
 `sys.path`. App chạy với `PYTHONPATH=src:src/backend` nên tiền tố đó không phân
@@ -73,6 +77,19 @@ HTTP.
 **`modules/search/infra/legacy_bridge.py`** là chỗ DUY NHẤT vá `sys.path` để
 nối hai cây. Đừng đổi import bên `app/` — nhóm khác đang làm việc trên đó và
 một lần đổi hàng loạt sẽ va chạm với mọi nhánh của họ.
+
+Ba thứ của cây `app/` đang được nối vào HTTP, đều qua bridge đó:
+
+| Thứ | Nối ở đâu | Chạy khi nào |
+|---|---|---|
+| `CandidateSearchService` | `modules/search` | `POST /api/search` |
+| `CVProcessingPipeline` | `modules/scoring/application/cv_pipeline.py` | task nền sau `POST /api/v1/ingest` (`post_ingest_worker` trong `azure_routes.py`): pipeline TRƯỚC, `enrichment_worker` SAU, tuần tự |
+| `agents/*` (LangGraph) | `app/agents/router.py` | `POST /agents` |
+
+Cụm matching GitHub (`application_matching_pipeline`, `github_*`,
+`summary_matching`, `experience_matching`, `score_aggregator`) vẫn **chưa nối**
+— có test và thiết kế ở `docs/test/phase_matching.md`, giữ cho nhóm AI.
+`score_aggregator` thì pipeline CV đã dùng để tính `overall_score`.
 
 ### Module backend
 
@@ -247,6 +264,39 @@ Luật `test_*.py` trước đây không neo gốc nên khớp ở mọi độ s
 viết mà không bao giờ được commit. Đã sửa thành `/test_*.py`. Nếu thấy test
 chạy ở máy mà CI không có, kiểm `git status --untracked-files=all`.
 
+### Pipeline CV và enrichment cùng ghi một hàng `enrichment_profiles`
+
+Sau upload, `post_ingest_worker` chạy hai việc **tuần tự**: pipeline CV ghi
+`summary/skills/experience`, vector vào `embeddings`, điểm vào
+`applications.*_score`, và `skill_matrix` dạng `{must_have, nice_to_have, …}`
+(bảng đối chiếu với tin); rồi `enrichment_worker` cào GitHub/LinkedIn và gọi
+`persist_analytics`. `persist_analytics` **gộp** chứ không ghi đè: giữ bảng
+đối chiếu, thêm `pre_enrichment/post_enrichment` (radar), và
+`match_confidence_score` của pipeline (cosine × 100, theo tin) thắng điểm đếm
+từ khoá. Đổi thứ tự hay cho chạy song song là hai bên ghi đè nhau tuỳ ai xong
+sau.
+
+- `overall_score` NULL nghĩa là **chưa chấm** (khác 0.0 = không hợp): PDF
+  không có text, tin không có vector, hoặc LLM hỏng — log `cv_pipeline.*`.
+- Text CV lấy từ `candidate_store` trong bộ nhớ (file tạm đã xoá trong
+  request). Restart backend giữa chừng là mất; pipeline bỏ qua với
+  `cv_pipeline.skipped.no_text`.
+- Vector của tin: catalog nhúng nền khi tạo/sửa/đăng tin
+  (`get_job_embedding_hook`, test override nó thành hàm rỗng), và pipeline tự
+  lấp nếu tin chưa có. Tin cũ: `scripts/backfill_job_embeddings.py`.
+- Bảng xếp hạng: `GET /api/catalog/job-postings/{id}/ranking`, tab "Xếp hạng"
+  ở trang tin. Tech lead nhận tên/email `***`, điểm và kỹ năng giữ nguyên
+  (whitelist ABAC có `overall_score`, `must_have`, `matched`, `missing`…).
+
+### numpy 2 trên macOS Intel làm mô hình nhúng chết im lặng
+
+torch 2.2.2 (bản cuối cho x86_64 mac) biên dịch với numpy 1.x. Cài numpy 2
+lên đó thì `/health` xanh, app khởi động bình thường, nhưng mọi lời gọi mô
+hình nhúng ném `RuntimeError: Numpy is not available` — `/api/search` 500,
+pipeline CV không chấm. `requirements.txt` ghim numpy theo nền tảng
+(`numpy<2` chỉ cho darwin x86_64). Nếu venv cũ đã có numpy 2:
+`./venv/bin/pip install "numpy>=1.26,<2"`.
+
 ### Mô hình nhúng nặng
 
 `multilingual-e5-base` chiếm **~1 GB RAM**, nạp mất **7 giây**, cache trong
@@ -296,7 +346,8 @@ chọn.
 ## Trạng thái hiện tại
 
 **Chạy được:** cả 4 luồng SRS đều có route và thông. RLS đã bật. CI đã sửa
-(trước đó job backend chưa từng pass). Smoke 35/35 trên DB thật.
+(trước đó job backend chưa từng pass). Smoke 44/44 trên DB thật (2026-09-05),
+gồm pipeline CV chấm điểm thật, bảng xếp hạng, và tìm kiếm lai.
 
 **Còn tồn đọng:**
 
@@ -307,12 +358,17 @@ chọn.
 | Chỉ có 1 tech lead | Ngưỡng 80% thành 1/1, không minh hoạ được cơ chế hội đồng |
 | `RECRUITER_EMAIL_DOMAINS` rỗng | Đăng nhập Google **chỉ chạy cho `ADMIN_EMAILS`** |
 | Đăng ký công khai tự chọn `hr` hoặc `tech_lead` | Giữ theo quyết định của chủ dự án. `admin` KHÔNG tự cấp được — `RegisterRequest.role` là Literal hai giá trị, và service kiểm lại lần nữa |
+| **V010 chưa chạy trên Supabase** | `V010__reindex_embeddings.sql` tạo RPC `reindex_embeddings`. Chưa chạy thì nút "Vector re-index" ở admin trả **503 kèm lý do** (trước đây trả `completed` giả). |
+| Lịch Google chưa kết nối thật | `CalendarEventService` **không còn** trả uuid giả khi thiếu token / Google lỗi: `confirmed_slots.calendar_event_id` NULL nghĩa là không có sự kiện. 2/6 interviewer có token, 0/15 slot có sự kiện thật. Route `PUT .../calendar-key` (đặt token tay, không kiểm chủ) đã xoá — kết nối qua OAuth `/api/scheduling/auth/google/*`. |
+| Cụm matching GitHub chưa nối | Xem "Hai cây code song song". `github_score` trong `applications` luôn NULL; `overall_score` chỉ gồm summary 0.3 + experience 0.5, tái phân bổ trọng số. |
+| Azure Service Bus chỉ có bên gửi | `publish_cv_received_event` phát sự kiện, không có consumer nào trong repo; `AZURE_SERVICE_BUS_CONNECTION_STRING` trống là bỏ qua. |
+| Nhánh `fix-integrate-agent` đã **gộp tay** (2026-09-05) | Lấy: `POST /api/search/find` (tìm kiếm lai từ khoá 0.35 + vector 0.65, trang `/search` dùng nó), `FindCandidateService`, DTO, `get_candidate_details`, `initial_search_criteria` cho planner. **Sửa** khi gộp: `/find` giờ lọc theo `job_visibility` như `/api/search` (bản gốc trả tên/email/SĐT của mọi ứng viên cho bất kỳ HR nào) và che PII. **Bỏ**: `app/chat/router.py` + `/chat` + `ChatResponse` (trùng đường với orchestrator đã nằm trong `_stream_agent`), đổi tên ranking service (file đã xoá). PR trên GitHub sẽ conflict nếu merge thêm lần nữa — đóng PR, không merge. |
 | **V009 phải chạy trên Supabase trước khi deploy** | `src/backend/migrations/V009__user_company.sql` thêm `users.company_name/company_website`. Thiếu cột: đăng ký 500, `/api/auth/me` 500. Đăng ký bắt buộc công ty; đăng nhập Google lần đầu tự tạo tài khoản `hr` rồi bắt điền ở `/onboarding/company` |
 | Tin có sẵn `created_by = NULL` | Sau khi tách dữ liệu theo người dùng, tin đó không HR nào thấy. Gán chủ bằng SQL trong `docs/DEPLOY.md` mục 2 |
 | Settings `/settings`, menu tài khoản, ⌘K, chế độ tối, EN/VI | `PATCH /api/auth/me` sửa tên/công ty/website; `POST /api/auth/change-password` chỉ cho tài khoản có mật khẩu (`AuthUser.has_password`). Tuỳ chọn thông báo **chưa làm** theo quyết định của chủ dự án |
-| Chatbot: Groq chính, Hugging Face dự phòng | `app/agents/router.py` dựng `FallbackLLMProvider(GroqProvider(), HFProvider())`. Dự phòng gánh **mọi** lỗi của Groq (401/400/429/timeout), không chỉ 429. `GROQ_API_KEY` trong `.env` đang **không hợp lệ** (401) nên thực tế HF phục vụ; `HF_MODEL` phải là model serverless trên router (`Qwen/Qwen2.5-72B-Instruct`; bản 7B bị đẩy sang Together đòi endpoint riêng). Thử nhanh: `tests/test_llm_fallback.py`. Khi planner thấy yêu cầu chưa rõ, đồ thị đi qua node `interaction`: route dùng `HttpInteractionGateway` ném `ClarificationNeeded` và trả câu hỏi về client như một lượt trả lời (`done` kèm `clarification: true`); client gửi lại tin gốc trong `history` ở lượt sau. **Đừng** dùng `CLIInteractionGateway` trong route — nó gọi `input()` trên stdin server, production ném `EOFError`. Có `context.candidate_uuid` (chat mở từ trang ứng viên) thì route đi chế độ **hỏi đáp về ứng viên** (`app/agents/candidate_qa.py`): kiểm quyền như mọi endpoint hồ sơ, nạp CV/làm giàu/đơn/tin, che PII **từng khối** bằng `mask_context` (áp `apply_abac` lên cả cây thì key bao ngoài bị che thành `{}`), một lượt LLM có cấu trúc trả `answer` + `suggestions`; tên cột trong `load_candidate_context` được test đối chiếu với `docs/supabase_schema.md`. Frontend giữ **một phiên chat cho mỗi ứng viên** (`smartats_agent_chat_v2`), gửi 8 lượt gần nhất trong `history` |
+| Chatbot: Groq chính, Hugging Face dự phòng | `app/agents/router.py` dựng provider qua `build_default_llm_provider()` (chỉ ghép provider có key; thiếu cả hai mới lỗi). Lượt đầu của một yêu cầu đi qua **bộ điều phối ý định** (`app/services/orchestrator.py`, nằm NGAY TRONG `_stream_agent`): `GENERAL_CHAT` trả lời thẳng kèm tổng quan workspace (`_workspace_overview`, đếm hồ sơ theo tin người này thấy) với `mode: "chat"`; `CANDIDATE_SEARCH` bóc `initial_search_criteria` rồi mới vào đồ thị (`mode: "search"`). Đang trả lời câu hỏi làm rõ (`clarification_reply: true`) thì bỏ qua bộ điều phối. Đồ thị tìm trong phạm vi người gọi (`ScopedCandidateSearchService`, ép `job_visibility` vào bộ lọc cứng). Một lượt tìm thật mất **~100 s** (3 vòng planner/retrieval/reflection) — hành vi của đồ thị, chưa tối ưu. Dự phòng gánh **mọi** lỗi của Groq (401/400/429/timeout), không chỉ 429. `GROQ_API_KEY` trong `.env` đang **không hợp lệ** (401) nên thực tế HF phục vụ; `HF_MODEL` phải là model serverless trên router (`Qwen/Qwen2.5-72B-Instruct`; bản 7B bị đẩy sang Together đòi endpoint riêng). Thử nhanh: `tests/test_llm_fallback.py`. Khi planner thấy yêu cầu chưa rõ, đồ thị đi qua node `interaction`: route dùng `HttpInteractionGateway` ném `ClarificationNeeded` và trả câu hỏi về client như một lượt trả lời (`done` kèm `clarification: true`); client gửi lại tin gốc trong `history` ở lượt sau. **Đừng** dùng `CLIInteractionGateway` trong route — nó gọi `input()` trên stdin server, production ném `EOFError`. Có `context.candidate_uuid` (chat mở từ trang ứng viên) thì route đi chế độ **hỏi đáp về ứng viên** (`app/agents/candidate_qa.py`): kiểm quyền như mọi endpoint hồ sơ, nạp CV/làm giàu/đơn/tin, che PII **từng khối** bằng `mask_context` (áp `apply_abac` lên cả cây thì key bao ngoài bị che thành `{}`), một lượt LLM có cấu trúc trả `answer` + `suggestions`; tên cột trong `load_candidate_context` được test đối chiếu với `docs/supabase_schema.md`. Frontend giữ **một phiên chat cho mỗi ứng viên** (`smartats_agent_chat_v2`), gửi 8 lượt gần nhất trong `history` **Chatbot có mặt trên MỌI trang đã đăng nhập** (nút nổi luôn hiện, drawer đóng cho tới khi bấm — `shouldShowAgentChat`). Ở chế độ chung, `_stream_agent` hỏi `OrchestratorService` (`app/services/orchestrator.py`, một lượt LLM có cấu trúc, kèm tổng quan tin của người gọi `_workspace_overview`) TRƯỚC: `GENERAL_CHAT` trả lời ngay (`done` với `mode: "chat"`), `CANDIDATE_SEARCH` mới vào đồ thị với `initial_search_criteria`. Đồ thị tìm trong `ScopedCandidateSearchService` (`modules/search/application/scoped_search.py`) — phạm vi `job_visibility` ép vào bộ lọc cứng, HR không tin nào thì không thấy ai. Client gửi `clarification_reply: true` + tin gốc khi trả lời câu hỏi làm rõ; `history` không có cờ chỉ là ngữ cảnh, không bao giờ bị ghép vào mục tiêu tìm kiếm. Mỗi lần mở một hồ sơ là một phiên chat MỚI (chỉ phiên chung được lưu localStorage; đăng xuất xoá hết). `tests/test_agent_routing.py` có phép kiểm tên toàn cục trong `_agent_graph` — một lần đổi import từng để lại `FallbackLLMProvider(...)` không import, chỉ lộ khi bấm tìm thật. Lưu ý: `linkedin_url` nằm trong whitelist tech_lead nên URL LinkedIn (thường chứa tên) đi vào câu trả lời cho tech lead — quyết định whitelist, chưa đổi. |
 | `/ai-agent-prompt` là mockup tĩnh | Giữ theo quyết định của chủ dự án |
-| 5 component frontend chết | Chưa xoá, cần hỏi người viết |
+| Đã dọn (2026-09-05) | Xoá: `app/mcp/*` (8 file rỗng), `app/agents/main.py` (CLI hỏng), `websocket_manager.py`, hai bản `candidate_ranking_service.py` (thay bằng route ranking ở catalog), `user_repository.py`, `schemas/ingestion_event.py`, `resume_score.py`, model ORM cho bảng không tồn tại (`meeting`, `requirement*`), 3 bộ cào không dùng (`auth/linkedin_scraper.py`, `enrichment/linkedin_scraper_service.py`, `gemini_parser_service.py`), `review/adapters/access.py`, 5 file frontend chết (`AiAnalyticsWorkspace`, `FallbackDataWizard`, `ProfileHeader`, `SkeletonLoadingSpinner`, `lib/db.ts`). Cách tìm: dựng đồ thị import từ `apps/main.py` / mọi `page.tsx`, file không với tới và không test nào import thì xoá. |
 
 ---
 

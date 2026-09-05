@@ -290,3 +290,30 @@ class FallbackLLMProvider(LLMProvider):
                     str(fallback_error)[:200],
                 )
                 raise fallback_error from error
+
+
+class LLMNotConfiguredError(RuntimeError):
+    """Không có provider nào dựng được: thiếu cả GROQ_API_KEY lẫn HF_API_KEY."""
+
+
+def build_default_llm_provider() -> LLMProvider:
+    """Groq chính, Hugging Face dự phòng — nhưng KHÔNG sập khi thiếu một key.
+
+    `GroqProvider()` ném GroqError ngay lúc khởi tạo nếu thiếu `GROQ_API_KEY`,
+    tức là trước khi `FallbackLLMProvider` có cơ hội chuyển sang HF. Một môi
+    trường chỉ cấu hình HF (CI, máy dev mới) vì thế mất luôn chatbot lẫn
+    pipeline CV dù HF đang chạy được. Ở đây chỉ dựng provider có key; có cả
+    hai thì mới ghép fallback.
+    """
+    providers: list[LLMProvider] = []
+    if os.getenv("GROQ_API_KEY"):
+        providers.append(GroqProvider())
+    if os.getenv("HF_API_KEY"):
+        providers.append(HFProvider())
+    if not providers:
+        raise LLMNotConfiguredError(
+            "No LLM provider configured: set GROQ_API_KEY and/or HF_API_KEY."
+        )
+    if len(providers) == 1:
+        return providers[0]
+    return FallbackLLMProvider(primary=providers[0], fallback=providers[1])

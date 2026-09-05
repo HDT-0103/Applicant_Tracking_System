@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
-from modules.admin.application.admin_service import AdminService
+from modules.admin.application.admin_service import AdminService, ReindexUnavailableError
 from modules.auth.domain.models import AuthUser
 from modules.shared.infrastructure.auth_dependencies import require_roles
 from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
@@ -170,6 +170,10 @@ async def trigger_reindex(
 ):
     try:
         return await admin_service.trigger_vector_reindex()
+    except ReindexUnavailableError as e:
+        # 503 chứ không 200 giả: RPC chưa cài là việc của migration, không phải
+        # của nút bấm.
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

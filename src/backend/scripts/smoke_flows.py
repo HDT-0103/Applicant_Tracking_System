@@ -303,7 +303,9 @@ def main() -> int:
     try:
         _flow_auth(run, api)
         _flow_a_ingestion(run, api, state)
+        _flow_e_cv_pipeline(run, api, state)
         _flow_b_search(run, api)
+        _flow_b2_hybrid_find(run, api)
         _flow_c_enrichment(run, api, state)
         _flow_d_abac_scheduling(run, api, state)
         _flow_review(run, api, state)
@@ -426,6 +428,126 @@ def _flow_a_ingestion(run: Runner, api: Api, state: dict) -> None:
     run.check("chỉ ghi cột trong danh sách trắng", _whitelist)
 
 
+def _text_pdf(text: str) -> bytes:
+    """PDF có text thật. MINIMAL_PDF không có trang nào nên pipeline (đúng ra)
+    bỏ qua nó; muốn thấy pipeline chạy thì phải có CV đọc được."""
+    import fitz  # PyMuPDF — cùng thư viện ParserService dùng để đọc
+
+    doc = fitz.open()
+    page = doc.new_page()
+    y = 72
+    for line in text.splitlines():
+        page.insert_text((72, y), line, fontsize=11)
+        y += 16
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def _flow_e_cv_pipeline(run: Runner, api: Api, state: dict) -> None:
+    """Pipeline CV (LLM → vector → điểm khớp) và bảng xếp hạng của tin.
+
+    Đây là mắt xích từng đứt: pipeline có trên `main` mà không ai gọi, nên
+    `applications.overall_score` NULL ở mọi đơn và `embeddings` gần như rỗng.
+    Chờ tối đa ~2,5 phút vì task nền phải nạp mô hình e5 (~7 s) và gọi LLM.
+    """
+    run.flow("Flow E — Chấm điểm CV và xếp hạng (pipeline nền)")
+
+    job_id = state.get("job_id")
+    if not job_id:
+        run.check("nộp CV có text", lambda: _skip("chưa có tin PUBLISHED nào"))
+        return
+
+    cv_text = (
+        f"{MARK} Nguyen Van Smoke\n"
+        "Senior Backend Engineer, 6 years of experience.\n"
+        "Skills: Python, FastAPI, PostgreSQL, Docker, Kubernetes, AWS.\n"
+        "Experience: Built payment APIs at Acme Corp (2020-2024), led a team of 4.\n"
+        "Earlier: Django developer at Beta Ltd (2018-2020).\n"
+        "Education: BSc Computer Science, HCMUS.\n"
+    )
+    resp = api(
+        "POST", "/api/v1/ingest",
+        files={"file": (f"{MARK}-text-cv.pdf", _text_pdf(cv_text), "application/pdf")},
+        data={"job_id": job_id},
+    )
+
+    def _accepted() -> Optional[str]:
+        assert resp.status_code == 202, f"mong đợi 202, nhận {resp.status_code}: {str(resp.text)[:200]}"
+        body = resp.json()
+        assert body.get("application_id"), "thiếu application_id"
+        state["pipeline_candidate_uuid"] = body["candidate_uuid"]
+        state["pipeline_application_id"] = body["application_id"]
+        return f"candidate {body['candidate_uuid'][:8]}"
+    run.check("nộp CV có text vào tin PUBLISHED", _accepted)
+    if "pipeline_application_id" not in state:
+        return
+
+    db = admin_db()
+
+    def _scored() -> Optional[str]:
+        deadline = time.time() + 150
+        row = None
+        while time.time() < deadline:
+            row = (
+                db.table("applications")
+                .select("overall_score, summary_score, experience_score")
+                .eq("id", state["pipeline_application_id"]).execute().data[0]
+            )
+            if row.get("overall_score") is not None:
+                break
+            time.sleep(5)
+        assert row and row.get("overall_score") is not None, (
+            "overall_score vẫn NULL sau 150 s — pipeline không chạy, không có vector tin, "
+            "hoặc LLM hỏng (xem log backend: cv_pipeline.*)"
+        )
+        assert 0.0 <= row["overall_score"] <= 1.0, f"điểm ngoài [0,1]: {row['overall_score']}"
+        return f"overall {row['overall_score']:.3f} (summary {row.get('summary_score')}, experience {row.get('experience_score')})"
+    run.check("đơn được chấm điểm ở nền", _scored)
+
+    def _profile_and_vectors() -> Optional[str]:
+        uuid = state["pipeline_candidate_uuid"]
+        prof = db.table("enrichment_profiles").select("id, summary, skills, skill_matrix").eq("candidate_uuid", uuid).execute().data
+        assert prof, "không có enrichment_profiles cho ứng viên"
+        prof = prof[0]
+        assert prof.get("summary"), "pipeline không ghi tóm tắt"
+        assert prof.get("skills"), "pipeline không ghi kỹ năng"
+        assert isinstance(prof.get("skill_matrix"), dict) and "must_have" in prof["skill_matrix"], "thiếu bảng đối chiếu must-have"
+        vecs = db.table("embeddings").select("source_type").eq("enrichment_profile_id", prof["id"]).execute().data
+        kinds = sorted({v["source_type"] for v in vecs})
+        assert "summary" in kinds, f"thiếu vector summary (có: {kinds})"
+        return f"{len(prof.get('skills') or [])} kỹ năng, vector {kinds}"
+    run.check("hồ sơ có tóm tắt, kỹ năng, bảng đối chiếu và vector", _profile_and_vectors)
+
+    def _job_vectors() -> Optional[str]:
+        rows = db.table("job_embeddings").select("source_type").eq("job_posting_id", job_id).execute().data
+        assert rows, "tin không có vector — ensure_job_embeddings không được gọi"
+        return f"{sorted(r['source_type'] for r in rows)}"
+    run.check("tin tuyển dụng có vector", _job_vectors)
+
+    def _ranking() -> Optional[str]:
+        r = api("GET", f"/api/catalog/job-postings/{job_id}/ranking", role="hr")
+        assert r.status_code == 200, f"{r.status_code}: {str(r.text)[:150]}"
+        rows = r.json()
+        mine = [x for x in rows if x["candidate_uuid"] == state["pipeline_candidate_uuid"]]
+        assert mine, "ứng viên vừa chấm không có trong bảng xếp hạng"
+        assert mine[0]["overall_score"] is not None, "xếp hạng trả điểm NULL dù DB đã có"
+        scored = [x for x in rows if x["overall_score"] is not None]
+        assert scored == sorted(scored, key=lambda x: -x["overall_score"]), "không xếp giảm dần"
+        return f"hạng {rows.index(mine[0]) + 1}/{len(rows)}"
+    run.check("bảng xếp hạng của tin có ứng viên, đúng thứ tự", _ranking)
+
+    def _ranking_masked() -> Optional[str]:
+        r = api("GET", f"/api/catalog/job-postings/{job_id}/ranking", role="tech_lead")
+        assert r.status_code == 200, f"{r.status_code}: {str(r.text)[:150]}"
+        rows = r.json()
+        assert rows, "tech lead trong hội đồng không thấy hàng nào"
+        assert all(x["full_name"] in (None, "***") for x in rows), "tech lead thấy tên ứng viên"
+        assert any(x["overall_score"] is not None for x in rows), "điểm bị che nhầm"
+        return "tên bị che, điểm còn"
+    run.check("tech lead thấy điểm nhưng không thấy tên", _ranking_masked)
+
+
 def _flow_b_search(run: Runner, api: Api) -> None:
     run.flow("Flow B — Tìm kiếm ngữ nghĩa (SRS §3.2.1d)")
 
@@ -487,6 +609,45 @@ def _flow_b_search(run: Runner, api: Api) -> None:
 
     run.check("admin không tìm kiếm được",
               lambda: _eq(api("POST", "/api/search", role="admin", json=query).status_code, 403))
+
+
+def _flow_b2_hybrid_find(run: Runner, api: Api) -> None:
+    """`POST /api/search/find` — tìm kiếm lai của trang /search (nhánh fix-integrate-agent).
+
+    Cùng luật với /api/search: HR chỉ thấy ứng viên nộp vào tin mình, tech lead
+    bị che tên. Bản đầu của endpoint quét cả bảng `candidates`.
+    """
+    run.flow("Flow B2 — Tìm kiếm lai /api/search/find")
+    body = {"role_description": "Backend engineer Python FastAPI PostgreSQL", "top_k": 10}
+
+    def _hr() -> Optional[str]:
+        r = api("POST", "/api/search/find", role="hr", json=body)
+        assert r.status_code == 200, f"{r.status_code}: {str(r.text)[:150]}"
+        rows = r.json()
+        assert isinstance(rows, list), "không phải danh sách"
+        scores = [x["overall_score"] for x in rows]
+        assert scores == sorted(scores, reverse=True), "không xếp giảm dần"
+        return f"{len(rows)} ứng viên, cao nhất {scores[0]:.3f}" if rows else "0 ứng viên trong phạm vi"
+    run.check("HR tìm được, xếp giảm dần", _hr)
+
+    def _outsider() -> Optional[str]:
+        # tech_lead ngoài mọi hội đồng: danh sách rỗng, không phải của người khác.
+        r = api("POST", "/api/search/find", role="tech_lead_outsider", json=body)
+        assert r.status_code == 200, f"{r.status_code}: {str(r.text)[:150]}"
+        assert r.json() == [], f"người ngoài phạm vi vẫn thấy {len(r.json())} ứng viên"
+        return "rỗng"
+    run.check("ngoài phạm vi thì không thấy ai", _outsider)
+
+    def _masked() -> Optional[str]:
+        r = api("POST", "/api/search/find", role="tech_lead", json=body)
+        assert r.status_code == 200, f"{r.status_code}: {str(r.text)[:150]}"
+        rows = r.json()
+        if not rows:
+            return "0 ứng viên trong hội đồng, không kiểm được che"
+        assert all(x["full_name"] in (None, "***") and x["email"] in (None, "***") for x in rows), "tech lead thấy tên/email"
+        assert all(x["overall_score"] is not None for x in rows), "điểm bị che nhầm"
+        return "tên/email bị che, điểm còn"
+    run.check("tech lead trong hội đồng: che tên, giữ điểm", _masked)
 
 
 def _flow_c_enrichment(run: Runner, api: Api, state: dict) -> None:
@@ -694,23 +855,33 @@ def _flow_catalog(run: Runner, api: Api) -> None:
 # ---------------------------------------------------------------------------
 
 def _cleanup(run: Runner, state: dict) -> None:
-    uuid = state.get("candidate_uuid")
-    if not uuid:
+    uuids = [u for u in (state.get("candidate_uuid"), state.get("pipeline_candidate_uuid")) if u]
+    if not uuids:
         return
-    print(f"\n{DIM}Dọn dữ liệu thử ({uuid[:8]}…){RESET}")
+    print(f"\n{DIM}Dọn dữ liệu thử ({', '.join(u[:8] for u in uuids)}…){RESET}")
     try:
         db = admin_db()
-        # Theo thứ tự khoá ngoại: applications -> resumes -> candidates.
-        for table, column in (
-            ("applications", "candidate_uuid"),
-            ("resumes", "candidate_uuid"),
-            ("enrichment_profiles", "candidate_uuid"),
-            ("candidates", "uuid"),
-        ):
+        for uuid in uuids:
+            # `embeddings` trỏ vào enrichment_profiles bằng khoá ngoại: xoá trước.
             try:
-                db.table(table).delete().eq(column, uuid).execute()
+                profiles = db.table("enrichment_profiles").select("id").eq("candidate_uuid", uuid).execute().data or []
+                for prof in profiles:
+                    db.table("embeddings").delete().eq("enrichment_profile_id", prof["id"]).execute()
             except Exception as exc:
-                print(f"   {YELLOW}không xoá được {table}: {exc}{RESET}")
+                print(f"   {YELLOW}không xoá được embeddings: {exc}{RESET}")
+            # Theo thứ tự khoá ngoại: applications -> resumes -> candidates.
+            for table, column in (
+                ("applications", "candidate_uuid"),
+                ("resumes", "candidate_uuid"),
+                ("enrichment_profiles", "candidate_uuid"),
+                ("github_profiles", "candidate_uuid"),
+                ("linkedin_profiles", "candidate_uuid"),
+                ("candidates", "uuid"),
+            ):
+                try:
+                    db.table(table).delete().eq(column, uuid).execute()
+                except Exception as exc:
+                    print(f"   {YELLOW}không xoá được {table}: {exc}{RESET}")
         print(f"   {GREEN}đã dọn{RESET}")
     except Exception as exc:
         print(f"   {YELLOW}bỏ qua dọn dẹp: {exc}{RESET}")

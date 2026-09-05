@@ -102,8 +102,11 @@ async def test_with_a_candidate_open_the_answer_is_about_that_candidate(monkeypa
     monkeypatch.setattr(agent_router, "_candidate_access", allow)
     monkeypatch.setattr(agent_router, "load_candidate_context", fake_load)
     monkeypatch.setattr(agent_router, "answer_about_candidate", fake_answer)
+    # CI không có GROQ_API_KEY lẫn HF_API_KEY: bộ dựng provider ném lỗi trước
+    # khi fake_answer kịp chạy. LLM thật không được đụng tới trong test này.
+    monkeypatch.setattr(agent_router, "_llm_provider", lambda: object())
     monkeypatch.setattr(agent_router, "get_supabase_admin_client", lambda settings: object())
-    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings: (_ for _ in ()).throw(AssertionError("không được đi vào đồ thị tìm ứng viên")))
+    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings, user=None: (_ for _ in ()).throw(AssertionError("không được đi vào đồ thị tìm ứng viên")))
 
     req = _req(CONTEXT["candidate_uuid"], history=[{"role": "user", "content": "hello"}, {"role": "assistant", "content": "Chào bạn"}])
     events = _events([c async for c in _stream_agent(req, settings=None, user=HR)])
@@ -130,9 +133,15 @@ async def test_without_a_candidate_the_search_graph_still_runs(monkeypatch):
     class _Graph:
         async def astream(self, state, stream_mode="updates"):
             yield {"planner": {}}
-    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings: _Graph())
+    class _SearchIntent:
+        def classify(self, message, history=(), *, lang="en", overview=""):
+            from src.backend.app.schemas.orchestrator import IntentType, OrchestratorDecision
+            return OrchestratorDecision(intent=IntentType.CANDIDATE_SEARCH, confidence=1, reasoning="search")
+    monkeypatch.setattr(agent_router, "_orchestrator", lambda: _SearchIntent())
+    monkeypatch.setattr(agent_router, "_workspace_overview", lambda settings, user: "")
+    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings, user=None: _Graph())
     events = _events([c async for c in _stream_agent(_req(None), settings=None, user=HR)])
-    assert [e for e, _ in events][:2] == ["status", "status"]
+    assert [e for e, _ in events][:3] == ["status", "status", "status"]
 
 
 class TestColumnNamesMatchTheSchema:

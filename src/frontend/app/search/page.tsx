@@ -7,8 +7,8 @@ import { AppShell } from "../../components/AppShell";
 import { D, tint } from "../../lib/shared";
 import {
   MAX_TOP_K,
-  searchCandidates,
-  type SearchResult,
+  findCandidates,
+  type FindCandidateResult,
 } from "../../services/searchService";
 import { anonymousCandidateLabel, isMasked } from "../../lib/candidateLabel";
 import { useT } from "../../lib/i18n";
@@ -38,7 +38,7 @@ export default function SearchPage() {
   const [skills, setSkills] = useState<string[]>([]);
   const [topK, setTopK] = useState(10);
 
-  const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [results, setResults] = useState<FindCandidateResult[] | null>(null);
   const [threshold, setThreshold] = useState(0);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,13 +54,13 @@ export default function SearchPage() {
     setSearching(true);
     setError(null);
     try {
-      const body = await searchCandidates({
-        summary: summary.trim(),
-        experience: experience.trim() || undefined,
-        required_skills: skills.length ? skills : undefined,
+      const body = await findCandidates({
+        role_description: summary.trim(),
+        experience_expectations: experience.trim() || undefined,
+        must_have_skills: skills,
         top_k: topK,
       });
-      setResults(body.results);
+      setResults(body);
       // Ngưỡng về 0 sau mỗi lần tìm mới: giữ lại mức của truy vấn trước có thể
       // ẩn sạch kết quả mới, và trông y như "không tìm thấy ai".
       setThreshold(0);
@@ -71,7 +71,7 @@ export default function SearchPage() {
     }
   };
 
-  const visible = (results ?? []).filter((r) => r.score >= threshold);
+  const visible = (results ?? []).filter((r) => r.overall_score >= threshold);
 
   const field: React.CSSProperties = {
     width: "100%",
@@ -344,11 +344,14 @@ function ResultCard({
   result,
   onOpen,
 }: {
-  result: SearchResult;
+  result: FindCandidateResult;
   onOpen: () => void;
 }) {
   const t = useT();
-  const percent = Math.round(result.score * 100);
+  const percent = Math.round(result.overall_score * 100);
+  const contact = [result.email, result.phone].filter(
+    (value): value is string => Boolean(value) && !isMasked(value),
+  );
 
   return (
     <div
@@ -399,8 +402,16 @@ function ResultCard({
             marginBottom: 4,
           }}
         >
-          {anonymousCandidateLabel(result.candidate_uuid)}
+          {result.full_name && !isMasked(result.full_name)
+            ? result.full_name
+            : anonymousCandidateLabel(result.candidate_uuid)}
         </div>
+
+        {contact.length > 0 && (
+          <div style={{ color: D.muted, fontSize: 11.5, marginBottom: 6 }}>
+            {contact.join(" · ")}
+          </div>
+        )}
 
         {/* Tóm tắt bị che với tech_lead — hiện lời giải thích thay vì ba dấu
             sao trần trụi, để người dùng biết đó là chính sách chứ không phải
@@ -456,37 +467,6 @@ function ResultCard({
           </div>
         )}
 
-        {(result.strengths.length > 0 || result.weaknesses.length > 0) && (
-          <div style={{ display: "flex", gap: 18, marginTop: 10, flexWrap: "wrap" }}>
-            {result.strengths.length > 0 && (
-              <Evidence label={t("search.strengths")} items={result.strengths} tone={D.mint} />
-            )}
-            {result.weaknesses.length > 0 && (
-              <Evidence label={t("search.gaps")} items={result.weaknesses} tone={D.amber} />
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Evidence({
-  label,
-  items,
-  tone,
-}: {
-  label: string;
-  items: string[];
-  tone: string;
-}) {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 9.5, fontWeight: 700, color: tone, letterSpacing: 0.4, marginBottom: 3 }}>
-        {label.toUpperCase()}
-      </div>
-      <div style={{ fontSize: 11.5, color: D.muted, lineHeight: 1.5 }}>
-        {items.slice(0, 2).join(" · ")}
       </div>
     </div>
   );

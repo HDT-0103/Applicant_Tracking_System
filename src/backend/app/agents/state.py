@@ -242,6 +242,10 @@ class PlannerInput(BaseModel):
 
     history: list[ActionRecord]
 
+    #: Tiêu chí bộ điều phối ý định bóc sẵn từ câu hỏi (role, skills, ...).
+    #: Planner dùng để bớt hỏi lại; None khi không có gì rõ ràng.
+    initial_search_criteria: dict[str, Any] | None = None
+
 
 class PlannerOutput(BaseModel):
     """
@@ -457,3 +461,5 @@ class ATSState(BaseModel):
     max_steps: int = 20
 
     messages: list[str] = Field(default_factory=list)
+
+    initial_search_criteria: dict[str, Any] | None = None

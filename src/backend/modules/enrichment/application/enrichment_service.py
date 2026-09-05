@@ -787,16 +787,46 @@ def persist_analytics(
         return
 
     matrix = analytics.technical_skill_matrix
+    radar = {
+        "pre_enrichment": matrix.pre_enrichment if matrix else [],
+        "post_enrichment": matrix.post_enrichment if matrix else [],
+    }
+
+    # Hai luồng cùng ghi hàng này: pipeline CV (chạy TRƯỚC, cùng background
+    # task) ghi điểm cosine so với tin + bảng đối chiếu must-have/nice-to-have;
+    # worker này ghi radar GitHub/LinkedIn + điểm đếm từ khoá. Ghi đè thẳng
+    # thì bảng đối chiếu và điểm theo tin — thứ giải thích được "vì sao" — bị
+    # xoá bởi một con số không nhìn vào tin nào. Nên: gộp skill_matrix, và
+    # điểm theo tin (nếu có) thắng điểm đếm từ khoá.
     payload = {
+        "semantic_tags": analytics.semantic_tags or [],
+        "skill_matrix": radar,
         "match_confidence_score": analytics.match_confidence_score,
         "score_increase": analytics.score_increase,
-        "semantic_tags": analytics.semantic_tags or [],
-        "skill_matrix": {
-            "pre_enrichment": matrix.pre_enrichment if matrix else [],
-            "post_enrichment": matrix.post_enrichment if matrix else [],
-        },
         "enrichment_status": EnrichmentStatus.ENRICHED.value,
     }
+    try:
+        existing = (
+            client.table("enrichment_profiles")
+            .select("skill_matrix, match_confidence_score, score_increase, semantic_tags")
+            .eq("candidate_uuid", candidate_uuid)
+            .limit(1)
+            .execute()
+        ).data
+        existing_row = existing[0] if existing else None
+    except Exception as exc:
+        logger.warning("enrichment.persist.read_existing_failed", candidate_uuid=candidate_uuid, error=str(exc))
+        existing_row = None
+    if existing_row:
+        stored = existing_row.get("skill_matrix")
+        if isinstance(stored, dict) and "must_have" in stored:
+            payload["skill_matrix"] = {**stored, **radar}
+            if existing_row.get("match_confidence_score") is not None:
+                payload["match_confidence_score"] = existing_row["match_confidence_score"]
+                payload["score_increase"] = existing_row.get("score_increase")
+        stored_tags = existing_row.get("semantic_tags") or []
+        if stored_tags:
+            payload["semantic_tags"] = sorted({*stored_tags, *(analytics.semantic_tags or [])})
 
     try:
         # Hàng enrichment_profiles có thể chưa tồn tại nếu ứng viên vào bằng

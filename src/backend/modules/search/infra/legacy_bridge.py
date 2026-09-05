@@ -71,3 +71,27 @@ __all__ = [
     "SearchRequirementDTO",
     "SoftRequirementDTO",
 ]
+
+# Pipeline xử lý CV (bóc tách bằng LLM + vector + điểm khớp theo tin). Cùng
+# cây `app/`, cùng lý do phải đi qua đây. `modules/scoring/application/
+# cv_pipeline.py` là nơi duy nhất dùng các tên này.
+from src.backend.app.pipelines.cv_processing_pipeline import (  # noqa: E402
+    CVProcessingPipeline,
+)
+from src.backend.app.repositories.application_repository import (  # noqa: E402
+    ApplicationRepository,
+)
+from src.backend.app.repositories.embedding_repository import (  # noqa: E402
+    EmbeddingRepository,
+)
+from src.backend.app.repositories.job_embedding_repository import (  # noqa: E402
+    JobEmbeddingRepository,
+)
+from src.backend.app.repositories.job_posting_repository import (  # noqa: E402
+    JobPostingRepository,
+)
+from src.backend.app.services.llm_provider import (  # noqa: E402
+    LLMNotConfiguredError,
+    build_default_llm_provider,
+)
+from src.backend.app.services.llm_service import LLMService  # noqa: E402

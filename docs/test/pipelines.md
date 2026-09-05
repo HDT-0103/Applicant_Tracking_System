@@ -1,3 +1,14 @@
+> **Cập nhật 2026-09-05.** Pipeline này đã được **nối vào luồng upload**:
+> `modules/scoring/application/cv_pipeline.py` chạy nó trong task nền sau
+> `POST /api/v1/ingest` (trước `enrichment_worker`). `CandidateRankingService`
+> ở phần 2 **đã xoá**; bảng xếp hạng đọc qua
+> `GET /api/catalog/job-postings/{id}/ranking` (catalog, có phạm vi người
+> dùng + ABAC). Khác với sơ đồ dưới: `process_cv` nhận `resume_text` thay vì
+> file, `job_posting_id` là tuỳ chọn, cosine so theo ĐÚNG cặp (summary↔summary,
+> experience↔requirements), và `overall_score` tính bằng `ScoreAggregator`
+> (summary 0.3 / experience 0.5 / github 0.2, tái phân bổ khi thiếu tín hiệu).
+> Xem CLAUDE.md mục "Pipeline CV và enrichment cùng ghi một hàng".
+
 # 📝 BÁO CÁO KỸ THUẬT: REFACTOR CV PROCESSING PIPELINE & CANDIDATE RANKING SERVICE
 
 ## 1. Tổng quan các thay đổi (Refactoring Summary)

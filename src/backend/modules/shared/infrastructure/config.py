@@ -47,8 +47,6 @@ class Settings(BaseSettings):
 
     app_name: str = Field(default="SmartATS", alias="APP_NAME")
     app_env: str = Field(default="development", alias="APP_ENV")
-    app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
-    app_port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="info", alias="LOG_LEVEL")
     cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
     app_timezone: str = Field(default="Asia/Ho_Chi_Minh", alias="APP_TIMEZONE")

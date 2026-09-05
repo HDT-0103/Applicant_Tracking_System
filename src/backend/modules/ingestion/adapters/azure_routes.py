@@ -12,6 +12,7 @@ from modules.ingestion.infra.application_repository import ApplicationRepository
 from modules.ingestion.infra.azure_blob_service import BLOB_CONTAINER_NAME, AzureBlobService
 from modules.ingestion.infra.azure_service_bus_service import AzureServiceBusService
 from modules.enrichment.application.enrichment_service import enrichment_worker
+from modules.scoring.application.cv_pipeline import run_cv_pipeline
 from modules.auth.domain.models import AuthUser
 from modules.review.adapters.routes import get_review_repo
 from modules.review.domain.repo_interface import IReviewRepo
@@ -22,6 +23,32 @@ from modules.shared.infrastructure.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/api/v1", tags=["azure-ingestion"])
 logger = structlog.get_logger(__name__)
+
+
+async def post_ingest_worker(
+    candidate_uuid: str,
+    application_id: Optional[str],
+    job_id: Optional[str],
+    settings: Settings,
+) -> None:
+    """Việc nền sau khi hồ sơ đã được lưu chắc.
+
+    Thứ tự là cố ý: pipeline CV ghi tóm tắt/kỹ năng/bảng đối chiếu vào
+    `enrichment_profiles` trước, rồi `enrichment_worker` gộp thêm radar
+    GitHub/LinkedIn (xem `persist_analytics`). Chạy song song thì hai bên
+    ghi đè nhau tuỳ ai xong sau.
+
+    Hai bước độc lập về lỗi: pipeline hỏng (thiếu key LLM, PDF không có text)
+    thì enrichment vẫn chạy, và ngược lại.
+    """
+    try:
+        await run_cv_pipeline(candidate_uuid, application_id, job_id, settings)
+    except Exception as exc:  # run_cv_pipeline đã nuốt lỗi; đây là lưới cuối
+        logger.error("ingestion.post_ingest.cv_pipeline_crashed", candidate_uuid=candidate_uuid, error=str(exc)[:200])
+    try:
+        await enrichment_worker(candidate_uuid, settings)
+    except Exception as exc:
+        logger.error("ingestion.post_ingest.enrichment_crashed", candidate_uuid=candidate_uuid, error=str(exc)[:200])
 
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB hard threshold
 ALLOWED_MIME_TYPE = "application/pdf"
@@ -244,8 +271,15 @@ async def ingest_cv(
             screening=screening_payload,
             salary_expectation=salary_expectation,
         )
-        # Trigger enrichment in background (GitHub + LinkedIn + skill matrix)
-        background_tasks.add_task(enrichment_worker, result.candidate_uuid, settings)
+        # Xử lý nền: pipeline CV (LLM → vector → điểm khớp) rồi enrichment
+        # (GitHub + LinkedIn). Một task, tuần tự — xem post_ingest_worker.
+        background_tasks.add_task(
+            post_ingest_worker,
+            result.candidate_uuid,
+            result.application_id,
+            job_id,
+            settings,
+        )
         return result
     except ValueError as exc:
         logger.error(

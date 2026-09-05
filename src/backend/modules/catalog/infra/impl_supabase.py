@@ -12,6 +12,7 @@ import structlog
 from supabase import Client
 
 from modules.catalog.domain.models import (
+    RankedCandidate,
     CandidateCard,
     CandidateOption,
     ConfirmedSlotSummary,
@@ -203,6 +204,53 @@ class SupabaseCatalogRepo:
                 )
             )
         return cards
+
+    #: Cột đọc cho bảng xếp hạng. Được test đối chiếu với docs/supabase_schema.md.
+    RANKING_SELECT = (
+        "id, candidate_uuid, status, submitted_at,"
+        " overall_score, summary_score, experience_score, github_score,"
+        " candidates!inner(uuid, full_name, email,"
+        " enrichment_profiles!left(match_confidence_score, skill_matrix, skills))"
+    )
+
+    def list_ranked_candidates(self, job_posting_id: str) -> List[RankedCandidate]:
+        """Mọi đơn của một tin, điểm cao xếp trước, chưa chấm xếp cuối.
+
+        Một truy vấn duy nhất (nhúng candidates → enrichment_profiles) thay vì
+        hỏi theo từng đơn — mỗi vòng khứ hồi từ Azure tới Supabase ~160 ms.
+        """
+        rows = (
+            self._client.table("applications")
+            .select(self.RANKING_SELECT)
+            .eq("job_posting_id", job_posting_id)
+            .order("overall_score", desc=True, nullsfirst=False)
+            .order("submitted_at", desc=True)
+            .execute()
+            .data
+            or []
+        )
+        ranked: List[RankedCandidate] = []
+        for row in rows:
+            candidate = _first(row.get("candidates")) or {}
+            enrichment = _first(candidate.get("enrichment_profiles")) or {}
+            ranked.append(
+                RankedCandidate(
+                    candidate_uuid=row["candidate_uuid"],
+                    application_id=row["id"],
+                    application_status=row.get("status"),
+                    submitted_at=row.get("submitted_at"),
+                    full_name=candidate.get("full_name"),
+                    email=candidate.get("email"),
+                    overall_score=row.get("overall_score"),
+                    summary_score=row.get("summary_score"),
+                    experience_score=row.get("experience_score"),
+                    github_score=row.get("github_score"),
+                    match_confidence_score=enrichment.get("match_confidence_score"),
+                    skills_matrix=enrichment.get("skill_matrix"),
+                    skills=list(enrichment.get("skills") or []),
+                )
+            )
+        return ranked
 
     def list_candidate_options(
         self, limit: int, job_posting_ids: Optional[Sequence[str]] = None

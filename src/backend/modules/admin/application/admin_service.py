@@ -14,6 +14,10 @@ logger = structlog.get_logger(__name__)
 VALID_ROLES = set(ALL_ROLES)
 
 
+class ReindexUnavailableError(RuntimeError):
+    """RPC dựng lại chỉ mục vector chưa có trên DB hoặc chạy hỏng."""
+
+
 class AdminService:
     def __init__(self, client: Client, settings: Optional[Settings] = None):
         self.client = client
@@ -263,17 +267,24 @@ class AdminService:
         ]
 
     async def trigger_vector_reindex(self) -> Dict[str, Any]:
+        """Dựng lại chỉ mục vector qua RPC `reindex_embeddings` (migration V010).
+
+        Trước đây RPC hỏng (chưa tạo trên Supabase) vẫn trả `completed` kèm
+        chữ "Simulated" — nút bấm ở admin xanh trong khi không có gì chạy.
+        Không có RPC thì nói thẳng là chưa cài, để người vận hành biết phải
+        chạy migration nào.
+        """
         try:
             self.client.rpc("reindex_embeddings", {}).execute()
-            status_str = "completed"
-            message = "Indexes rebuilt successfully on vector tables."
         except Exception as e:
-            status_str = "completed"
-            message = f"Simulated index rebuild or executed with warnings: {str(e)}"
+            raise ReindexUnavailableError(
+                "reindex_embeddings RPC is not installed or failed "
+                f"(run src/backend/migrations/V010__reindex_embeddings.sql): {str(e)[:200]}"
+            ) from e
 
         return {
-            "status": status_str,
-            "message": message,
+            "status": "completed",
+            "message": "Indexes rebuilt on embeddings and job_embeddings.",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 

@@ -128,11 +128,12 @@ export function setSessionExpiredHandler(handler: SessionExpiredHandler | null):
 /**
  * Ends the session everywhere: clears tokens and lets AuthContext redirect.
  *
- * Exported because `lib/db` (the direct-PostgREST path) must end a session the
- * same way this module does. Two different sign-out routines would drift, and
- * one of them would eventually forget to clear something.
+ * One routine for every place in this module that decides a session is over
+ * (refresh failure, 401 on a JSON call, 401 on an SSE stream). Two different
+ * sign-out routines would drift, and one of them would eventually forget to
+ * clear something.
  */
-export function notifySessionExpired(): void {
+function notifySessionExpired(): void {
   clearStoredTokens();
   sessionExpiredHandler?.();
 }

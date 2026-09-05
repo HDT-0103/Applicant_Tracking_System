@@ -2,12 +2,11 @@
  * @vitest-environment jsdom
  */
 /**
- * Nút chat với agent chỉ xuất hiện khi đã mở một ứng viên cụ thể.
- *
- * `user` được khôi phục từ localStorage ngay khi app mở, nên chỉ kiểm "có
- * user" là nút hiện cả trên trang đăng nhập (trong lúc AuthGuard đang chuyển
- * hướng) và trên trang careers khi HR xem thử. Chủ dự án muốn nó chỉ có mặt
- * khi người dùng đã vào dashboard.
+ * Nút chat với agent có mặt trên mọi màn hình đã đăng nhập (dashboard, tìm
+ * kiếm, tin tuyển dụng, hồ sơ ứng viên) — nhưng KHÔNG trên đăng nhập/đăng
+ * ký/careers/onboarding: `user` được khôi phục từ localStorage ngay khi app
+ * mở, nên chỉ kiểm "có user" là nút hiện cả trên trang đăng nhập (trong lúc
+ * AuthGuard đang chuyển hướng) và trên trang careers khi HR xem thử.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -52,16 +51,16 @@ afterEach(() => {
 });
 
 describe("shouldShowAgentChat", () => {
-  it("hiện khi đã mở một ứng viên cụ thể, cho cả hr lẫn tech_lead", () => {
+  it("hiện trên trang ứng viên, cho cả hr lẫn tech_lead", () => {
     expect(shouldShowAgentChat({ role: "hr" }, "/candidate-profile/enriched")).toBe(true);
     expect(shouldShowAgentChat({ role: "tech_lead" }, "/candidate-profile")).toBe(true);
   });
 
-  it("ẩn trên dashboard, tìm kiếm và tin tuyển dụng — chưa có ứng viên nào để hỏi", () => {
-    expect(shouldShowAgentChat({ role: "hr" }, "/")).toBe(false);
-    expect(shouldShowAgentChat({ role: "tech_lead" }, "/search")).toBe(false);
-    expect(shouldShowAgentChat({ role: "hr" }, "/job-postings/abc")).toBe(false);
-    expect(shouldShowAgentChat({ role: "hr" }, "/candidate-profilex")).toBe(false);
+  it("hiện cả trên dashboard, tìm kiếm và tin tuyển dụng — chế độ tìm người / hỏi chung", () => {
+    expect(shouldShowAgentChat({ role: "hr" }, "/")).toBe(true);
+    expect(shouldShowAgentChat({ role: "tech_lead" }, "/search")).toBe(true);
+    expect(shouldShowAgentChat({ role: "hr" }, "/job-postings/abc")).toBe(true);
+    expect(shouldShowAgentChat({ role: "hr" }, "/schedule")).toBe(true);
   });
 
   it("ẩn trên màn hình đăng nhập / đăng ký, kể cả khi còn user trong localStorage", () => {
@@ -89,6 +88,14 @@ describe("AgentChatDrawer", () => {
     expect(screen.getByRole("button", { name: /open agent chat/i })).toBeInTheDocument();
   });
 
+  it("vẽ nút nổi trên dashboard nhưng drawer vẫn đóng cho tới khi bấm", () => {
+    pathname = "/";
+    user = { role: "hr" };
+    render(<AgentChatDrawer />);
+    expect(screen.getByRole("button", { name: /open agent chat/i })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: /agent chat/i })).toBeNull();
+  });
+
   it("không vẽ gì trên trang đăng nhập", () => {
     pathname = "/login";
     user = { role: "hr" };
@@ -98,16 +105,29 @@ describe("AgentChatDrawer", () => {
 });
 
 describe("AgentChatDrawer — phiên theo ứng viên và câu hỏi gợi ý", () => {
-  it("mở trên trang ứng viên: header ghi rõ ứng viên nào, và có 4 câu mở đầu bấm là gửi", () => {
+  it("mở trên trang ứng viên: header ghi rõ ứng viên nào, và có 5 câu mở đầu về người đó, bấm là gửi", () => {
     pathname = "/candidate-profile/enriched";
     user = { role: "hr" };
     chatState = { ...chatState, isOpen: true, activeCandidate: "8b5c4334-0000-4000-8000-000000000000" };
     render(<AgentChatDrawer />);
     expect(screen.getByText("About Candidate #8b5c4334")).toBeInTheDocument();
-    const starters = screen.getAllByRole("button").filter((b) => /strengths|missing|interview|risks/i.test(b.textContent ?? ""));
-    expect(starters).toHaveLength(4);
+    const starters = screen.getAllByRole("button").filter((b) => /summarise|strengths|missing|interview|risks/i.test(b.textContent ?? ""));
+    expect(starters).toHaveLength(5);
     fireEvent.click(starters[0]);
-    expect(sendMessage).toHaveBeenCalledWith("Summarise their standout strengths");
+    expect(sendMessage).toHaveBeenCalledWith("Summarise this candidate's profile");
+  });
+
+  it("mở trên dashboard: câu mở đầu là loại khái quát (tổng quan tin, tìm người, cách chấm), không có câu về một ứng viên", () => {
+    pathname = "/";
+    user = { role: "hr" };
+    chatState = { ...chatState, isOpen: true, activeCandidate: null };
+    render(<AgentChatDrawer />);
+    expect(screen.getByText("Search & general questions")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /overview of my job postings/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /scored and reviewed/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /this candidate/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /overview of my job postings/i }));
+    expect(sendMessage).toHaveBeenCalledWith("Give me an overview of my job postings");
   });
 
   it("tech lead không thấy câu mở đầu dính danh tính, thay bằng đánh giá qua GitHub", () => {

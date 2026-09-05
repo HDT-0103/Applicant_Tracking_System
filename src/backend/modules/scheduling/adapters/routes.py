@@ -94,11 +94,6 @@ async def _require_candidate_access(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found.")
 
 
-class UpdateKeyRequest(BaseModel):
-    api_key: str
-    refresh_token: str | None = None
-
-
 class SlotsQueryRequest(BaseModel):
     candidate_id: str = ""
     interviewer_ids: list[str]
@@ -127,25 +122,6 @@ async def list_interviewers(
     _user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> list[Interviewer]:
     return await service.list_interviewers()
-
-
-@router.put(
-    "/interviewers/{interviewer_id}/calendar-key",
-    response_model=Interviewer,
-)
-async def update_calendar_key(
-    interviewer_id: str,
-    body: UpdateKeyRequest,
-    service: ServiceDep,
-    _user: Annotated[AuthUser, Depends(require_operational_roles())],
-) -> Interviewer:
-    result = await service.update_calendar_key(interviewer_id, body.api_key, body.refresh_token)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Interviewer '{interviewer_id}' not found",
-        )
-    return result
 
 
 @router.get("/calendar-status")

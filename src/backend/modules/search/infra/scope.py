@@ -48,3 +48,17 @@ class SupabaseSearchScope:
             .execute()
         )
         return {row["candidate_uuid"] for row in res.data or []}
+
+    def candidates_for_job_postings(self, job_posting_ids: Sequence[str]) -> List[str]:
+        """Mọi ứng viên đã nộp vào các tin này — dùng làm bộ lọc cứng TRƯỚC khi
+        xếp hạng. Lọc sau khi đã lấy top-k thì một HR có ít tin nhận về rỗng
+        dù ứng viên của mình nằm ở hạng 11."""
+        if not job_posting_ids:
+            return []
+        res = (
+            self._client.table("applications")
+            .select("candidate_uuid")
+            .in_("job_posting_id", list(job_posting_ids))
+            .execute()
+        )
+        return sorted({row["candidate_uuid"] for row in res.data or [] if row.get("candidate_uuid")})

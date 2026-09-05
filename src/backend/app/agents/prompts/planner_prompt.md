@@ -8,6 +8,7 @@ You will receive a structured input containing:
 - `mission`: The overall hiring goal and current execution state.
 - `history`: Previous actions taken in this session.
 - `reflection`: Feedback from the previous retrieval attempt (if a retry was triggered).
+- `initial_search_criteria`: Criteria an upstream intent router already extracted from the message (may be null). Treat them as part of the user's request; do NOT ask for information that is already present there.
 
 # Instructions
 1. **Analyze Query Clarity**:

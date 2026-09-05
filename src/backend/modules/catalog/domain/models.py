@@ -116,3 +116,29 @@ class AnalyticsData(BaseModel):
     candidates_with_github: int = 0
     candidates_with_linkedin: int = 0
     locations: Dict[str, int] = Field(default_factory=dict)
+
+
+class RankedCandidate(BaseModel):
+    """Một dòng trong bảng xếp hạng của tin: đơn ứng tuyển + điểm khớp.
+
+    Điểm nằm trên `applications` (do pipeline CV ghi, gắn với MỘT tin), không
+    phải `match_confidence_score` trên hồ sơ (điểm đếm từ khoá, không nhìn
+    tin nào). Hai con số khác nghĩa; bảng này xếp theo con số đầu.
+
+    Tên field phải khớp whitelist ABAC: `candidate_uuid`, `application_status`
+    (không phải `status`), `skills_matrix`.
+    """
+
+    candidate_uuid: str
+    application_id: str
+    application_status: Optional[str] = None
+    submitted_at: Optional[str] = None
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    overall_score: Optional[float] = None
+    summary_score: Optional[float] = None
+    experience_score: Optional[float] = None
+    github_score: Optional[float] = None
+    match_confidence_score: Optional[float] = None
+    skills_matrix: Optional[Dict[str, Any]] = None
+    skills: List[str] = Field(default_factory=list)

@@ -4,15 +4,16 @@ import React, { useState, useEffect, useRef, useCallback, KeyboardEvent } from "
 import { useRouter, useParams } from 'next/navigation';
 import Link from "next/link";
 import { D } from "../../../lib/shared";
-// Deliberately the RAW client, not `lib/db`.
+// Deliberately the RAW anon client — the ONLY screen that still talks to
+// PostgREST directly.
 //
 // This is the public job board. A candidate arriving through a shared link has
 // no account and never will, so these queries must run anonymously and must
-// keep working with no session. Routing them through `db()` would sign in
-// nobody and reject everybody.
+// keep working with no session. RLS lets anon read PUBLISHED postings only.
 //
-// Every OTHER screen goes through `lib/db` so that it shares the session
-// lifecycle. If you are adding an authenticated screen, use that instead.
+// Every OTHER screen goes through the backend (`services/*` → `/api/catalog`,
+// …) so that the JWT, session refresh, and ABAC masking apply. If you are
+// adding an authenticated screen, use those services instead.
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { buildJobPath, parseJobId } from "../../../lib/jobUrl";

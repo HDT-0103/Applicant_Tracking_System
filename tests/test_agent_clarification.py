@@ -21,6 +21,20 @@ from src.backend.app.agents.router import (
 )
 
 
+class _SearchIntent:
+    """Bộ điều phối giả: mọi tin đều là yêu cầu tìm ứng viên."""
+
+    def classify(self, message, history=(), *, lang="en", overview=""):
+        from src.backend.app.schemas.orchestrator import IntentType, OrchestratorDecision
+        return OrchestratorDecision(intent=IntentType.CANDIDATE_SEARCH, confidence=1, reasoning="search")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_llm(monkeypatch):
+    monkeypatch.setattr(agent_router, "_orchestrator", lambda: _SearchIntent())
+    monkeypatch.setattr(agent_router, "_workspace_overview", lambda settings, user: "")
+
+
 def _events(chunks: list[str]) -> list[tuple[str, dict]]:
     out = []
     for chunk in chunks:
@@ -53,7 +67,7 @@ async def test_the_http_gateway_never_reads_stdin():
 @pytest.mark.asyncio
 async def test_a_clarification_is_a_reply_not_an_error(monkeypatch):
     graph = _AsksFirst()
-    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings: graph)
+    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings, user=None: graph)
     req = AgentChatRequest(
         message="hello",
         conversation_id=uuid.uuid4(),
@@ -62,7 +76,8 @@ async def test_a_clarification_is_a_reply_not_an_error(monkeypatch):
 
     events = _events([chunk async for chunk in _stream_agent(req, settings=None)])
 
-    assert [e for e, _ in events] == ["status", "status", "done"]
+    # status "Understanding…" (bộ điều phối), "thinking", "Completed planner", rồi câu hỏi.
+    assert [e for e, _ in events] == ["status", "status", "status", "done"]
     done = events[-1][1]
     assert done["clarification"] is True
     assert done["result"] == {"summary": "Which role are you hiring for?", "candidates": []}
@@ -73,10 +88,11 @@ async def test_the_answer_to_a_clarification_keeps_the_original_request(monkeypa
     # Planner chỉ đọc tin nhắn cuối: không ghép thì "Senior Python, HCMC" mất
     # mối liên hệ với "tìm backend engineer" ở lượt trước.
     graph = _AsksFirst()
-    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings: graph)
+    monkeypatch.setattr(agent_router, "_agent_graph", lambda settings, user=None: graph)
     req = AgentChatRequest(
         message="Senior Python, HCMC",
         history=["find me a backend engineer"],
+        clarification_reply=True,
         conversation_id=uuid.uuid4(),
         context=AgentContext(current_page="/", user_id="u-1"),
     )

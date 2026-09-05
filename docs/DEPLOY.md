@@ -110,8 +110,20 @@ Thêm biến mới thì nhớ khai vào cả `.env.example`, nếu không
 
 Migration nằm ở `src/backend/migrations/V00x__*.sql`, chạy tay trong Supabase →
 **SQL Editor**. Code đọc/ghi cột mới ngay khi lên, nên thứ tự là **migration
-trước, deploy sau**. Gần nhất: `V009__user_company.sql` (đăng ký ghi
-`users.company_name` — thiếu cột là đăng ký trả 500).
+trước, deploy sau**. Gần nhất:
+
+- `V009__user_company.sql` — đăng ký ghi `users.company_name`; thiếu cột là
+  đăng ký trả 500.
+- `V010__reindex_embeddings.sql` — RPC cho nút "Vector re-index" ở admin.
+  Chưa chạy thì nút trả 503 kèm lý do (không làm hỏng gì khác).
+
+Sau khi deploy bản có pipeline CV, chạy một lần để tin cũ có vector (tin
+tạo/sửa/đăng từ giờ tự nhúng ở nền; hồ sơ nộp vào tin chưa có vector cũng tự
+lấp, nhưng backfill trước thì CV đầu tiên không phải chờ):
+
+```bash
+./venv/bin/python src/backend/scripts/backfill_job_embeddings.py
+```
 
 ### 1.4 Kiểm chứng — đừng tin màu xanh
 
@@ -432,6 +444,9 @@ Ghi ra đây để không ai tưởng là hỏng:
 | Không chạy | Lý do | Cách bật |
 |---|---|---|
 | Gửi email phòng phỏng vấn | `SMTP_*` rỗng; `send_room_details` trả **503 kèm lý do** thay vì giả vờ thành công | Đặt `SMTP_HOST/PORT/USERNAME/PASSWORD/FROM_EMAIL` rồi chạy lại 1.3 |
+| Sự kiện Google Calendar khi xác nhận lịch | Interviewer chưa kết nối OAuth → `calendar_event_id` **NULL** (trước đây ghi uuid giả và báo "đã tạo") | Mỗi interviewer bấm kết nối Google ở trang lịch (`/api/scheduling/auth/google/*`) |
+| Nút "Vector re-index" ở admin | RPC `reindex_embeddings` chưa có → **503 kèm lý do** | Chạy `V010__reindex_embeddings.sql` |
+| Điểm khớp / xếp hạng cho đơn nộp TRƯỚC bản này | Pipeline CV chỉ chạy khi hồ sơ nộp vào; đơn cũ giữ `overall_score` NULL, tab Xếp hạng hiện "Chưa chấm" | Không có script chấm lại hàng loạt; nộp lại CV nếu cần |
 | Đăng nhập bằng email công ty | `RECRUITER_EMAIL_DOMAINS` rỗng → chỉ `ADMIN_EMAILS` vào được | Đặt biến đó |
 | Hội đồng chấm đúng nghĩa | DB chỉ có 1 tech lead → ngưỡng 80% thành 1/1 | Mời thêm tech lead |
 | Làm giàu hồ sơ từ LinkedIn | Apify tốn tiền, nhóm chủ động bỏ qua | — |

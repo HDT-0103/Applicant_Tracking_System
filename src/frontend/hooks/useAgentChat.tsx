@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { streamClient } from "../services/httpClient";
 import { useAuth } from "../contexts/AuthContext";
@@ -70,15 +70,39 @@ function makeId(): string {
 
 type Stored = { sessions: Record<string, Session>; isOpen: boolean };
 
+/**
+ * Chỉ phiên CHUNG được lưu qua lần tải trang. Phiên theo ứng viên bắt đầu mới
+ * mỗi lần mở hồ sơ (xem `persistedSessions`), nên lưu nó là vô ích; và trên
+ * máy dùng chung, lịch sử hỏi đáp về một người cụ thể không nên nằm lại trong
+ * localStorage sau khi rời trang.
+ */
+export function persistedSessions(sessions: Record<string, Session>): Record<string, Session> {
+  return sessions[GLOBAL_SESSION] ? { [GLOBAL_SESSION]: sessions[GLOBAL_SESSION] } : {};
+}
+
 function readStored(): Stored {
   if (typeof window === "undefined") return { sessions: {}, isOpen: false };
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-    if (stored && typeof stored.sessions === "object") return { sessions: stored.sessions, isOpen: Boolean(stored.isOpen) };
+    if (stored && typeof stored.sessions === "object") return { sessions: persistedSessions(stored.sessions), isOpen: Boolean(stored.isOpen) };
   } catch {
     // Lịch sử hỏng không được chặn app mở.
   }
   return { sessions: {}, isOpen: false };
+}
+
+/** Lượt trả lời gần nhất của agent là câu hỏi làm rõ (đang chờ người dùng đáp). */
+export function awaitingClarification(messages: { role: string; clarification?: boolean }[]): boolean {
+  const last = [...messages].reverse().find((m) => m.role !== "user");
+  return Boolean(last && last.role === "assistant" && last.clarification);
+}
+
+/** Vài lượt gần nhất, tóm tắt câu trả lời của agent, để "nói rõ hơn" có nghĩa. */
+export function recentTurns(messages: AgentMessage[], limit = 8): { role: string; content: string }[] {
+  return messages
+    .filter((m) => m.role !== "error" && m.content)
+    .slice(-limit)
+    .map((m) => ({ role: m.role, content: m.role === "assistant" ? summaryOf(m.content) : m.content }));
 }
 
 /** Giữ tối đa MAX_SESSIONS phiên; bỏ phiên cũ nhất (thứ tự chèn của object). */
@@ -101,7 +125,7 @@ function candidateFromLocation(pathname: string | null): string | null {
 }
 
 export function AgentChatProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { candidateUuid: workspaceCandidate } = useWorkspace();
   const { lang } = useLang();
   const pathname = usePathname();
@@ -112,19 +136,42 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
 
   // Ứng viên đang mở: theo URL trang ứng viên, dự phòng bằng workspace (trang
   // enriched đặt nó khi tải). Rời trang ứng viên là về phiên chung.
+  //
+  // Mỗi lần MỞ một hồ sơ là một phiên mới: người dùng thấy các câu hỏi mở đầu
+  // (tóm tắt, điểm mạnh, thiếu gì, câu hỏi phỏng vấn) thay vì cuộc trò chuyện
+  // dở từ lần trước — theo yêu cầu của chủ dự án. Phiên chung (dashboard) thì
+  // giữ.
   const [activeCandidate, setActiveCandidate] = useState<string | null>(null);
+  const previousCandidate = useRef<string | null>(null);
   useEffect(() => {
     const fromUrl = candidateFromLocation(pathname);
     const onCandidatePage = Boolean(pathname && pathname.startsWith("/candidate-profile"));
-    setActiveCandidate(fromUrl ?? (onCandidatePage ? workspaceCandidate : null));
+    const next = fromUrl ?? (onCandidatePage ? workspaceCandidate : null);
+    if (next && next !== previousCandidate.current) {
+      setSessions((current) => {
+        if (!current[next]) return current;
+        const rest = { ...current };
+        delete rest[next];
+        return rest;
+      });
+    }
+    previousCandidate.current = next;
+    setActiveCandidate(next);
   }, [pathname, workspaceCandidate]);
 
   const sessionKey = activeCandidate ?? GLOBAL_SESSION;
   const session = sessions[sessionKey] ?? { conversationId: makeId(), messages: [] };
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sessions, isOpen }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sessions: persistedSessions(sessions), isOpen }));
   }, [sessions, isOpen]);
+
+  // Đăng xuất thì xoá lịch sử chat: máy dùng chung, người sau không được đọc
+  // câu hỏi về ứng viên của người trước. `isLoading` để không xoá nhầm trong
+  // lúc phiên đang được khôi phục khi tải trang.
+  useEffect(() => {
+    if (!authLoading && !user) setSessions({});
+  }, [authLoading, user]);
 
   const updateSession = useCallback((key: string, fn: (s: Session) => Session) => {
     setSessions((current) => {
@@ -154,14 +201,11 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
     }));
     setIsLoading(true);
 
-    // Chế độ ứng viên: gửi 8 lượt gần nhất để agent hiểu câu tiếp theo.
-    // Chế độ tìm ứng viên: chỉ tin gốc khi đang trả lời câu hỏi làm rõ.
-    const history = activeCandidate
-      ? current.messages
-          .filter((m) => m.role !== "error" && m.content)
-          .slice(-8)
-          .map((m) => ({ role: m.role, content: m.role === "assistant" ? summaryOf(m.content) : m.content }))
-      : clarificationHistory(current.messages);
+    // Đang trả lời câu hỏi làm rõ của agent tìm kiếm: chỉ gửi tin gốc, kèm cờ
+    // để backend ghép nó vào yêu cầu. Còn lại (hỏi đáp ứng viên, trò chuyện ở
+    // dashboard): 8 lượt gần nhất làm ngữ cảnh, không bao giờ bị ghép.
+    const clarificationReply = !activeCandidate && awaitingClarification(current.messages);
+    const history = clarificationReply ? clarificationHistory(current.messages) : recentTurns(current.messages);
 
     try {
       const response = await streamClient("/agents", {
@@ -169,6 +213,7 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({
           message: trimmed,
           conversation_id: current.conversationId,
+          clarification_reply: clarificationReply,
           context: {
             current_page: window.location.pathname,
             user_id: user?.id ?? "unknown",
@@ -193,7 +238,7 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
           const data = JSON.parse(dataLine.slice(6)) as {
-            text?: string; message?: string; clarification?: boolean;
+            text?: string; message?: string; clarification?: boolean; mode?: "search" | "candidate" | "chat";
             result?: { summary?: string; candidates?: unknown[]; suggestions?: string[] };
           };
           if (event.includes("event: delta") && data.text) patch((m) => ({ ...m, content: m.content + data.text }));

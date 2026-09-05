@@ -78,6 +78,22 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "skills",
         "strengths",
         "weaknesses",
+        # Điểm khớp do pipeline CV tính cho MỘT đơn ứng tuyển (bảng
+        # `applications`), trả về ở bảng xếp hạng của tin. Là cosine giữa CV và
+        # tin tuyển dụng, không chứa danh tính; tech lead cần nó để biết chấm
+        # ai trước. `application_id`/`application_status`/`submitted_at` là
+        # khoá và trạng thái của đơn, cũng không phải PII.
+        "overall_score",
+        "summary_score",
+        "experience_score",
+        "github_score",
+        # Hai thành phần của điểm tìm kiếm lai (`/api/search/find`): từ khoá và
+        # vector. Cùng bản chất với `score` ở trên.
+        "lexical_score",
+        "semantic_score",
+        "application_id",
+        "application_status",
+        "submitted_at",
         # Chức danh trong lịch sử công việc. `title` và `company` đã có ở trên;
         # `position` là cùng khái niệm dưới tên khác, đến từ DTO của luồng tìm
         # kiếm. Thiếu nó thì dòng kinh nghiệm hiện ra là "*** tại Acme".
@@ -103,6 +119,17 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "technical_skill_matrix",
         "pre_enrichment",
         "post_enrichment",
+        # Bảng đối chiếu kỹ năng CV↔tin do pipeline CV ghi vào `skill_matrix`
+        # (xem CVProcessingPipeline._build_skill_matrix). Whitelist so theo TÊN
+        # ở mọi độ sâu, nên cho `skills_matrix` đi qua mà không cho các khoá
+        # con thì tech lead nhận về một cái vỏ rỗng — dashboard từng hiện
+        # "0/0 must-have" cho mọi hồ sơ. Giá trị là tên kỹ năng, không phải PII.
+        "must_have",
+        "nice_to_have",
+        "matched",
+        "missing",
+        "must_have_coverage",
+        "extra_skills",
     }
 )
 

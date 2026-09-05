@@ -17,6 +17,7 @@ from src.backend.app.schemas.resume_analysis import ResumeAnalysis
 from src.backend.app.services.embedding_service import EmbeddingService
 from src.backend.app.services.llm_service import LLMService
 from src.backend.app.services.parser_service import ParserService
+from src.backend.app.services.score_aggregator import ScoreAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -53,26 +54,46 @@ class CVProcessingPipeline:
         self.parser_service = parser_service or ParserService()
         self.llm_service = llm_service  # Should be injected
         self.embedding_service = embedding_service or EmbeddingService()
+        self.score_aggregator = ScoreAggregator()
 
     async def process_cv(
         self,
-        file_path: str,
-        candidate_uuid: str,
-        job_posting_id: UUID,
-        application_id: UUID,
+        file_path: str | None = None,
+        candidate_uuid: str = "",
+        job_posting_id: UUID | str | None = None,
+        application_id: UUID | str | None = None,
         github_url: str | None = None,
         linkedin_url: str | None = None,
-    ) -> Application:
-        """Thực thi Pipeline xử lý CV end-to-end."""
+        resume_text: str | None = None,
+    ) -> Application | None:
+        """Thực thi Pipeline xử lý CV end-to-end.
+
+        `resume_text` đi thẳng vào bước phân tích, bỏ qua bước đọc file. Luồng
+        upload thật đã đọc PDF một lần (để lấy link GitHub/LinkedIn) và xoá file
+        tạm ngay sau đó, nên khi pipeline chạy nền thì không còn file để đọc.
+
+        `job_posting_id` / `application_id` là tuỳ chọn: CV do HR tải lên nội bộ
+        không gắn với tin nào, vẫn cần tóm tắt + vector để tìm kiếm, chỉ không
+        có điểm khớp. Khi đó trả về `None`.
+        """
+        if not candidate_uuid:
+            raise ValueError("candidate_uuid is required.")
         logger.info(
             f"Starting CV Processing for candidate_uuid={candidate_uuid}, "
             f"job_posting_id={job_posting_id}, application_id={application_id}"
         )
 
         # -------------------------------------------------------------
-        # Step 1: Parse CV File
+        # Step 1: Parse CV File (hoặc dùng text có sẵn)
         # -------------------------------------------------------------
-        parsed_text = self.parser_service.process(file_path)
+        if resume_text is not None:
+            parsed_text = self.parser_service.cleanup(resume_text)
+        elif file_path:
+            parsed_text = self.parser_service.process(file_path)
+        else:
+            raise ValueError("Either file_path or resume_text is required.")
+        if not parsed_text.strip():
+            raise ValueError("CV has no extractable text.")
 
         # -------------------------------------------------------------
         # Step 2: LLM Analysis
@@ -144,6 +165,14 @@ class CVProcessingPipeline:
         # -------------------------------------------------------------
         # Step 5: Get Job Context & Embeddings for Score Calculation
         # -------------------------------------------------------------
+        if job_posting_id is None or application_id is None:
+            logger.info(
+                "CV %s has no job posting attached; profile and embeddings saved, "
+                "no matching score computed",
+                candidate_uuid,
+            )
+            return None
+
         job_posting = await self.job_posting_repo.get_job_posting(job_posting_id)
         if not job_posting:
             raise ValueError(f"Job posting with ID {job_posting_id} not found.")
@@ -153,14 +182,32 @@ class CVProcessingPipeline:
         # -------------------------------------------------------------
         # Step 6: Calculate Scores & Update Application via Repository
         # -------------------------------------------------------------
-        # Note: Ở đây tính toán Similarity Cosine giữa candidate embeddings & job embeddings
-        summary_score = self._calculate_similarity(embeddings_to_create, job_embeddings, EmbeddingSource.SUMMARY)
-        experience_score = self._calculate_similarity(embeddings_to_create, job_embeddings, EmbeddingSource.EXPERIENCE)
+        # Mỗi vector của ứng viên so với ĐÚNG vector tương ứng của tin: tóm tắt
+        # CV ↔ tóm tắt tin, kinh nghiệm CV ↔ yêu cầu của tin. Trước đây lấy
+        # `job_embeddings[0]` bất kể loại nào, nên điểm phụ thuộc vào thứ tự
+        # PostgREST trả hàng về.
+        summary_score = self._calculate_similarity(
+            embeddings_to_create, job_embeddings, EmbeddingSource.SUMMARY, JobEmbeddingSource.SUMMARY
+        )
+        experience_score = self._calculate_similarity(
+            embeddings_to_create, job_embeddings, EmbeddingSource.EXPERIENCE, JobEmbeddingSource.REQUIREMENTS
+        )
         github_score = None  # GitHub crawler do bên khác xử lý như trao đổi
 
-        # Tính Overall Score đơn giản (hoặc theo trọng số)
-        valid_scores = [s for s in (summary_score, experience_score) if s is not None]
-        overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0.0
+        # Trọng số theo docs/test/phase_matching.md; tín hiệu thiếu (None) bị
+        # loại khỏi mẫu số thay vì tính là 0 — không có vector tin không có
+        # nghĩa là ứng viên không hợp.
+        overall_score = self.score_aggregator.calculate_overall_score(
+            summary_score=summary_score,
+            experience_score=experience_score,
+            github_score=github_score,
+        )
+        if overall_score is None:
+            logger.warning(
+                "No job embeddings for job_posting_id=%s; application %s keeps overall_score NULL",
+                job_posting_id,
+                application_id,
+            )
 
         updated_app = await self.application_repo.update_matching_scores(
             application_id=application_id,
@@ -188,7 +235,9 @@ class CVProcessingPipeline:
             await self.enrichment_repo.update_profile(
                 candidate_uuid=candidate_uuid,
                 # Đưa về thang 0–100 cho dễ đọc; cosine similarity nằm trong [0,1].
-                match_confidence_score=round(overall_score * 100, 2),
+                match_confidence_score=(
+                    round(overall_score * 100, 2) if overall_score is not None else None
+                ),
                 skill_matrix=skill_matrix,
                 # Kỹ năng LLM rút ra + điểm mạnh, dùng làm nhãn tìm kiếm nhanh.
                 semantic_tags=sorted({*analysis.skills, *analysis.strengths}),
@@ -196,7 +245,7 @@ class CVProcessingPipeline:
                 # Đây là con số biện minh cho chi phí gọi LLM.
                 score_increase=(
                     round((overall_score - summary_score) * 100, 2)
-                    if summary_score is not None
+                    if summary_score is not None and overall_score is not None
                     else None
                 ),
             )
@@ -209,7 +258,7 @@ class CVProcessingPipeline:
 
         logger.info(
             f"Successfully processed CV for candidate {candidate_uuid}. "
-            f"Updated overall_score={overall_score:.4f}"
+            f"Updated overall_score={overall_score}"
         )
         return updated_app
 
@@ -265,21 +314,51 @@ class CVProcessingPipeline:
             ],
         }
 
+    @staticmethod
+    def _as_vector(value: Any) -> list[float] | None:
+        """PostgREST trả cột `vector` về dạng chuỗi "[0.1,0.2,...]", không phải list.
+
+        Nhân từng ký tự của chuỗi với float sẽ ném TypeError — lỗi này chỉ lộ
+        khi chạy trên DB thật, mock trong test luôn đưa list sẵn.
+        """
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = json.loads(value)
+        return [float(x) for x in value]
+
     def _calculate_similarity(
         self,
         candidate_embeddings: list[EmbeddingCreate],
         job_embeddings: list[Any],
         source: EmbeddingSource,
+        job_source: JobEmbeddingSource | None = None,
     ) -> float | None:
-        """Helper tính Cosine Similarity giữa Candidate embedding và Job embedding."""
+        """Cosine similarity giữa một vector của ứng viên và vector cùng loại của tin.
+
+        Cả hai phía đều đã chuẩn hoá (E5 với normalize_embeddings=True), nên
+        tích vô hướng chính là cosine. Thiếu một trong hai phía thì trả `None`
+        (khuyết dữ liệu) chứ không phải 0.0 (không hợp).
+        """
         cand_emb = next((e for e in candidate_embeddings if e.source_type == source), None)
         if not cand_emb or not job_embeddings:
             return None
 
-        # Ví dụ ghép vector job hoặc lấy vector job đầu tiên
-        job_vec = job_embeddings[0].embedding
-        cand_vec = cand_emb.embedding
+        wanted = job_source.value if job_source is not None else None
+        job_emb = None
+        for item in job_embeddings:
+            item_source = getattr(item, "source_type", None)
+            item_source = getattr(item_source, "value", item_source)
+            if wanted is None or item_source == wanted:
+                job_emb = item
+                break
+        if job_emb is None:
+            return None
 
-        # Dot product cho 2 vector đã normalize
+        job_vec = self._as_vector(getattr(job_emb, "embedding", None))
+        cand_vec = self._as_vector(cand_emb.embedding)
+        if not job_vec or not cand_vec or len(job_vec) != len(cand_vec):
+            return None
+
         dot_product = sum(a * b for a, b in zip(cand_vec, job_vec))
-        return float(dot_product)
+        return round(float(dot_product), 4)
