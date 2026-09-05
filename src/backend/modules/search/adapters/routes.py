@@ -10,7 +10,11 @@ from modules.search.application.search_service import (
     SearchService,
     get_embedding_service,
 )
+from src.backend.app.dtos.find_candidate import FindCandidateRequest, FindCandidateResult
+from src.backend.app.repositories.candidate_search_repository import CandidateSearchRepository
+from src.backend.app.services.find_candidate_service import FindCandidateService
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles
+from modules.shared.infrastructure.abac import apply_abac
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 
@@ -30,7 +34,27 @@ def get_search_service(
     return SearchService(client=client, embedding_service=get_embedding_service())
 
 
+def get_find_candidate_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FindCandidateService:
+    client = get_supabase_client(settings, use_admin=True)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Candidate search is unavailable: the database is not configured.",
+        )
+    repository = CandidateSearchRepository(client)
+    return FindCandidateService(
+        search_repository=repository,
+        candidate_repository=repository,
+        embedding_service=get_embedding_service(),
+    )
+
+
 ServiceDep = Annotated[SearchService, Depends(get_search_service)]
+FindCandidateServiceDep = Annotated[
+    FindCandidateService, Depends(get_find_candidate_service)
+]
 
 
 class SearchRequest(BaseModel):
@@ -87,3 +111,17 @@ async def search_candidates(
     return SearchResponse(
         results=results, total=len(results), min_score=body.min_score
     )
+
+
+@router.post("/find", response_model=list[FindCandidateResult])
+async def find_candidates(
+    body: FindCandidateRequest,
+    service: FindCandidateServiceDep,
+    user: Annotated[AuthUser, Depends(require_operational_roles())],
+) -> list[FindCandidateResult]:
+    """Tìm kiếm ad-hoc, không tạo hoặc cập nhật application."""
+    results = await service.find(body)
+    return [
+        FindCandidateResult.model_validate(apply_abac(result.model_dump(), user.role))
+        for result in results
+    ]

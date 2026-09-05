@@ -75,6 +75,9 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         # đó là văn bản tự do do LLM viết và gần như chắc chắn nhắc tên ứng
         # viên, nên vẫn bị che.
         "score",
+        "overall_score",
+        "lexical_score",
+        "semantic_score",
         "skills",
         "strengths",
         "weaknesses",

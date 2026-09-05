@@ -100,3 +100,39 @@ class CandidateSearchRepository:
             return []
 
         return [SemanticSearchResult.model_validate(row) for row in response.data]
+
+    async def get_candidate_details(
+        self, candidate_ids: Sequence[UUID | str]
+    ) -> list[dict]:
+        if not candidate_ids:
+            return []
+
+        response = await asyncio.to_thread(
+            lambda: self.client.table("candidates")
+            .select(
+                "uuid, full_name, email, phone, github_username, github_url, "
+                "linkedin_url, enrichment_profiles!left(summary, skills)"
+            )
+            .in_("uuid", [str(candidate_id) for candidate_id in candidate_ids])
+            .execute()
+        )
+
+        rows: list[dict] = []
+        for row in response.data or []:
+            profiles = row.get("enrichment_profiles") or []
+            profile = profiles[0] if isinstance(profiles, list) and profiles else profiles
+            profile = profile or {}
+            rows.append(
+                {
+                    "candidate_uuid": row.get("uuid"),
+                    "full_name": row.get("full_name"),
+                    "email": row.get("email"),
+                    "phone": row.get("phone"),
+                    "github_username": row.get("github_username"),
+                    "github_url": row.get("github_url"),
+                    "linkedin_url": row.get("linkedin_url"),
+                    "summary": profile.get("summary"),
+                    "skills": profile.get("skills"),
+                }
+            )
+        return rows

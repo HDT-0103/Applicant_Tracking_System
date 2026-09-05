@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const post = vi.fn();
 vi.mock("../httpClient", () => ({ api: { post: (...a: unknown[]) => post(...a) } }));
 
-import { MASKED, isMasked, searchCandidates } from "../searchService";
+import { MASKED, findCandidates, isMasked, searchCandidates } from "../searchService";
 
 describe("searchService", () => {
   beforeEach(() => {
@@ -21,6 +21,22 @@ describe("searchService", () => {
   it("passes required skills through as the hard filter", async () => {
     await searchCandidates({ summary: "x", required_skills: ["Python", "Docker"] });
     expect(post.mock.calls[0][1].required_skills).toEqual(["Python", "Docker"]);
+  });
+
+  it("sends ad-hoc find-candidate requests to the hybrid search route", async () => {
+    await findCandidates({
+      role_description: "Senior backend engineer",
+      experience_expectations: "3+ years",
+      must_have_skills: ["Python"],
+      top_k: 5,
+    });
+
+    expect(post).toHaveBeenCalledWith("/api/search/find", {
+      role_description: "Senior backend engineer",
+      experience_expectations: "3+ years",
+      must_have_skills: ["Python"],
+      top_k: 5,
+    });
   });
 
   it("recognises a masked field", () => {
