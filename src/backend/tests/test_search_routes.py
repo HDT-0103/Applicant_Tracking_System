@@ -75,10 +75,39 @@ def inner() -> FakeInner:
     )
 
 
+class FakeScope:
+    """Phạm vi: `u-1` (HR) tạo `job-1` và cũng chấm `job-1`; ai khác thì không.
+
+    Mặc định cả ba ứng viên đều nộp vào `job-1`; test về ranh giới đổi
+    `candidate_jobs` để đẩy một người sang tin khác.
+    """
+
+    def __init__(self) -> None:
+        self.owners = {"job-1": "u-1"}
+        self.panels = {"u-1": ["job-1"]}
+        self.candidate_jobs = {"cand-1": "job-1", "cand-2": "job-1", "cand-3": "job-1"}
+
+    def job_postings_created_by(self, user_id):
+        return [j for j, o in self.owners.items() if o == user_id]
+
+    def job_postings_for_reviewer(self, reviewer_id):
+        return list(self.panels.get(reviewer_id, []))
+
+    def candidates_on_job_postings(self, candidate_uuids, job_posting_ids):
+        allowed = set(job_posting_ids)
+        return {c for c in candidate_uuids if self.candidate_jobs.get(c) in allowed}
+
+
+@pytest.fixture
+def scope() -> FakeScope:
+    return FakeScope()
+
+
 @pytest.fixture(autouse=True)
-def service(inner):
+def service(inner, scope):
     svc = SearchService.__new__(SearchService)
     svc._inner = inner
+    svc._scope = scope
     app.dependency_overrides[get_search_service] = lambda: svc
     yield svc
     app.dependency_overrides.pop(get_search_service, None)
@@ -91,9 +120,9 @@ def client() -> TestClient:
 
 @pytest.fixture
 def sign_in():
-    def _apply(role: str) -> None:
+    def _apply(role: str, user_id: str = "u-1") -> None:
         app.dependency_overrides[get_current_user] = lambda: AuthUser(
-            id="u-1", email=f"{role}@smartats.com", name=role.upper(), role=role
+            id=user_id, email=f"{role}@smartats.com", name=role.upper(), role=role
         )
 
     yield _apply
@@ -101,6 +130,39 @@ def sign_in():
 
 
 QUERY = {"summary": "Senior Python backend engineer", "top_k": 10}
+
+
+class TestScoping:
+    """Tầng vector xếp hạng trên TOÀN BỘ ứng viên và không biết ai đang hỏi.
+
+    Không lọc ở adapter thì màn hình tìm kiếm là đường vòng qua mọi ranh giới
+    dữ liệu: một HR chưa tạo tin nào vẫn xếp hạng được ứng viên của công ty
+    khác, một tech lead ngoài mọi hội đồng vẫn thấy điểm của mọi người.
+    """
+
+    def test_hr_only_ranks_candidates_who_applied_to_their_postings(
+        self, client, sign_in, scope
+    ):
+        scope.candidate_jobs["cand-2"] = "job-of-someone-else"
+        sign_in("hr")
+        body = client.post("/api/search", json=QUERY).json()
+        assert [r["candidate_uuid"] for r in body["results"]] == ["cand-1", "cand-3"]
+        assert body["total"] == 2
+
+    def test_a_tech_lead_only_ranks_their_panel(self, client, sign_in, scope):
+        scope.panels = {"tl-2": ["job-1"]}
+        scope.candidate_jobs["cand-3"] = "job-2"
+        sign_in("tech_lead", user_id="tl-2")
+        body = client.post("/api/search", json=QUERY).json()
+        assert [r["candidate_uuid"] for r in body["results"]] == ["cand-1", "cand-2"]
+
+    def test_someone_with_no_postings_gets_an_empty_list_not_everyone(
+        self, client, sign_in
+    ):
+        sign_in("hr", user_id="hr-new")
+        body = client.post("/api/search", json=QUERY).json()
+        assert body["results"] == []
+        assert body["total"] == 0
 
 
 class TestAccess:

@@ -20,7 +20,8 @@ export interface CandidateCard {
   created_at: string | null;
   company: string | null;
   current_location: string | null;
-  title: string | null;
+  /** Tên TIN TUYỂN DỤNG ứng viên nộp vào — không phải chức danh của họ. */
+  applied_job_title: string | null;
   job_posting_id: string | null;
   match_confidence_score: number | null;
   skills_matrix: Record<string, unknown> | null;

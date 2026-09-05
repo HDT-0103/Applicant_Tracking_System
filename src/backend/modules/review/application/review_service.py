@@ -1,5 +1,5 @@
 import uuid
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import structlog
 
@@ -13,6 +13,7 @@ from modules.review.domain.models import (
 )
 from modules.review.domain.models import PanelMember
 from modules.review.domain.repo_interface import IReviewRepo
+from modules.shared.domain.job_visibility import visible_job_posting_ids_async
 
 logger = structlog.get_logger(__name__)
 
@@ -30,21 +31,35 @@ class ReviewService:
 
     # ── Quyền ──────────────────────────────────────────────────────────────
 
+    async def _visible_job_postings(self, user_id: str, role: str) -> Optional[List[str]]:
+        """Tin mà người này được thấy. `None` = tất cả. Luật ở job_visibility.py."""
+        return await visible_job_posting_ids_async(role, user_id, self._repo)
+
+    async def may_access_job_posting(
+        self, job_posting_id: str, user_id: str, role: str
+    ) -> bool:
+        """Người này có được thấy tin này không (đọc hội đồng, mở trang tin)?"""
+        allowed = await self._visible_job_postings(user_id, role)
+        return allowed is None or job_posting_id in allowed
+
     async def may_access_candidate(self, candidate_uuid: str, user_id: str, role: str) -> bool:
         """Người này có được XEM hồ sơ ứng viên này không?
 
-        `hr` thấy mọi hồ sơ — đó là công việc của họ. `tech_lead` chỉ thấy hồ
-        sơ ứng tuyển vào tin mà họ được mời chấm: hồ sơ chứa PII, và một tech
-        lead không nằm trong hội đồng thì không có lý do nghiệp vụ nào để mở nó.
+        Hồ sơ đi theo tin: `hr` thấy hồ sơ nộp vào tin MÌNH tạo, `tech_lead`
+        thấy hồ sơ nộp vào tin mình được mời chấm. Trước đây `hr` là `True`
+        vô điều kiện — mọi HR trong hệ thống đọc được PII của mọi ứng viên,
+        kể cả của công ty khác.
 
         Vai trò lạ trả về False. Fail-closed: thêm một role mới mà quên khai ở
-        đây thì nó KHÔNG được cấp quyền theo mặc định.
+        job_visibility.py thì nó KHÔNG được cấp quyền theo mặc định.
         """
-        if role == "hr":
+        allowed = await self._visible_job_postings(user_id, role)
+        if allowed is None:
             return True
-        if role != "tech_lead":
+        if not allowed:
             return False
-        return await self._repo.is_panel_member(candidate_uuid, user_id)
+        job_posting_id = await self._repo.job_posting_of_candidate(candidate_uuid)
+        return job_posting_id is not None and job_posting_id in allowed
 
     # ── Hội đồng ───────────────────────────────────────────────────────────
 
@@ -91,26 +106,58 @@ class ReviewService:
         if not unique:
             return {}
 
-        if role == "tech_lead":
-            allowed = await self._repo.filter_accessible(unique, user_id)
-            unique = [u for u in unique if u in allowed]
-        elif role != "hr":
+        # BỐN truy vấn cho cả lô, bất kể bao nhiêu ứng viên. Bản trước hỏi
+        # sĩ số hội đồng theo TỪNG người (2 truy vấn/người, nối tiếp): 20 hồ
+        # sơ = ~42 vòng khứ hồi Azure→Supabase ≈ 7 giây cho một lần mở dashboard.
+        allowed_jobs = await self._visible_job_postings(user_id, role)
+        if allowed_jobs is not None and not allowed_jobs:
             return {}
 
+        applications = await self._repo.applications_for_candidates(unique)
+        if allowed_jobs is not None:
+            allowed_set = set(allowed_jobs)
+            unique = [
+                u for u in unique
+                if (applications.get(u) or {}).get("job_posting_id") in allowed_set
+            ]
         if not unique:
             return {}
 
         by_candidate = await self._repo.get_reviews_for_candidates(unique)
-        # Hội đồng hôm nay giống nhau cho mọi ứng viên, nhưng vẫn hỏi theo từng
-        # người để ngày mai gắn hội đồng theo tin tuyển dụng thì chỗ này đúng sẵn.
+
+        # Sĩ số: đã chốt trên đơn thì dùng, chưa thì đếm hội đồng hiện tại của
+        # tin — đếm một lượt cho mọi tin còn thiếu.
+        need_count = {
+            (applications.get(u) or {}).get("job_posting_id")
+            for u in unique
+            if not (applications.get(u) or {}).get("review_panel_size")
+        }
+        need_count.discard(None)
+        counts = await self._repo.count_panels(sorted(need_count)) if need_count else {}
+
+        def panel_size_of(uuid_: str) -> int:
+            app = applications.get(uuid_) or {}
+            frozen = app.get("review_panel_size")
+            if frozen:
+                return int(frozen)
+            job = app.get("job_posting_id")
+            return counts.get(job, 0) if job else 0
+
         return {
-            uuid_: self._aggregate(
-                uuid_,
-                by_candidate.get(uuid_, []),
-                await self._repo.get_panel_size(uuid_),
-            )
+            uuid_: self._aggregate(uuid_, by_candidate.get(uuid_, []), panel_size_of(uuid_))
             for uuid_ in unique
         }
+
+    async def get_status_for(
+        self, candidate_uuid: str, user_id: str, role: str
+    ) -> Optional[ReviewStatus]:
+        """Trạng thái một ứng viên, kèm kiểm quyền — `None` nếu không được xem.
+
+        Đi qua đường lô nên chỉ 4 truy vấn; route cũ gọi `may_access` rồi
+        `get_status` riêng, hỏi bảng `applications` tới ba lần cho cùng người.
+        """
+        statuses = await self.get_statuses([candidate_uuid], user_id=user_id, role=role)
+        return statuses.get(candidate_uuid)
 
     # ── Ghi ────────────────────────────────────────────────────────────────
 

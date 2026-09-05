@@ -78,17 +78,43 @@ async def test_get_panel_size_filters_applications_by_candidate_uuid(repo, recor
 
 
 @pytest.mark.asyncio
-async def test_is_panel_member_filters_applications_by_candidate_uuid(repo, recorder):
-    await repo.is_panel_member("cand-1", "tl-1")
+async def test_job_posting_of_candidate_filters_applications_by_candidate_uuid(repo, recorder):
+    await repo.job_posting_of_candidate("cand-1")
     assert CANDIDATE_COLUMN in recorder.columns_used_on("applications")
 
 
 @pytest.mark.asyncio
-async def test_filter_accessible_filters_applications_by_candidate_uuid(repo, recorder):
-    recorder.table("job_posting_reviewers")  # nạp sẵn để nhánh sau chạy tiếp
-    await repo.filter_accessible(["cand-1"], "tl-1")
+async def test_candidates_on_job_postings_filters_by_candidate_uuid(repo, recorder):
+    await repo.candidates_on_job_postings(["cand-1"], ["job-1"])
     used = recorder.columns_used_on("applications")
+    assert CANDIDATE_COLUMN in used
     assert "candidate_id" not in used
+
+
+@pytest.mark.asyncio
+async def test_batch_applications_filter_by_candidate_uuid(repo, recorder):
+    await repo.applications_for_candidates(["cand-1", "cand-2"])
+    assert recorder.columns_used_on("applications") == {CANDIDATE_COLUMN}
+
+
+@pytest.mark.asyncio
+async def test_batch_panel_counts_filter_by_job_posting_id(repo, recorder):
+    await repo.count_panels(["job-1"])
+    assert recorder.columns_used_on("job_posting_reviewers") == {"job_posting_id"}
+
+
+@pytest.mark.asyncio
+async def test_ownership_is_read_from_jobs_posting_created_by(repo, recorder):
+    # Cột thật là `created_by` (FK -> users.id). Không phải owner_id hay
+    # recruiter_id — hai cái tên nghe hợp lý nhưng không tồn tại.
+    await repo.job_postings_created_by("hr-1")
+    assert recorder.columns_used_on("jobs_posting") == {"created_by"}
+
+
+@pytest.mark.asyncio
+async def test_panel_membership_is_read_from_job_posting_reviewers(repo, recorder):
+    await repo.job_postings_for_reviewer("tl-1")
+    assert recorder.columns_used_on("job_posting_reviewers") == {"reviewer_id"}
 
 
 @pytest.mark.asyncio

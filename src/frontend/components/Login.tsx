@@ -10,10 +10,12 @@ import { AuthShell } from "./auth/AuthShell";
 import { AuthField } from "./auth/AuthField";
 import { GoogleAuthSlot } from "./auth/GoogleAuthSlot";
 import { T } from "./auth/authTheme";
+import { useT } from "../lib/i18n";
 
 export const Login: React.FC = () => {
   const { loginWithGoogle, loginWithEmailPassword } = useAuth();
   const searchParams = useSearchParams();
+  const t = useT();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,13 +28,13 @@ export const Login: React.FC = () => {
   const sessionExpired = searchParams.get("reason") === "session_expired";
   const notice = error
     ?? (sessionExpired
-      ? "Your session has expired. Please sign in again to continue."
+      ? t("auth.login.sessionExpired")
       : null);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      setError("Please fill in all fields.");
+      setError(t("auth.login.fillAll"));
       return;
     }
     setIsSubmitting(true);
@@ -41,7 +43,7 @@ export const Login: React.FC = () => {
       await loginWithEmailPassword(email, password);
       // Redirect is handled in AuthContext based on the user's role.
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed. Check your credentials.");
+      setError(err instanceof Error ? err.message : t("auth.login.failedCredentials"));
     } finally {
       setIsSubmitting(false);
     }
@@ -50,7 +52,7 @@ export const Login: React.FC = () => {
   const handleGoogleSuccess = async (response: CredentialResponse) => {
     const credential = response.credential;
     if (!credential) {
-      setError("Google did not return a valid credential.");
+      setError(t("auth.login.googleNoCredential"));
       return;
     }
     setIsSubmitting(true);
@@ -59,7 +61,7 @@ export const Login: React.FC = () => {
       await loginWithGoogle(credential);
       // Redirect is handled in AuthContext based on the user's role.
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Authentication failed. Please try again.");
+      setError(err instanceof Error ? err.message : t("auth.login.failedRetry"));
     } finally {
       setIsSubmitting(false);
     }
@@ -67,14 +69,14 @@ export const Login: React.FC = () => {
 
   return (
     <AuthShell
-      heading="Sign in"
-      subheading="Access your SmartATS workspace"
+      heading={t("auth.login.heading")}
+      subheading={t("auth.login.subheading")}
       error={notice}
       footer={
         <>
-          Don&apos;t have an account?{" "}
+          {t("auth.login.noAccount")}{" "}
           <Link href="/register" style={{ color: T.primary, fontWeight: 600, textDecoration: "none" }}>
-            Create one
+            {t("auth.login.createOne")}
           </Link>
         </>
       }
@@ -82,21 +84,21 @@ export const Login: React.FC = () => {
       <form onSubmit={handleEmailLogin} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <AuthField
           id="email"
-          label="Email"
+          label={t("auth.login.email")}
           type="email"
           value={email}
           onChange={setEmail}
-          placeholder="you@company.com"
+          placeholder={t("auth.login.emailPlaceholder")}
           icon={Mail}
           autoComplete="email"
         />
         <AuthField
           id="password"
-          label="Password"
+          label={t("auth.login.password")}
           type="password"
           value={password}
           onChange={setPassword}
-          placeholder="Enter your password"
+          placeholder={t("auth.login.passwordPlaceholder")}
           icon={KeyRound}
           autoComplete="current-password"
         />
@@ -105,11 +107,11 @@ export const Login: React.FC = () => {
           {isSubmitting ? (
             <>
               <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} />
-              <span>Signing in…</span>
+              <span>{t("auth.login.submitting")}</span>
             </>
           ) : (
             <>
-              <span>Sign in</span>
+              <span>{t("auth.login.submit")}</span>
               <ArrowRight size={16} />
             </>
           )}
@@ -118,18 +120,21 @@ export const Login: React.FC = () => {
 
       <Divider />
 
-      <GoogleAuthSlot onSuccess={handleGoogleSuccess} onError={() => setError("Google sign-in was cancelled or failed.")} disabled={isSubmitting} text="signin_with" />
+      <GoogleAuthSlot onSuccess={handleGoogleSuccess} onError={() => setError(t("auth.login.googleCancelled"))} disabled={isSubmitting} text="signin_with" />
     </AuthShell>
   );
 };
 
-const Divider: React.FC = () => (
-  <div style={{ display: "flex", alignItems: "center", margin: "20px 0" }}>
-    <div style={{ flex: 1, height: 1, background: T.line }} />
-    <span style={{ fontSize: 11, color: T.dim, margin: "0 12px", fontWeight: 600, letterSpacing: "0.04em" }}>OR</span>
-    <div style={{ flex: 1, height: 1, background: T.line }} />
-  </div>
-);
+const Divider: React.FC = () => {
+  const t = useT();
+  return (
+    <div style={{ display: "flex", alignItems: "center", margin: "20px 0" }}>
+      <div style={{ flex: 1, height: 1, background: T.line }} />
+      <span style={{ fontSize: 11, color: T.dim, margin: "0 12px", fontWeight: 600, letterSpacing: "0.04em" }}>{t("auth.login.or")}</span>
+      <div style={{ flex: 1, height: 1, background: T.line }} />
+    </div>
+  );
+};
 
 export const submitStyle = (isSubmitting: boolean): React.CSSProperties => ({
   width: "100%",

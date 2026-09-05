@@ -33,7 +33,10 @@ function fillRequiredFields() {
     target: { value: "jane@company.com" },
   });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret123" } });
+  fireEvent.change(screen.getByLabelText("Company name"), { target: { value: "Acme" } });
 }
+
+const COMPANY = { company_name: "Acme", company_website: null };
 
 describe("chọn vai trò khi đăng ký", () => {
   beforeEach(() => {
@@ -53,6 +56,7 @@ describe("chọn vai trò khi đăng ký", () => {
         "jane@company.com",
         "secret123",
         "hr",
+        COMPANY,
       ),
     );
   });
@@ -69,6 +73,42 @@ describe("chọn vai trò khi đăng ký", () => {
         "jane@company.com",
         "secret123",
         "tech_lead",
+        COMPANY,
+      ),
+    );
+  });
+
+  it("không gửi đi khi thiếu tên công ty", async () => {
+    // V009: tài khoản nội bộ phải thuộc về một công ty. Backend cũng từ chối
+    // (422), nhưng người dùng phải được nói rõ ngay tại chỗ.
+    render(<RegisterPage />);
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Jane Doe" } });
+    fireEvent.change(screen.getByLabelText("Work email"), {
+      target: { value: "jane@company.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret123" } });
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    // Ô công ty là `required` nên trình duyệt chặn ngay lúc submit; JSDOM cũng
+    // vậy, nên không có lời gọi nào đi ra là đủ để khẳng định.
+    expect(registerWithEmailPassword).not.toHaveBeenCalled();
+  });
+
+  it("gửi website công ty khi có, dạng đã cắt khoảng trắng", async () => {
+    render(<RegisterPage />);
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText(/company website/i), {
+      target: { value: "  https://acme.example " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() =>
+      expect(registerWithEmailPassword).toHaveBeenCalledWith(
+        "Jane Doe",
+        "jane@company.com",
+        "secret123",
+        "hr",
+        { company_name: "Acme", company_website: "https://acme.example" },
       ),
     );
   });

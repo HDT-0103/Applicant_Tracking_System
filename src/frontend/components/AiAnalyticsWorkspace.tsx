@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { D } from "@/lib/tokens";
 import type { CandidateAnalytics } from "@/contexts/WorkspaceContext";
+import { anonymousCandidateLabel } from "@/lib/candidateLabel";
 
 /* ------------------------------------------------------------------ */
 /*  Sub-component: Candidate Header                                     */
@@ -147,7 +148,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
             key={i}
             points={pts}
             fill="none"
-            stroke="#e5e7eb"
+            stroke={D.line}
             strokeWidth="1"
           />
         ))}
@@ -160,7 +161,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
             y1={cy}
             x2={pt.x}
             y2={pt.y}
-            stroke="#e5e7eb"
+            stroke={D.line}
             strokeWidth="1"
           />
         ))}
@@ -193,7 +194,7 @@ const SkillRadarChart: React.FC<{ skills: CandidateAnalytics["skills"] }> = ({
             textAnchor="middle"
             dominantBaseline="central"
             fontSize="10"
-            fill="#6b7280"
+            fill={D.muted}
           >
             {skills[i].name}
           </text>
@@ -438,7 +439,7 @@ export const AiAnalyticsWorkspace: React.FC<Props> = ({ data, onReset }) => (
     {/* Sticky header bar */}
     <div className="analytics-header-bar">
       <span className="workspace-title">Verification Workspace</span>
-      <span className="candidate-id">candidate-{data.uuid.slice(0, 8)}</span>
+      <span className="candidate-id">{anonymousCandidateLabel(data.uuid)}</span>
       <span className="live-sync">● LIVE SYNC wss://ats.internal:8421</span>
     </div>
 

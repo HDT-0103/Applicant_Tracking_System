@@ -24,17 +24,21 @@ vi.mock("next/navigation", () => ({
 let authState: {
   isAuthenticated: boolean;
   isLoading: boolean;
-  user: { role: string } | null;
+  user: { role: string; company_name?: string | null } | null;
 };
 
 vi.mock("../../contexts/AuthContext", () => ({
   useAuth: () => authState,
+  COMPANY_ONBOARDING_PATH: "/onboarding/company",
+  // Bản sao 1-1 của luật trong AuthContext: admin không cần công ty.
+  needsCompanyOnboarding: (user: { role: string; company_name?: string | null } | null) =>
+    Boolean(user) && user!.role !== "admin" && !(user!.company_name && user!.company_name.trim()),
 }));
 
 import { AuthGuard } from "../AuthGuard";
 
-function signedIn(role: string) {
-  authState = { isAuthenticated: true, isLoading: false, user: { role } };
+function signedIn(role: string, company: string | null = "Acme") {
+  authState = { isAuthenticated: true, isLoading: false, user: { role, company_name: company } };
 }
 function signedOut() {
   authState = { isAuthenticated: false, isLoading: false, user: null };
@@ -169,6 +173,57 @@ describe("admin is confined to the Admin Panel", () => {
   it("lets an admin stay inside /admin", () => {
     signedIn("admin");
     pathname = "/admin";
+    render(
+      <AuthGuard>
+        <Protected />
+      </AuthGuard>,
+    );
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByText("workspace content")).toBeInTheDocument();
+  });
+});
+
+describe("company onboarding (V009)", () => {
+  it("sends a user with no company to the onboarding screen first", () => {
+    // Người đăng nhập Google lần đầu: Google chỉ trả tên và email, nên đây là
+    // chỗ duy nhất để hỏi công ty trước khi họ vào workspace.
+    signedIn("hr", null);
+    pathname = "/";
+    render(
+      <AuthGuard>
+        <Protected />
+      </AuthGuard>,
+    );
+    expect(replace).toHaveBeenCalledWith("/onboarding/company");
+    expect(screen.queryByText("workspace content")).not.toBeInTheDocument();
+  });
+
+  it("lets them stay on the onboarding screen itself", () => {
+    signedIn("tech_lead", null);
+    pathname = "/onboarding/company";
+    render(
+      <AuthGuard>
+        <Protected />
+      </AuthGuard>,
+    );
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.getByText("workspace content")).toBeInTheDocument();
+  });
+
+  it("does not ask an admin for a company", () => {
+    signedIn("admin", null);
+    pathname = "/admin";
+    render(
+      <AuthGuard>
+        <Protected />
+      </AuthGuard>,
+    );
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("leaves a user who already has a company alone", () => {
+    signedIn("hr", "Acme");
+    pathname = "/";
     render(
       <AuthGuard>
         <Protected />

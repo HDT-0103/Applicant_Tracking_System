@@ -84,6 +84,17 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
         "position",
         "duration",
         "highlights",
+        # Tên tin tuyển dụng mà ứng viên nộp vào (CandidateCard trên dashboard).
+        # Không phải PII: tech lead vốn thấy danh sách tin và được mời vào hội
+        # đồng của đúng tin đó. Tách tên riêng thay vì dùng lại `title` để
+        # không lẫn với chức danh trong lịch sử công việc của ứng viên.
+        "applied_job_title",
+        # Câu trả lời sàng lọc của ứng viên mà tech lead cần để chấm chuyên môn:
+        # tự đánh giá kỹ năng và nhóm số năm kinh nghiệm. Không định danh ai.
+        # Lương mong muốn, chế độ làm việc, ngày sẵn sàng vẫn bị che — là việc
+        # của HR, không phải của hội đồng kỹ thuật.
+        "skill_ratings",
+        "experience_bucket",
         # Analytics / chấm điểm
         "analytics",
         "match_confidence_score",
@@ -98,7 +109,8 @@ TECH_LEAD_VISIBLE_FIELDS: frozenset[str] = frozenset(
 #: Field mà giá trị là một map DỮ LIỆU (key do dữ liệu sinh ra, không phải tên
 #: field trong schema) — ví dụ ``top_languages = {"Go": 0.7}``. Với những field
 #: này phải cho cả cây con đi qua, nếu lọc theo key sẽ che nhầm chính dữ liệu.
-OPAQUE_FIELDS: frozenset[str] = frozenset({"top_languages"})
+# `skill_ratings` = {"Python": 4}: key là tên kỹ năng do ứng viên nhập, cùng lý do.
+OPAQUE_FIELDS: frozenset[str] = frozenset({"top_languages", "skill_ratings"})
 
 #: `hr` không bị che gì. `admin` thực tế không gọi được endpoint nghiệp vụ nào
 #: (xem require_operational_roles), để đây cho đủ 3 role.

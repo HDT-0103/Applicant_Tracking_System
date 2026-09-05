@@ -3,13 +3,15 @@
 import React, { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertCircle, Shield, Loader2 } from "lucide-react";
-import { D, Divider } from "@/lib/shared";
+import { D, Divider, tint } from "@/lib/shared";
 import { AppHeader } from "@/components/AppHeader";
 import { LeftSidebar } from "@/components/LeftSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { ApiError, api, getStoredAccessToken } from "@/services/httpClient";
 import { getReviewStatus, type ReviewStatus } from "@/services/reviewService";
+import { candidateDisplayName } from "@/lib/candidateLabel";
+import { useT } from "@/lib/i18n";
 import { CandidateCvPanel } from "@/components/CandidateCvPanel";
 import { EnrichmentPanel } from "./_components/EnrichmentPanel";
 import { EnrichedAnalytics } from "./_components/EnrichedAnalytics";
@@ -26,6 +28,15 @@ export default function EnrichedCandidateProfilePage() {
   const candidateUuid = searchParams.get("uuid");
   const { syncCandidateProfile, setCandidateUuid } = useWorkspace();
   const { user, hasRole } = useAuth();
+  const t = useT();
+  // resolveFromStatus / connectWebSocket là dependency của effect mở WebSocket.
+  // Đưa `t` vào deps thì đổi ngôn ngữ giữa lúc đang tải sẽ đóng rồi mở lại
+  // socket. Đọc `t` qua ref để callback giữ nguyên identity mà thông báo lỗi
+  // vẫn ra đúng ngôn ngữ đang chọn.
+  const tRef = React.useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<EnrichedProfile | null>(null);
@@ -76,7 +87,7 @@ export default function EnrichedCandidateProfilePage() {
         }
         if (status.enrichment_status === "ENRICHMENT_FAILED") {
           markResolved();
-          setError("Enrichment failed");
+          setError(tRef.current("candidate.enrichmentFailed"));
           setLoading(false);
           return true;
         }
@@ -89,10 +100,7 @@ export default function EnrichedCandidateProfilePage() {
         // state so it read as a network fault.
         if (err instanceof ApiError && err.isForbidden) {
           markResolved();
-          setError(
-            "Your account does not have permission to view candidate profiles. " +
-              "This screen is for HR and Tech Lead.",
-          );
+          setError(tRef.current("candidate.noPermission"));
           setLoading(false);
           return true;
         }
@@ -142,7 +150,7 @@ export default function EnrichedCandidateProfilePage() {
             ws.close(1000, "resolved");
           } else if (message.status === "ENRICHMENT_FAILED") {
             markResolved();
-            setError(message.error || "Enrichment failed");
+            setError(message.error || tRef.current("candidate.enrichmentFailed"));
             setLoading(false);
             manualCloseSocketsRef.current.add(ws);
             ws.close(1000, "resolved");
@@ -168,7 +176,7 @@ export default function EnrichedCandidateProfilePage() {
         // 4401 = server từ chối handshake xác thực. Thử lại cũng vô ích vì
         // token sẽ vẫn hỏng — reconnect ở đây sẽ thành vòng lặp 2.5s vô hạn.
         if (event.code === WS_UNAUTHORIZED_CODE) {
-          setError("Your session has expired. Please sign in again.");
+          setError(tRef.current("candidate.sessionExpired"));
           setLoading(false);
           return;
         }
@@ -214,7 +222,7 @@ export default function EnrichedCandidateProfilePage() {
         }
         if (statusResp.enrichment_status === "ENRICHMENT_FAILED") {
           markResolved();
-          setError("Enrichment failed");
+          setError(tRef.current("candidate.enrichmentFailed"));
           setLoading(false);
           setSyncing(false);
           return;
@@ -296,7 +304,7 @@ export default function EnrichedCandidateProfilePage() {
             style={{ animation: "spin 1s linear infinite" }}
           />
           <span style={{ fontSize: 14, color: D.sub }}>
-            Enriching candidate profile...
+            {t("candidate.enriching")}
           </span>
         </div>
       </div>
@@ -335,12 +343,11 @@ export default function EnrichedCandidateProfilePage() {
   // trong response. Nay việc che là của ABAC ở backend: cùng một cây component,
   // dữ liệu tech_lead nhận về đã là "***".
   const isTechLead = hasRole("tech_lead");
-  const candidateLabel =
-    data?.full_name && data.full_name !== "***"
-      ? data.full_name
-      : isTechLead
-        ? `Candidate ${candidateUuid?.slice(0, 8) || ""}`
-        : null;
+  // Cùng một nhãn với dashboard và trang tìm kiếm (lib/candidateLabel), để
+  // tech lead thấy "Candidate #1a2b3c4d" ở mọi nơi thay vì mỗi trang một kiểu.
+  const candidateLabel = data
+    ? candidateDisplayName(data.full_name, candidateUuid)
+    : null;
 
   return (
     <div
@@ -356,8 +363,8 @@ export default function EnrichedCandidateProfilePage() {
         <div
           style={{
             height: 30,
-            background: `${D.amber}08`,
-            borderBottom: `1px solid ${D.amber}20`,
+            background: `${tint("amber", "08")}`,
+            borderBottom: `1px solid ${tint("amber", "20")}`,
             display: "flex",
             alignItems: "center",
             padding: "0 20px",
@@ -367,7 +374,7 @@ export default function EnrichedCandidateProfilePage() {
         >
           <Shield size={11} color={D.amber} />
           <span style={{ fontSize: 10, color: D.amber, fontWeight: 600 }}>
-            Technical Review — PII restricted per ABAC policy
+            {t("candidate.techReviewBanner")}
           </span>
         </div>
       )}
@@ -415,7 +422,7 @@ export default function EnrichedCandidateProfilePage() {
                   cursor: "pointer",
                 }}
               >
-                {tab === "analysis" ? "Parsed profile" : "Original CV"}
+                {tab === "analysis" ? t("candidate.tab.parsed") : t("candidate.cv.originalCv")}
               </button>
             ))}
           </div>

@@ -2,13 +2,15 @@
 
 import React, { useState } from "react";
 import { Zap, AlertCircle, Clock, Layers } from "lucide-react";
-import { D, Badge, SectionLabel, Divider } from "@/lib/shared";
+import { D, Badge, SectionLabel, Divider, tint } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import { GitHubCard } from "./GitHubCard";
 import { LinkedInCard } from "./LinkedInCard";
 import type { EnrichedProfile } from "../types";
 
 // ─── Left Panel — Enrichment Dashboard ────────────────────────────────────────
 export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
+  const t = useT();
   const [openCard, setOpenCard] = useState<"github" | "linkedin" | null>(
     "github",
   );
@@ -48,7 +50,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
             letterSpacing: "-0.01em",
           }}
         >
-          Cross-Channel Enrichment Status
+          {t("candidate.enrichment.title")}
         </span>
         <div
           style={{
@@ -60,7 +62,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
         >
           <Badge color={D.blue} bg={D.blueSoft}>
             <Zap size={8} strokeWidth={2} color={D.blue} />
-            AI-Enriched
+            {t("candidate.enrichment.aiEnriched")}
           </Badge>
           <span
             style={{
@@ -73,7 +75,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
               background: D.surface,
             }}
           >
-            2 sources
+            {t("candidate.enrichment.sourceCount")}
           </span>
         </div>
       </div>
@@ -130,7 +132,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
                 lineHeight: 1.2,
               }}
             >
-              Enriched candidate profile
+              {t("candidate.enrichment.profileTitle")}
             </div>
             <div
               style={{
@@ -140,15 +142,15 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
                 marginTop: 1,
               }}
             >
-              Real GitHub and LinkedIn payload rendered from enrichment response
+              {t("candidate.enrichment.profileSubtitle")}
             </div>
           </div>
           <Badge color={D.blue} bg={D.blueSoft}>
-            Screening
+            {t("candidate.enrichment.screening")}
           </Badge>
         </div>
 
-        <SectionLabel>External Platform Integrations</SectionLabel>
+        <SectionLabel>{t("candidate.enrichment.integrations")}</SectionLabel>
 
         <GitHubCard
           expanded={openCard === "github"}
@@ -188,7 +190,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
           />
           <span style={{ fontSize: 11, color: D.sub, flex: 1 }}>
             <strong style={{ fontWeight: 600, color: D.ink }}>
-              Automated Synchronization:
+              {t("candidate.enrichment.autoSync")}
             </strong>{" "}
             <span
               style={{
@@ -198,7 +200,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
                 color: D.mint,
               }}
             >
-              IDLE / UP-TO-DATE
+              {t("candidate.enrichment.syncState")}
             </span>
           </span>
           <div
@@ -211,7 +213,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
           >
             <Clock size={10} strokeWidth={2} color={D.dim} />
             <span style={{ fontSize: 10, color: D.muted, fontFamily: D.mono }}>
-              Last sync: Just now
+              {t("candidate.enrichment.lastSync")}
             </span>
           </div>
         </div>
@@ -224,8 +226,8 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
             gap: 6,
             padding: "8px 10px",
             borderRadius: 5,
-            background: `${D.amber}0B`,
-            border: `1px solid ${D.amber}22`,
+            background: `${tint("amber", "0B")}`,
+            border: `1px solid ${tint("amber", "22")}`,
           }}
         >
           <AlertCircle
@@ -235,8 +237,7 @@ export function EnrichmentPanel({ data }: { data: EnrichedProfile | null }) {
             style={{ marginTop: 0.5, flexShrink: 0 }}
           />
           <span style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.5 }}>
-            Data enrichment is based on publicly available sources. Manual
-            verification recommended for final hiring decisions.
+            {t("candidate.enrichment.disclaimer")}
           </span>
         </div>
       </div>

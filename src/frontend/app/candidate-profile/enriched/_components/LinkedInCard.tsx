@@ -1,6 +1,7 @@
 import React from "react";
 import { Linkedin, CheckCircle2, ChevronDown, Briefcase, ExternalLink } from "lucide-react";
-import { D, Dot, Badge } from "@/lib/shared";
+import { D, Dot, Badge, tint } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import type { LinkedinProfile } from "../types";
 
 // ─── LinkedIn Accordion Card ──────────────────────────────────────────────────
@@ -15,6 +16,7 @@ export function LinkedInCard({
   data: LinkedinProfile | null;
   linkedinUrl: string | null;
 }) {
+  const t = useT();
   const experiences = data?.experiences || [];
   const fullName = data?.full_name || "Candidate";
   const profileUrl = data?.profile_url || linkedinUrl;
@@ -67,7 +69,7 @@ export function LinkedInCard({
             </span>
             <Badge color={D.mint} bg={D.mintSoft}>
               <Dot color={D.mint} />
-              Connected
+              {t("candidate.connected")}
             </Badge>
           </div>
           <span
@@ -82,7 +84,7 @@ export function LinkedInCard({
           >
             {profileUrl
               ? profileUrl.replace("https://", "").replace("http://", "")
-              : "LinkedIn data unavailable"}{" "}
+              : t("candidate.linkedin.unavailable")}{" "}
             <ExternalLink size={9} strokeWidth={2} color="#0A66C2" />
           </span>
         </div>
@@ -115,7 +117,7 @@ export function LinkedInCard({
               padding: "10px 13px",
               borderRadius: 6,
               background: D.mintSoft,
-              border: `1px solid ${D.mint}28`,
+              border: `1px solid ${tint("mint", "28")}`,
             }}
           >
             <CheckCircle2 size={16} strokeWidth={1.8} color={D.mint} />
@@ -128,12 +130,12 @@ export function LinkedInCard({
                   lineHeight: 1.2,
                 }}
               >
-                Verified Employment History
+                {t("candidate.linkedin.verifiedHistory")}
               </div>
               <div style={{ fontSize: 10.5, color: D.sub, lineHeight: 1.4 }}>
                 {experiences.length > 0
-                  ? `${experiences.length} roles mapped from LinkedIn profile`
-                  : "No LinkedIn employment history available"}
+                  ? t("candidate.linkedin.rolesMapped", { n: experiences.length })
+                  : t("candidate.linkedin.noHistory")}
               </div>
             </div>
           </div>
@@ -147,17 +149,17 @@ export function LinkedInCard({
                 color: D.muted,
               }}
             >
-              Profile Information
+              {t("candidate.linkedin.profileInfo")}
             </div>
             {data?.full_name && (
               <div style={{ fontSize: 11, color: D.sub }}>
-                <span style={{ fontWeight: 600, color: D.ink }}>Name:</span>{" "}
+                <span style={{ fontWeight: 600, color: D.ink }}>{t("candidate.linkedin.name")}</span>{" "}
                 {data.full_name}
               </div>
             )}
             {data?.headline && (
               <div style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.4 }}>
-                <span style={{ fontWeight: 600, color: D.sub }}>Headline:</span>{" "}
+                <span style={{ fontWeight: 600, color: D.sub }}>{t("candidate.linkedin.headline")}</span>{" "}
                 {data.headline}
               </div>
             )}
@@ -173,7 +175,7 @@ export function LinkedInCard({
                   color: D.muted,
                 }}
               >
-                Work Experience
+                {t("candidate.linkedin.workExperience")}
               </div>
               {experiences.map((role, i) => (
                 <div
@@ -208,7 +210,7 @@ export function LinkedInCard({
                   </div>
                   {role.is_current && (
                     <Badge color={D.blue} bg={D.blueSoft}>
-                      Current
+                      {t("candidate.linkedin.current")}
                     </Badge>
                   )}
                 </div>

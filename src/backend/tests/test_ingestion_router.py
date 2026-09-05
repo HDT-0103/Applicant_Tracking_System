@@ -131,6 +131,48 @@ class TestCandidateCvLink:
     bằng fetch có token thay vì bằng điều hướng trần.
     """
 
+    @pytest.fixture(autouse=True)
+    def in_scope(self):
+        """Người gọi được thấy ứng viên (chủ tin / trong hội đồng).
+
+        Ranh giới phạm vi là của module review; ở đây chỉ cần nó trả lời "được"
+        để các test bên dưới kiểm đúng một điều: hình dạng của link trả về.
+        """
+        from modules.review.adapters.routes import get_review_repo
+
+        class _InScope:
+            async def job_postings_created_by(self, user_id):
+                return ["job-1"]
+
+            async def job_postings_for_reviewer(self, reviewer_id):
+                return ["job-1"]
+
+            async def job_posting_of_candidate(self, candidate_uuid):
+                return "job-1"
+
+        app.dependency_overrides[get_review_repo] = lambda: _InScope()
+        yield
+        app.dependency_overrides.pop(get_review_repo, None)
+
+    def test_an_hr_outside_the_scope_gets_a_404(self, client, as_role):
+        # HR chỉ xem được CV của ứng viên nộp vào tin MÌNH tạo. Trước đây `hr`
+        # qua cửa vô điều kiện, nên mọi HR tải được CV của mọi ứng viên.
+        from modules.review.adapters.routes import get_review_repo
+
+        class _OutOfScope:
+            async def job_postings_created_by(self, user_id):
+                return []
+
+            async def job_postings_for_reviewer(self, reviewer_id):
+                return []
+
+            async def job_posting_of_candidate(self, candidate_uuid):
+                return "job-1"
+
+        app.dependency_overrides[get_review_repo] = lambda: _OutOfScope()
+        as_role("hr")
+        assert client.get("/api/v1/candidates/candidate-99/cv").status_code == 404
+
     @staticmethod
     def _supabase_returning(rows):
         client = MagicMock()
@@ -163,7 +205,7 @@ class TestCandidateCvLink:
         assert r.status_code == 200
         # JSON chứ không phải redirect: redirect buộc phải đi bằng điều hướng
         # trình duyệt, mà điều hướng thì không mang được header Authorization.
-        assert r.json() == {"url": signed, "expires_in_seconds": 900}
+        assert r.json() == {"url": signed, "expires_in_seconds": 900, "download_url": signed}
 
     def test_a_stored_path_is_used_when_azure_cannot_sign(self, client, as_role):
         as_role("hr")
@@ -180,6 +222,52 @@ class TestCandidateCvLink:
         assert r.json()["url"] == stored
         # Link không do ta ký thì ta không biết nó sống bao lâu — nói không biết.
         assert r.json()["expires_in_seconds"] is None
+
+    def test_a_local_disk_path_is_not_handed_to_the_browser(self, client, as_role):
+        # Hồ sơ seed cũ ghi `uploads/Cuong_CV.pdf` — đường dẫn trên máy dev.
+        # Trình duyệt không mở được nó; nói "không có CV" đúng hơn.
+        as_role("hr")
+        with patch(
+            "modules.ingestion.adapters.azure_routes._build_sas_url", return_value=None
+        ), patch(
+            "modules.ingestion.adapters.azure_routes.get_supabase_client",
+            return_value=self._supabase_returning([{"cv_file_path": "uploads/Cuong_CV.pdf"}]),
+        ):
+            r = client.get("/api/v1/candidates/candidate-99/cv")
+
+        assert r.status_code == 404
+
+    def test_no_link_is_signed_for_a_blob_that_does_not_exist(self):
+        # SAS là chữ ký trên một cái tên; ký được không có nghĩa là blob có.
+        # Trước đây mọi ứng viên đều nhận link, và 24 hồ sơ seed mở ra trang
+        # XML "BlobNotFound" của Azure thay vì CV.
+        from types import SimpleNamespace
+        from modules.ingestion.adapters import azure_routes
+
+        svc = MagicMock()
+        svc.account_name = "acct"
+        svc.credential.account_key = "key"
+        svc.get_blob_client.return_value.exists.return_value = False
+        settings = SimpleNamespace(azure_storage_connection_string="UseDevelopmentStorage=true")
+
+        with patch("azure.storage.blob.BlobServiceClient.from_connection_string", return_value=svc), patch(
+            "azure.storage.blob.generate_blob_sas", return_value="sig"
+        ) as sign:
+            assert azure_routes._build_sas_url("candidate-99", settings) is None
+            sign.assert_not_called()
+
+            svc.get_blob_client.return_value.exists.return_value = True
+            url = azure_routes._build_sas_url("candidate-99", settings)
+            azure_routes._build_sas_url("candidate-99", settings, disposition="attachment")
+        assert url == "https://acct.blob.core.windows.net/candidate-cvs/candidate-99.pdf?sig"
+
+        # Blob được tải lên là `application/octet-stream`, nên link phải ép
+        # header phản hồi: không ép thì iframe trắng và Open cũng tải file về.
+        inline_kwargs = sign.call_args_list[0].kwargs
+        assert inline_kwargs["content_type"] == "application/pdf"
+        assert inline_kwargs["content_disposition"] == "inline"
+        download_kwargs = sign.call_args_list[1].kwargs
+        assert download_kwargs["content_disposition"].startswith("attachment; filename=")
 
     def test_a_candidate_with_no_cv_is_a_404(self, client, as_role):
         as_role("hr")

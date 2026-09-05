@@ -54,17 +54,23 @@ class CandidateCard(BaseModel):
     """
 
     # Tên trường bám theo TỪ VỰNG mà abac.py đã biết (`candidate_uuid`,
-    # `title`, `company`, `skills_matrix`), chứ không bám theo tên cột trong
-    # bảng. Whitelist của ABAC so khớp theo TÊN field, nên một trường đặt tên
-    # lệch sẽ bị che nhầm — và cái bị che nhầm ở đây là thứ tech lead cần để
-    # làm việc, ví dụ vị trí đang tuyển.
+    # `company`, `skills_matrix`), chứ không bám theo tên cột trong bảng.
+    # Whitelist của ABAC so khớp theo TÊN field, nên một trường đặt tên lệch
+    # sẽ bị che nhầm — và cái bị che nhầm ở đây là thứ tech lead cần để làm
+    # việc, ví dụ vị trí đang tuyển.
     candidate_uuid: str
     full_name: Optional[str] = None
     email: Optional[str] = None
     created_at: Optional[str] = None
     company: Optional[str] = None
     current_location: Optional[str] = None
-    title: Optional[str] = None
+    # Tên TIN TUYỂN DỤNG mà ứng viên nộp vào — KHÔNG phải chức danh của ứng
+    # viên. Trường này từng tên là `title` (để lọt whitelist ABAC), và frontend
+    # vẽ nó ngay dưới tên ứng viên, cạnh `company` là công ty HIỆN TẠI của họ:
+    # tech lead đọc "*** — Senior Backend Engineer · Acme" thành "người này
+    # đang là Senior Backend ở Acme". Tên mới nói rõ nghĩa và được whitelist
+    # riêng trong abac.py.
+    applied_job_title: Optional[str] = None
     job_posting_id: Optional[str] = None
     match_confidence_score: Optional[float] = None
     skills_matrix: Optional[Dict[str, Any]] = None

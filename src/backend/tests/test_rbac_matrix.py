@@ -123,8 +123,28 @@ class _PanelStub:
     def __init__(self, member: bool) -> None:
         self._member = member
 
-    async def is_panel_member(self, candidate_uuid, reviewer_id):
-        return self._member
+    # AsyncJobVisibilitySource: một tin "job-1", người gọi hoặc là chủ tin và
+    # trong hội đồng (member=True), hoặc chẳng là gì cả.
+    async def job_postings_created_by(self, user_id):
+        return ["job-1"] if self._member else []
+
+    async def job_postings_for_reviewer(self, reviewer_id):
+        return ["job-1"] if self._member else []
+
+    async def job_posting_of_candidate(self, candidate_uuid):
+        return "job-1"
+
+    async def candidates_on_job_postings(self, candidate_uuids, job_posting_ids):
+        return set(candidate_uuids) if "job-1" in job_posting_ids else set()
+
+    async def applications_for_candidates(self, candidate_uuids):
+        return {c: {"job_posting_id": "job-1", "review_panel_size": None} for c in candidate_uuids}
+
+    async def count_panels(self, job_posting_ids):
+        return {j: 1 for j in job_posting_ids}
+
+    async def get_reviews_for_candidates(self, candidate_uuids):
+        return {}
 
     async def get_reviews(self, candidate_uuid):
         return []

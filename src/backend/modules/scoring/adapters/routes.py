@@ -41,7 +41,11 @@ async def embed_job_posting(
     """
     force = bool(body and body.force)
     try:
-        result = await ensure_job_embeddings(job_id, settings, force=force)
+        # Chỉ nhúng tin do chính mình tạo. Nhúng lại là hành động của người
+        # soạn tin — nó đổi vector mà tin đó được so khớp.
+        result = await ensure_job_embeddings(
+            job_id, settings, force=force, owner_id=_current_user.id
+        )
     except JobNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

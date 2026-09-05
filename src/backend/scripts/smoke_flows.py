@@ -137,11 +137,47 @@ class Skip(Exception):
 # Xác thực
 # ---------------------------------------------------------------------------
 
-def mint_tokens(jwt_secret: str | None = None) -> dict[str, str]:
+def pick_identities() -> dict[str, str | None]:
+    """Chọn id thật cho token hr / tech_lead: chủ của một tin PUBLISHED và một
+    thành viên hội đồng của tin đó.
+
+    Từ khi dữ liệu được tách theo người dùng, một HR chỉ thấy tin MÌNH tạo và
+    hồ sơ nộp vào đó. Token ký cho một id ngẫu nhiên vì thế thấy dashboard
+    rỗng, mở hồ sơ nhận 404 — bảng kết quả trông y hệt hệ thống hỏng trong
+    khi thật ra chỉ là "người này không sở hữu gì". Nên smoke test phải đóng
+    vai đúng người: chủ tin và tech lead trong hội đồng của tin đó.
+    """
+    ids: dict[str, str | None] = {"hr": None, "tech_lead": None}
+    try:
+        db = admin_db()
+    except Skip:
+        return ids
+    jobs = (
+        db.table("jobs_posting").select("id, created_by")
+        .eq("status", "PUBLISHED").not_.is_("created_by", "null")
+        .limit(1).execute().data
+    )
+    if not jobs:
+        return ids
+    ids["hr"] = jobs[0]["created_by"]
+    panel = (
+        db.table("job_posting_reviewers").select("reviewer_id")
+        .eq("job_posting_id", jobs[0]["id"]).limit(1).execute().data
+    )
+    if panel:
+        ids["tech_lead"] = panel[0]["reviewer_id"]
+    return ids
+
+
+def mint_tokens(
+    jwt_secret: str | None = None, identities: dict[str, str | None] | None = None
+) -> dict[str, str]:
     """Tạo access token cho từng role, ký bằng chính JWT_SECRET của backend.
 
     Ký trực tiếp thay vì đăng nhập thật để script không phải tạo tài khoản rác
     cho ba role, và không phụ thuộc vào việc ai đã đổi mật khẩu seed.
+    `identities` gán id thật cho hr / tech_lead (xem `pick_identities`); thiếu
+    thì dùng id giả, và các phép kiểm cần phạm vi sẽ thấy dữ liệu rỗng.
 
     Chạy với `BASE` trỏ vào production thì PHẢI truyền `--jwt-secret` của môi
     trường đó: bản deploy dùng khoá riêng, không phải khoá trong `.env` dev.
@@ -160,16 +196,31 @@ def mint_tokens(jwt_secret: str | None = None) -> dict[str, str]:
         settings = settings.model_copy(update={"jwt_secret": jwt_secret})
 
     jwt = JwtService(settings)
+    identities = identities or {}
     tokens = {}
     for role in ("hr", "tech_lead", "admin"):
+        user_id = identities.get(role) or str(
+            uuidlib.uuid5(uuidlib.NAMESPACE_DNS, f"smoke-{role}")
+        )
         tokens[role] = jwt.create_access_token(
             AuthUser(
-                id=str(uuidlib.uuid5(uuidlib.NAMESPACE_DNS, f"smoke-{role}")),
+                id=user_id,
                 email=f"smoke-{role}@smartats.example.com",
                 name=f"{MARK} {role}",
                 role=role,
             )
         )
+    # Tech lead KHÔNG thuộc hội đồng nào (id giả): dùng cho các phép kiểm ranh
+    # giới. Token "tech_lead" ở trên là thành viên hội đồng thật, nên không
+    # dùng nó để chứng minh "người ngoài bị chặn" được.
+    tokens["tech_lead_outsider"] = jwt.create_access_token(
+        AuthUser(
+            id=str(uuidlib.uuid5(uuidlib.NAMESPACE_DNS, "smoke-tech_lead-outsider")),
+            email="smoke-outsider@smartats.example.com",
+            name=f"{MARK} outsider",
+            role="tech_lead",
+        )
+    )
     return tokens
 
 
@@ -238,7 +289,15 @@ def main() -> int:
         return 1
     run.check("/health trả ok", lambda: _eq(health.json().get("status"), "ok"))
 
-    tokens = mint_tokens(args.jwt_secret)
+    identities = pick_identities()
+    if not identities["hr"]:
+        print(f"{YELLOW}Không có tin PUBLISHED nào có created_by — token hr sẽ không "
+              f"sở hữu gì và các phép kiểm theo phạm vi sẽ thấy dữ liệu rỗng. "
+              f"Gán chủ cho tin: xem docs/DEPLOY.md.{RESET}")
+    if not identities["tech_lead"]:
+        print(f"{YELLOW}Tin PUBLISHED chưa có hội đồng — token tech_lead sẽ thấy "
+              f"dashboard rỗng.{RESET}")
+    tokens = mint_tokens(args.jwt_secret, identities)
     api = Api(BASE, tokens)
 
     try:
@@ -454,7 +513,7 @@ def _flow_c_enrichment(run: Runner, api: Api, state: dict) -> None:
     run.check("đọc được trạng thái enrichment", _status)
 
     def _panel_guard() -> Optional[str]:
-        r = api("GET", f"/api/enrichment/{uuid}", role="tech_lead")
+        r = api("GET", f"/api/enrichment/{uuid}", role="tech_lead_outsider")
         # 404 chứ không 403: 403 xác nhận ứng viên tồn tại, biến endpoint thành
         # công cụ dò xem một người có ứng tuyển hay không.
         assert r.status_code == 404, f"tech_lead ngoài hội đồng vẫn đọc được ({r.status_code})"

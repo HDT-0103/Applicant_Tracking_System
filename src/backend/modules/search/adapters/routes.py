@@ -74,6 +74,7 @@ async def search_candidates(
         required_skills=body.required_skills,
         top_k=body.top_k,
         min_score=body.min_score,
+        user_id=user.id,
         role=user.role,
     )
     logger.info(

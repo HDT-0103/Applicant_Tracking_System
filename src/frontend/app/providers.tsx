@@ -2,6 +2,8 @@
 
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
+import { LanguageProvider } from "@/lib/i18n";
 import { AuthGuard } from "@/components/AuthGuard";
 import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
 import { RequireCalendarModal } from "@/components/RequireCalendarModal";
@@ -13,6 +15,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <GoogleOAuthProvider clientId={clientId || ""}>
+      <LanguageProvider>
+      <ThemeProvider>
       <AuthProvider>
         <AuthGuard>
           <WorkspaceProvider>
@@ -24,6 +28,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
             </WorkspaceProvider>
         </AuthGuard>
       </AuthProvider>
+      </ThemeProvider>
+      </LanguageProvider>
     </GoogleOAuthProvider>
   );
 }

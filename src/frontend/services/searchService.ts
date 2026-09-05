@@ -50,7 +50,5 @@ export async function searchCandidates(req: SearchRequest): Promise<SearchRespon
   return api.post<SearchResponse>("/api/search", { ...req } as Record<string, unknown>);
 }
 
-/** Giá trị bị che hiện về đúng chuỗi này. */
-export const MASKED = "***";
-
-export const isMasked = (value: unknown): boolean => value === MASKED;
+/** Định nghĩa duy nhất nằm ở lib/candidateLabel — re-export để import cũ không gãy. */
+export { MASKED, isMasked } from "../lib/candidateLabel";

@@ -16,11 +16,15 @@ import { D } from "../../../lib/shared";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../contexts/AuthContext";
 import { buildJobPath, parseJobId } from "../../../lib/jobUrl";
+import { getJobPosting } from "../../../services/catalogService";
+import { useLang, useT, type Lang } from "../../../lib/i18n";
 import {
   AVAILABILITY_OPTIONS,
   MOTIVATION_OPTIONS,
-  RATING_HINTS,
+  RATING_HINT_KEYS,
   SALARY_BASIS_OPTIONS,
+  SCREENING_HINT_KEYS,
+  SCREENING_LABEL_KEYS,
   WORK_MODE_OPTIONS,
   WORK_STYLE_OPTIONS,
   buildScreeningPayload,
@@ -31,6 +35,7 @@ import {
   validateScreening,
   type Choice,
   type ScreeningAnswers,
+  type ScreeningGroup,
 } from "../../../lib/screening";
 import {
   clearStoredApplication,
@@ -208,16 +213,30 @@ const isExpired = (job: Pick<JobPosting, "expires_at">) =>
   !!job.expires_at && new Date(job.expires_at).getTime() < Date.now();
 
 function ChoiceGroup({
-  options, value, onChange, multi = false, columns = 1, error,
+  options, group, value, onChange, multi = false, columns = 1, error,
 }: {
   options: Choice[];
+  /** Which question this is — picks the label-key map in lib/screening. */
+  group: ScreeningGroup;
   value: string | string[];
   onChange: (v: string & string[]) => void;
   multi?: boolean;
   columns?: number;
   error?: string;
 }) {
+  const t = useT();
   const isOn = (v: string) => (multi ? (value as string[]).includes(v) : value === v);
+  // Fall back to the English label baked into the Choice when a value has no
+  // key, so an option added to screening.ts without a translation still shows
+  // its text rather than a bare key.
+  const labelOf = (o: Choice) => {
+    const key = SCREENING_LABEL_KEYS[group][o.value];
+    return key ? t(key) : o.label;
+  };
+  const hintOf = (o: Choice) => {
+    const key = SCREENING_HINT_KEYS[o.value];
+    return key ? t(key) : o.hint;
+  };
 
   const pick = (v: string) => {
     if (!multi) {
@@ -258,8 +277,8 @@ function ChoiceGroup({
                 {on && <Check size={11} strokeWidth={3} color="#fff" />}
               </span>
               <span className="min-w-0">
-                <span className="block font-medium leading-snug">{o.label}</span>
-                {o.hint && <span className="mt-0.5 block text-xs" style={{ color: D.muted }}>{o.hint}</span>}
+                <span className="block font-medium leading-snug">{labelOf(o)}</span>
+                {o.hint && <span className="mt-0.5 block text-xs" style={{ color: D.muted }}>{hintOf(o)}</span>}
               </span>
             </button>
           );
@@ -276,12 +295,13 @@ function RatingScale({ skill, value, onChange }: {
   value: number;
   onChange: (n: number) => void;
 }) {
+  const t = useT();
   return (
     <div className="flex items-center justify-between gap-4 py-2.5" style={{ borderBottom: `1px solid ${D.lineSoft}` }}>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium" style={{ color: D.ink }}>{skill}</p>
         <p className="text-xs" style={{ color: D.muted, minHeight: 16 }}>
-          {value ? RATING_HINTS[value - 1] : ""}
+          {value ? t(RATING_HINT_KEYS[value - 1]) : ""}
         </p>
       </div>
       <div className="flex shrink-0 gap-1" role="radiogroup" aria-label={skill}>
@@ -316,6 +336,7 @@ function ConsentGate({ checked, onChange, jobTitle, error }: {
   jobTitle: string;
   error?: string;
 }) {
+  const t = useT();
   return (
     <div
       className="rounded-lg border p-4"
@@ -332,11 +353,11 @@ function ConsentGate({ checked, onChange, jobTitle, error }: {
           className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#1B62F0]"
         />
         <span className="text-sm leading-relaxed" style={{ color: D.sub }}>
-          I agree that <strong style={{ color: D.ink }}>SmartATS</strong> may store and process my CV
-          and the answers above — including public data from the GitHub and LinkedIn profiles I
-          provided — to assess my fit for the{" "}
-          <strong style={{ color: D.ink }}>{jobTitle}</strong> position. I can request deletion of my
-          data at any time.
+          {t("careers.form.consentA")}{" "}
+          <strong style={{ color: D.ink }}>SmartATS</strong>{" "}
+          {t("careers.form.consentB")}{" "}
+          <strong style={{ color: D.ink }}>{jobTitle}</strong>{" "}
+          {t("careers.form.consentC")}
         </span>
       </label>
       <FieldError msg={error} />
@@ -345,6 +366,7 @@ function ConsentGate({ checked, onChange, jobTitle, error }: {
 }
 
 function ResumeUploader({ file, onChange, error }: { file: File | null; onChange: (f: File | null) => void; error?: string }) {
+  const t = useT();
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -356,7 +378,7 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
 
   return (
     <div className="mb-6">
-      <FieldLabel required>Resume / CV</FieldLabel>
+      <FieldLabel required>{t("careers.form.resume")}</FieldLabel>
       <input ref={fileRef} type="file" accept=".pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onChange(f); }} />
       {file ? (
@@ -366,7 +388,7 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
-            <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB · PDF</p>
+            <p className="text-xs text-muted-foreground">{t("careers.form.fileMeta", { kb: (file.size / 1024).toFixed(0) })}</p>
           </div>
           <button type="button" onClick={() => { onChange(null); if (fileRef.current) fileRef.current.value = ""; }}
             className="p-1.5 rounded text-muted-foreground hover:text-foreground transition-colors">
@@ -387,8 +409,8 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
             <Upload className={cn("w-4 h-4", drag ? "text-primary" : "text-muted-foreground")} />
           </div>
           <div>
-            <p className="text-sm font-medium text-foreground">{drag ? "Release to upload" : "Attach resume / CV"}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">PDF only · Max 10 MB · <span className="text-primary">Browse files</span></p>
+            <p className="text-sm font-medium text-foreground">{drag ? t("careers.form.release") : t("careers.form.attach")}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t("careers.form.fileHint")} <span className="text-primary">{t("careers.form.browse")}</span></p>
           </div>
         </div>
       )}
@@ -397,7 +419,14 @@ function ResumeUploader({ file, onChange, error }: { file: File | null; onChange
   );
 }
 
+const LOADING_STEP_KEYS = [
+  "careers.loading.step.parse",
+  "careers.loading.step.github",
+  "careers.loading.step.linkedin",
+];
+
 function LoadingScreen({ updating = false }: { updating?: boolean }) {
+  const t = useT();
   if (updating) {
     return (
       <div className="flex flex-col items-center justify-center py-32 gap-6">
@@ -405,9 +434,9 @@ function LoadingScreen({ updating = false }: { updating?: boolean }) {
           <Loader2 className="w-7 h-7 text-primary animate-spin" />
         </div>
         <div className="text-center">
-          <p className="font-semibold text-foreground">Saving your changes…</p>
+          <p className="font-semibold text-foreground">{t("careers.loading.savingTitle")}</p>
           <p className="text-sm text-muted-foreground mt-1 max-w-xs">
-            Updating the answers on your application.
+            {t("careers.loading.savingBody")}
           </p>
         </div>
       </div>
@@ -419,19 +448,19 @@ function LoadingScreen({ updating = false }: { updating?: boolean }) {
         <Loader2 className="w-7 h-7 text-primary animate-spin" />
       </div>
       <div className="text-center">
-        <p className="font-semibold text-foreground">Processing your application…</p>
+        <p className="font-semibold text-foreground">{t("careers.loading.title")}</p>
         <p className="text-sm text-muted-foreground mt-1 max-w-xs">
-          Enriching your profile with public GitHub and LinkedIn data.
+          {t("careers.loading.body")}
         </p>
       </div>
       <div className="flex flex-col gap-2 w-60">
-        {["Parsing resume", "Fetching GitHub activity", "Scanning LinkedIn profile"].map((step, i) => (
+        {LOADING_STEP_KEYS.map((step, i) => (
           <div key={step} className="flex items-center gap-2.5">
             <div className={cn("w-4 h-4 rounded-full flex items-center justify-center shrink-0",
               i === 0 ? "bg-emerald-500" : i === 1 ? "bg-primary animate-pulse" : "bg-[rgba(15,17,23,0.1)]")}>
               {i === 0 && <CheckCircle2 className="w-3 h-3 text-white" />}
             </div>
-            <span className={cn("text-xs", i <= 1 ? "text-foreground" : "text-muted-foreground")}>{step}</span>
+            <span className={cn("text-xs", i <= 1 ? "text-foreground" : "text-muted-foreground")}>{t(step)}</span>
           </div>
         ))}
       </div>
@@ -440,35 +469,35 @@ function LoadingScreen({ updating = false }: { updating?: boolean }) {
 }
 
 function ResultsPanel({ jobTitle, updated, onReset }: { jobTitle: string; updated: boolean; onReset: () => void }) {
+  const t = useT();
   return (
     <div className="flex flex-col items-center gap-6 py-12 text-center">
       <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
         <CheckCircle2 className="w-8 h-8 text-green-600" />
       </div>
       <div>
-        <p className="text-2xl font-semibold text-foreground">Thank you!</p>
+        <p className="text-2xl font-semibold text-foreground">{t("careers.results.title")}</p>
         <p className="text-muted-foreground mt-1">
-          {updated ? (
-            <>Your application for <span className="font-medium text-foreground">{jobTitle}</span> has
-            been updated. We will be in touch at the email address on your CV.</>
-          ) : (
-            <>Your application for <span className="font-medium text-foreground">{jobTitle}</span> has
-            been submitted. We will be in touch at the email address on your CV.</>
-          )}
+          {t("careers.results.before")}{" "}
+          <span className="font-medium text-foreground">{jobTitle}</span>{" "}
+          {updated ? t("careers.results.updatedAfter") : t("careers.results.submittedAfter")}
         </p>
       </div>
       <button onClick={onReset} className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
-        Review or edit your application
+        {t("careers.results.edit")}
       </button>
     </div>
   );
 }
 
-function ApplicationForm({ job, onSubmit, existing }: {
+function ApplicationForm({ job, onSubmit, existing, preview = false }: {
   job: JobPosting;
   onSubmit: (d: FormData) => void;
   existing?: ExistingApplication | null;
+  /** HR/tech lead xem đúng form ứng viên thấy, nhưng không gửi được gì. */
+  preview?: boolean;
 }) {
+  const t = useT();
   const editing = !!existing;
   const [form, setForm] = useState<FormData>({
     resume: null,
@@ -490,8 +519,8 @@ function ApplicationForm({ job, onSubmit, existing }: {
   const validate = (): FieldErrors => {
     const e: FieldErrors = {};
     // In edit mode the CV from the original submission is kept, so no upload.
-    if (!editing && !form.resume) e.resume = "Please upload your CV";
-    Object.assign(e, validateScreening(form, ratedSkills));
+    if (!editing && !form.resume) e.resume = t("careers.form.resumeRequired");
+    Object.assign(e, validateScreening(form, ratedSkills, t));
     return e;
   };
 
@@ -519,12 +548,12 @@ function ApplicationForm({ job, onSubmit, existing }: {
         >
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" style={{ color: D.blue }} />
           <p className="text-sm leading-relaxed" style={{ color: D.sub }}>
-            You already applied for this position
+            {t("careers.form.alreadyApplied")}
             {existing?.submittedAt && (
-              <> on <strong style={{ color: D.ink }}>
+              <> {t("careers.form.onDate")} <strong style={{ color: D.ink }}>
                 {new Date(existing.submittedAt).toLocaleDateString()}
               </strong></>
-            )}. Your previous answers are pre-filled below — change anything you like and save.
+            )}{t("careers.form.prefilledNote")}
           </p>
         </div>
       )}
@@ -532,7 +561,7 @@ function ApplicationForm({ job, onSubmit, existing }: {
       {/* CV — everything we can read off it, we do not ask for */}
       {editing ? (
         <section>
-          <FieldLabel>Resume / CV</FieldLabel>
+          <FieldLabel>{t("careers.form.resume")}</FieldLabel>
           <div className="flex items-center gap-3 p-3 rounded-md border border-primary/30 bg-[#f5f3ff]">
             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
               <FileText className="w-4 h-4 text-primary" />
@@ -541,18 +570,18 @@ function ApplicationForm({ job, onSubmit, existing }: {
               <p className="text-sm font-medium text-foreground truncate">
                 {existing?.resumeFilename || "resume.pdf"}
               </p>
-              <p className="text-xs text-muted-foreground">Submitted with your original application</p>
+              <p className="text-xs text-muted-foreground">{t("careers.form.resumeOnFile")}</p>
             </div>
           </div>
           <p className="mt-2 text-xs" style={{ color: D.muted }}>
-            Your CV on file is kept. To submit a different CV, please contact the hiring team.
+            {t("careers.form.resumeKept")}
           </p>
         </section>
       ) : (
         <section data-error={!!errors.resume}>
           <ResumeUploader file={form.resume} onChange={(f) => set("resume", f)} error={errors.resume} />
           <p className="-mt-3 text-xs" style={{ color: D.muted }}>
-            We read your name, contact details and links straight from the CV — no need to retype them.
+            {t("careers.form.cvNote")}
           </p>
         </section>
       )}
@@ -561,7 +590,7 @@ function ApplicationForm({ job, onSubmit, existing }: {
 
       {/* 1 — Salary */}
       <section data-error={!!errors.salaryMax}>
-        <FieldLabel required>Expected monthly salary</FieldLabel>
+        <FieldLabel required>{t("careers.form.salary")}</FieldLabel>
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <input
@@ -571,7 +600,7 @@ function ApplicationForm({ job, onSubmit, existing }: {
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium" style={{ color: D.dim }}>VND</span>
           </div>
-          <span className="text-sm" style={{ color: D.muted }}>to</span>
+          <span className="text-sm" style={{ color: D.muted }}>{t("careers.form.salaryTo")}</span>
           <div className="relative flex-1">
             <input
               inputMode="numeric" placeholder="20,000,000" value={form.salaryMax}
@@ -585,6 +614,7 @@ function ApplicationForm({ job, onSubmit, existing }: {
         <div className="mt-2.5 max-w-[200px]">
           <ChoiceGroup
             options={SALARY_BASIS_OPTIONS}
+            group="salaryBasis"
             value={form.salaryBasis}
             onChange={(v) => set("salaryBasis", v)}
             columns={2}
@@ -594,10 +624,11 @@ function ApplicationForm({ job, onSubmit, existing }: {
 
       {/* 2 — Working arrangement */}
       <section data-error={!!errors.workModePref}>
-        <FieldLabel required>Preferred working arrangement</FieldLabel>
-        <MicroLabel>Select all that work for you</MicroLabel>
+        <FieldLabel required>{t("careers.form.workMode")}</FieldLabel>
+        <MicroLabel>{t("careers.form.workModeHint")}</MicroLabel>
         <ChoiceGroup
           options={WORK_MODE_OPTIONS}
+          group="workMode"
           value={form.workModePref}
           onChange={(v) => set("workModePref", v)}
           multi columns={3}
@@ -607,9 +638,10 @@ function ApplicationForm({ job, onSubmit, existing }: {
 
       {/* 3 — Availability */}
       <section data-error={!!errors.availabilityBucket}>
-        <FieldLabel required>When can you start?</FieldLabel>
+        <FieldLabel required>{t("careers.form.availability")}</FieldLabel>
         <ChoiceGroup
           options={AVAILABILITY_OPTIONS}
+          group="availability"
           value={form.availabilityBucket}
           onChange={(v) => set("availabilityBucket", v)}
           columns={4}
@@ -630,9 +662,9 @@ function ApplicationForm({ job, onSubmit, existing }: {
       {/* 4 — Skill self-rating, driven by the job itself */}
       {ratedSkills.length > 0 && (
         <section data-error={!!errors.skillRatings}>
-          <FieldLabel required>How strong are you on this role&apos;s skills?</FieldLabel>
+          <FieldLabel required>{t("careers.form.skills")}</FieldLabel>
           <div className="mb-3 flex items-center justify-between">
-            <MicroLabel>1 = just starting · 5 = expert</MicroLabel>
+            <MicroLabel>{t("careers.form.skillsScale")}</MicroLabel>
             <span className="text-[11px] font-medium" style={{ color: ratedCount === ratedSkills.length ? D.mint : D.dim }}>
               {ratedCount} / {ratedSkills.length}
             </span>
@@ -656,9 +688,10 @@ function ApplicationForm({ job, onSubmit, existing }: {
 
       {/* 5 — Working style */}
       <section data-error={!!errors.workStyle}>
-        <FieldLabel required>How do you prefer to work?</FieldLabel>
+        <FieldLabel required>{t("careers.form.workStyle")}</FieldLabel>
         <ChoiceGroup
           options={WORK_STYLE_OPTIONS}
+          group="workStyle"
           value={form.workStyle}
           onChange={(v) => set("workStyle", v)}
           columns={3}
@@ -669,17 +702,18 @@ function ApplicationForm({ job, onSubmit, existing }: {
       {/* Optional — free text for downstream NLP, never blocks submit */}
       <section>
         <FieldLabel htmlFor="motivationOther">
-          What is driving your move?{" "}
-          <span className="font-normal" style={{ color: D.muted }}>(Optional)</span>
+          {t("careers.form.motivation")}{" "}
+          <span className="font-normal" style={{ color: D.muted }}>{t("careers.form.optional")}</span>
         </FieldLabel>
         <ChoiceGroup
           options={MOTIVATION_OPTIONS}
+          group="motivation"
           value={form.motivationReason}
           onChange={(v) => set("motivationReason", v)}
           columns={4}
         />
         <textarea
-          id="motivationOther" rows={3} placeholder="Anything you would like to add"
+          id="motivationOther" rows={3} placeholder={t("careers.form.motivationPlaceholder")}
           value={form.motivationOther}
           onChange={(e) => set("motivationOther", e.target.value)}
           className={cn(textareaCls, "mt-2.5")}
@@ -699,23 +733,21 @@ function ApplicationForm({ job, onSubmit, existing }: {
 
       <div>
         <button
-          type="submit" disabled={!form.consent}
+          type="submit" disabled={!form.consent || preview}
           className="w-full h-11 rounded-md bg-primary text-white font-semibold text-sm
             hover:bg-primary-hover active:scale-[0.99] transition-all shadow-sm
             disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100
             focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
         >
-          {editing ? "Update Application" : "Submit Application"}
+          {editing ? t("careers.form.update") : t("careers.form.submit")}
         </button>
 
         <p className="mt-4 text-[11px] leading-relaxed text-center" style={{ color: D.muted }}>
-          We may use AI tools to support parts of the hiring process, such as reviewing applications
-          and analysing CVs. These tools assist our recruitment team but do not replace human
-          judgment — final hiring decisions are made by people.
+          {t("careers.form.aiNotice")}
         </p>
 
         <p className="mt-3 text-[11px] text-center" style={{ color: D.dim }}>
-          Jobs powered by <span className="font-semibold" style={{ color: D.sub }}>SmartATS</span>
+          {t("careers.form.poweredBy")} <span className="font-semibold" style={{ color: D.sub }}>SmartATS</span>
         </p>
       </div>
     </form>
@@ -749,11 +781,12 @@ function StatusPanel({
 
 function OpenJobsPanel({ jobs, heading, note }: { jobs: JobPosting[]; heading: string; note: string }) {
   const router = useRouter();
+  const t = useT();
 
   if (jobs.length === 0) {
     return (
-      <StatusPanel tone="muted" icon={Briefcase} title="No open positions right now">
-        There are no roles accepting applications at the moment. Please check back later.
+      <StatusPanel tone="muted" icon={Briefcase} title={t("careers.list.emptyTitle")}>
+        {t("careers.list.emptyBody")}
       </StatusPanel>
     );
   }
@@ -777,7 +810,7 @@ function OpenJobsPanel({ jobs, heading, note }: { jobs: JobPosting[]; heading: s
               <p className="truncate text-sm font-semibold" style={{ color: D.ink }}>{job.job_title}</p>
               <p className="mt-1 truncate text-xs" style={{ color: D.muted }}>
                 {[job.location, job.department, job.employment_type, job.work_mode]
-                  .filter(Boolean).join("  ·  ") || "Details inside"}
+                  .filter(Boolean).join("  ·  ") || t("careers.list.detailsInside")}
               </p>
             </div>
             <ExternalLink size={16} strokeWidth={1.8} color={D.dim}
@@ -789,7 +822,42 @@ function OpenJobsPanel({ jobs, heading, note }: { jobs: JobPosting[]; heading: s
   );
 }
 
+/**
+ * "EN | VI" switch for the public page. Candidates have no account, so this is
+ * the only place they can pick a language; the choice persists in localStorage
+ * via LanguageProvider and follows them to every other screen in this browser.
+ */
+function LangToggle() {
+  const { lang, setLang } = useLang();
+  const t = useT();
+  const opt = (value: Lang, label: string) => (
+    <button
+      type="button"
+      onClick={() => setLang(value)}
+      aria-pressed={lang === value}
+      className={cn(
+        "px-1 transition-colors",
+        lang === value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div
+      role="group"
+      aria-label={t("common.language")}
+      className="inline-flex items-center text-[10px] font-semibold tracking-wide"
+    >
+      {opt("en", "EN")}
+      <span className="text-muted-foreground/60">|</span>
+      {opt("vi", "VI")}
+    </div>
+  );
+}
+
 function Sidebar({ job }: { job: JobPosting | null }) {
+  const t = useT();
   return (
     <aside className="w-[320px] shrink-0 flex flex-col bg-white border-r border-border overflow-y-auto">
       <div className="px-7 pt-7 pb-6 border-b border-border">
@@ -797,18 +865,21 @@ function Sidebar({ job }: { job: JobPosting | null }) {
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-white font-bold text-[10px] tracking-tight">CP</span>
           </div>
-          <span className="text-sm font-semibold text-foreground">Career Page</span>
-          {job && (
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              {job.status === 'PUBLISHED' ? 'Open' : job.status}
-            </span>
-          )}
+          <span className="text-sm font-semibold text-foreground">{t("careers.brand")}</span>
+          <div className="ml-auto flex items-center gap-2">
+            {job && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {job.status === 'PUBLISHED' ? t("careers.sidebar.open") : job.status}
+              </span>
+            )}
+            <LangToggle />
+          </div>
         </div>
         <h1 className="text-base font-semibold text-foreground leading-snug tracking-tight mb-2">
-          {job?.job_title || 'Position'}
+          {job?.job_title || t("careers.sidebar.position")}
         </h1>
-        <p className="text-xs text-muted-foreground">{job?.location || 'Location'}</p>
+        <p className="text-xs text-muted-foreground">{job?.location || t("careers.sidebar.location")}</p>
         <div className="flex flex-wrap gap-1.5 mt-3">
           {[job?.department, job?.employment_type, job?.work_mode].filter(Boolean).map((tag) => (
             <span key={tag} className="text-[11px] text-muted-foreground bg-[#f4f4f6] rounded px-2 py-0.5 border border-border">{tag}</span>
@@ -818,7 +889,7 @@ function Sidebar({ job }: { job: JobPosting | null }) {
       <div className="px-7 py-6 flex-1 flex flex-col gap-6">
         {job?.must_have_skills && job.must_have_skills.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">Must-Have Skills</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">{t("careers.sidebar.mustHave")}</p>
             <ul className="flex flex-col gap-1.5">
               {job.must_have_skills.map((skill) => (
                 <li key={skill} className="flex items-start gap-2">
@@ -831,7 +902,7 @@ function Sidebar({ job }: { job: JobPosting | null }) {
         )}
         {job?.nice_to_have_skills && job.nice_to_have_skills.length > 0 && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">Nice-to-Have Skills</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">{t("careers.sidebar.niceToHave")}</p>
             <ul className="flex flex-col gap-1.5">
               {job.nice_to_have_skills.map((skill) => (
                 <li key={skill} className="flex items-start gap-2">
@@ -844,14 +915,14 @@ function Sidebar({ job }: { job: JobPosting | null }) {
         )}
         {job?.requirements && (
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">Requirements</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-3">{t("careers.sidebar.requirements")}</p>
             <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">{job.requirements}</p>
           </div>
         )}
       </div>
       <div className="px-7 py-5 border-t border-border bg-[#fafafa]">
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          After applying, your public GitHub and LinkedIn profiles may be enriched to give the hiring team a fuller picture.
+          {t("careers.sidebar.enrichNote")}
         </p>
       </div>
     </aside>
@@ -864,6 +935,7 @@ export default function CareersPortalPage() {
   const slug = params?.slug ? (Array.isArray(params.slug) ? params.slug[0] : params.slug) : null;
   const jobId = parseJobId(slug);
   const { isAuthenticated } = useAuth();
+  const t = useT();
 
   const [selectedJob, setSelectedJob] = useState<JobPosting | null>(null);
   const [openJobs, setOpenJobs] = useState<JobPosting[]>([]);
@@ -875,6 +947,10 @@ export default function CareersPortalPage() {
   // Set when this browser already applied to the selected job → edit mode.
   const [existingApp, setExistingApp] = useState<ExistingApplication | null>(null);
   const [justUpdated, setJustUpdated] = useState(false);
+  // `?preview=1` + đã đăng nhập: trang chi tiết tin nhúng trang này để HR /
+  // tech lead xem đúng thứ ứng viên thấy — kể cả tin DRAFT, thứ anon key không
+  // đọc được. Không có gì được gửi đi ở chế độ này.
+  const [previewMode, setPreviewMode] = useState(false);
 
   useEffect(() => {
     const listOpenJobs = async () => {
@@ -890,6 +966,20 @@ export default function CareersPortalPage() {
     const loadJobData = async () => {
       setLoading(true);
       try {
+        // 0. Xem trước từ trang chi tiết tin (đã đăng nhập). Đi qua backend
+        //    vì tin DRAFT/CLOSED bị RLS che khỏi anon key, mà HR cần xem form
+        //    TRƯỚC khi đăng.
+        const wantsPreview =
+          typeof window !== "undefined" &&
+          new URLSearchParams(window.location.search).get("preview") === "1";
+        if (jobId && wantsPreview && isAuthenticated) {
+          const row = await getJobPosting(jobId);
+          setSelectedJob(row as JobPosting);
+          setPreviewMode(true);
+          setResolution('ok');
+          return;
+        }
+
         // 1. Canonical link — /careers/<title-slug>-<uuid>. The UUID is authoritative,
         //    so a renamed job keeps working and a title clash can never misroute a CV.
         if (jobId) {
@@ -940,25 +1030,25 @@ export default function CareersPortalPage() {
         setResolution('list');
       } catch (err) {
         console.error('Failed to load job data:', err);
-        setError('Failed to load job postings');
+        setError('careers.error.loadFailed');
         setResolution('error');
       } finally {
         setLoading(false);
       }
     };
     loadJobData();
-  }, [slug, jobId]);
+  }, [slug, jobId, isAuthenticated]);
 
 /** Câu duy nhất ứng viên nhìn thấy khi nộp hỏng.
  *
  *  Thông báo kỹ thuật mô tả bảng, cột và chính sách bên trong hệ thống. Nó vô
  *  nghĩa với người đang nộp hồ sơ, và vẽ sơ đồ dữ liệu cho người không nên
  *  biết. Chi tiết ở lại log máy chủ, nơi có người sửa được nó. */
-const SUBMIT_FAILED_MESSAGE =
-  "We could not submit your application. Please check your file and try again — if it keeps happening, contact us.";
+// `error` state holds an i18n KEY, not text, and is rendered through t(): the
+// message must follow the language toggle even after the failure happened.
+const SUBMIT_FAILED_MESSAGE = "careers.error.submitFailed";
 
-const UPDATE_FAILED_MESSAGE =
-  "We could not save your changes. Please try again in a moment.";
+const UPDATE_FAILED_MESSAGE = "careers.error.updateFailed";
 
   /** Edit mode: the candidate already applied — update their answers in place. */
   const handleUpdate = async (form: FormData) => {
@@ -1003,8 +1093,9 @@ const UPDATE_FAILED_MESSAGE =
   };
 
   const handleSubmit = async (form: FormData) => {
+    if (previewMode) return; // xem trước: nút đã bị khoá, đây là chốt thứ hai
     if (!selectedJob) {
-      setError('No job selected for this application.');
+      setError('careers.error.noJob');
       return;
     }
     // One application per job: a returning candidate edits instead of re-submitting.
@@ -1112,12 +1203,12 @@ const UPDATE_FAILED_MESSAGE =
       {isAuthenticated && (
         <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-2 bg-primary text-white text-xs shadow-lg">
           <div className="flex items-center gap-2">
-            <span className="font-medium">Candidate Portal Preview</span>
-            <span className="opacity-60">— viewing as a job applicant</span>
+            <span className="font-medium">{t("careers.preview.title")}</span>
+            <span className="opacity-60">{t("careers.preview.subtitle")}</span>
           </div>
           <button onClick={() => router.push('/')}
             className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-white/15 hover:bg-white/25 transition-colors font-medium">
-            ← Back to HR Dashboard
+            {t("careers.preview.back")}
           </button>
         </div>
       )}
@@ -1131,12 +1222,12 @@ const UPDATE_FAILED_MESSAGE =
           <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
             <span className="text-white font-bold text-[9px] tracking-tight">CP</span>
           </div>
-          <span className="text-sm font-semibold text-foreground">Career Page</span>
+          <span className="text-sm font-semibold text-foreground">{t("careers.brand")}</span>
         </div>
         <div className="w-px h-3.5 bg-border mx-1" />
-        <span className="text-sm text-muted-foreground">{selectedJob?.job_title || "Careers"}</span>
+        <span className="text-sm text-muted-foreground">{selectedJob?.job_title || t("careers.nav.careers")}</span>
         <div className="ml-auto">
-          <a href="#" className="text-sm text-primary hover:underline font-medium">Go to Home Page</a>
+          <a href="#" className="text-sm text-primary hover:underline font-medium">{t("careers.nav.home")}</a>
         </div>
       </header>
 
@@ -1149,30 +1240,30 @@ const UPDATE_FAILED_MESSAGE =
             {error && (
               <div className="mb-6 flex items-center gap-2 p-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                {error}
+                {t(error)}
               </div>
             )}
 
             {resolution === "list" && (
               <OpenJobsPanel
                 jobs={openJobs}
-                heading="Open positions"
-                note="Select the role you want to apply for. Your CV is attached to that role only."
+                heading={t("careers.list.heading")}
+                note={t("careers.list.note")}
               />
             )}
 
             {resolution === "closed" && (
-              <StatusPanel tone="amber" icon={Clock} title="Applications are closed">
-                <strong style={{ color: D.ink }}>{selectedJob?.job_title}</strong> is no longer
-                accepting applications. Browse our other open roles at{" "}
+              <StatusPanel tone="amber" icon={Clock} title={t("careers.closed.title")}>
+                <strong style={{ color: D.ink }}>{selectedJob?.job_title}</strong>{" "}
+                {t("careers.closed.body")}{" "}
                 <Link href="/careers" className="font-medium" style={{ color: D.blue }}>/careers</Link>.
               </StatusPanel>
             )}
 
             {resolution === "notfound" && (
-              <StatusPanel tone="muted" icon={Search} title="Position not found">
-                This link may be outdated or the posting was removed. See our{" "}
-                <Link href="/careers" className="font-medium" style={{ color: D.blue }}>open positions</Link>.
+              <StatusPanel tone="muted" icon={Search} title={t("careers.notFound.title")}>
+                {t("careers.notFound.body")}{" "}
+                <Link href="/careers" className="font-medium" style={{ color: D.blue }}>{t("careers.notFound.link")}</Link>.
               </StatusPanel>
             )}
 
@@ -1185,15 +1276,24 @@ const UPDATE_FAILED_MESSAGE =
                         {selectedJob.job_title}
                       </h2>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {selectedJob.location || "Location"} &nbsp;·&nbsp; {selectedJob.department || "Department"} / {selectedJob.employment_type || "Type"} / {selectedJob.work_mode || "On-site"}
+                        {selectedJob.location || t("careers.sidebar.location")} &nbsp;·&nbsp; {selectedJob.department || t("careers.job.department")} / {selectedJob.employment_type || t("careers.job.type")} / {selectedJob.work_mode || t("careers.job.onsite")}
                       </p>
                     </div>
+                    {previewMode && (
+                      <div
+                        role="status"
+                        className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800"
+                      >
+                        {t("careers.preview.notice")}
+                      </div>
+                    )}
                     <div className="bg-white rounded-xl border border-border p-8 shadow-sm">
                       <ApplicationForm
                         key={existingApp?.ref.applicationId ?? "new"}
                         job={selectedJob}
                         onSubmit={handleSubmit}
                         existing={existingApp}
+                        preview={previewMode}
                       />
                     </div>
                   </>

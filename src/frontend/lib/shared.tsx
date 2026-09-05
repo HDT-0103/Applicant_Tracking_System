@@ -3,9 +3,9 @@ import React from "react";
 // --- Design Tokens ------------------------------------------------------------
 // Token đã chuyển sang ./tokens. Vừa import để dùng trong file này, vừa
 // re-export để 995 chỗ đang `import { D } from ".../lib/shared"` không phải sửa.
-import { D } from "./tokens";
+import { D, tint } from "./tokens";
 
-export { D };
+export { D, tint };
 
 // --- Shared Data --------------------------------------------------------------
 
@@ -95,8 +95,10 @@ export function Badge({
         fontWeight: 600,
         letterSpacing: "0.02em",
         color,
-        background: bg ?? `${color}14`,
-        border: `1px solid ${color}28`,
+        // `color` có thể là var(--x) nên không nối hex alpha được; color-mix
+        // pha độ mờ từ bất kỳ giá trị màu nào.
+        background: bg ?? `color-mix(in srgb, ${color} 8%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 16%, transparent)`,
         lineHeight: 1.6,
         whiteSpace: "nowrap",
         fontFamily: D.font,
@@ -163,7 +165,7 @@ body {
 
 @keyframes livePulse {
   0% {
-    box-shadow: 0 0 0 0 ${D.mint}40;
+    box-shadow: 0 0 0 0 ${tint("mint", "40")};
   }
   70% {
     box-shadow: 0 0 0 4px transparent;

@@ -3,11 +3,13 @@
 import React, { useState } from "react";
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from "recharts";
 import { TrendingUp } from "lucide-react";
-import { D } from "@/lib/shared";
+import { D, tint } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import type { MockAnalytics } from "../types";
 
 // ─── Enriched Radar Chart ──────────────────────────────────────────────────────
 export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }) {
+  const t = useT();
   const [showBoth, setShowBoth] = useState(true);
 
   const skillNames = ["Backend", "Frontend", "Cloud Dev", "InfoSec", "ML / AI"];
@@ -45,10 +47,10 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
               marginBottom: 2,
             }}
           >
-            Technical Skill Matrix
+            {t("candidate.radar.title")}
           </div>
           <div style={{ fontSize: 10.5, color: D.muted }}>
-            Multi-axis competency · enriched with external repository data
+            {t("candidate.radar.subtitle")}
           </div>
         </div>
         <button
@@ -58,7 +60,7 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
             alignItems: "center",
             gap: 5,
             padding: "4px 10px",
-            border: `1px solid ${showBoth ? `${D.blue}30` : D.line}`,
+            border: `1px solid ${showBoth ? `${tint("blue", "30")}` : D.line}`,
             borderRadius: 5,
             background: showBoth ? D.blueSoft : D.canvas,
             cursor: "pointer",
@@ -74,7 +76,7 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
             strokeWidth={2}
             color={showBoth ? D.blue : D.muted}
           />
-          Show delta
+          {t("candidate.radar.showDelta")}
         </button>
       </div>
       <div style={{ height: 220 }}>
@@ -151,7 +153,7 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
                           color: D.dim,
                         }}
                       >
-                        <span>Baseline</span>
+                        <span>{t("candidate.radar.baseline")}</span>
                         <span style={{ fontFamily: D.mono }}>
                           {d["Pre-Enrichment"]}
                         </span>
@@ -165,7 +167,7 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
                         color: "#93C5FD",
                       }}
                     >
-                      <span>Enriched</span>
+                      <span>{t("candidate.radar.enriched")}</span>
                       <span style={{ fontFamily: D.mono, fontWeight: 600 }}>
                         {d["Post-Enrichment"]}
                       </span>
@@ -183,7 +185,7 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
                           fontWeight: 600,
                         }}
                       >
-                        <span>Delta</span>
+                        <span>{t("candidate.radar.delta")}</span>
                         <span style={{ fontFamily: D.mono }}>
                           +{d["Post-Enrichment"] - d["Pre-Enrichment"]}
                         </span>
@@ -208,7 +210,7 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
                 borderTop: "1.5px dashed #9CA3AF",
               }}
             />
-            <span style={{ color: D.muted }}>Pre-enrichment</span>
+            <span style={{ color: D.muted }}>{t("candidate.radar.legendPre")}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div
@@ -219,7 +221,7 @@ export function EnrichedRadar({ analytics }: { analytics: MockAnalytics | null }
                 borderRadius: 1,
               }}
             />
-            <span style={{ color: D.sub }}>Post-enrichment</span>
+            <span style={{ color: D.sub }}>{t("candidate.radar.legendPost")}</span>
           </div>
         </div>
       )}

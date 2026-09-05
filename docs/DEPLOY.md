@@ -7,7 +7,7 @@ là đủ.
 | Thành phần | Nơi chạy | Địa chỉ |
 |---|---|---|
 | Frontend (Next.js) | Vercel Hobby | `smartats.tech` · `applicant-tracking-system-alpha.vercel.app` |
-| Backend (FastAPI + mô hình nhúng) | Azure Container Apps | `https://<APP_NAME>.<region>.azurecontainerapps.io` |
+| Backend (FastAPI + mô hình nhúng) | Azure Container Apps, vùng **Korea Central** | `https://smartats-backend.purpleforest-518acad7.koreacentral.azurecontainerapps.io` |
 | Cơ sở dữ liệu | Supabase Free | — |
 | File CV | Azure Blob Storage | — |
 
@@ -106,6 +106,13 @@ Ba điều script lo giúp, đừng tự làm tay:
 Thêm biến mới thì nhớ khai vào cả `.env.example`, nếu không
 `tests/test_env_contract.py` sẽ đỏ — cố ý như vậy.
 
+### 1.3b Migration chưa chạy thì đừng deploy
+
+Migration nằm ở `src/backend/migrations/V00x__*.sql`, chạy tay trong Supabase →
+**SQL Editor**. Code đọc/ghi cột mới ngay khi lên, nên thứ tự là **migration
+trước, deploy sau**. Gần nhất: `V009__user_company.sql` (đăng ký ghi
+`users.company_name` — thiếu cột là đăng ký trả 500).
+
 ### 1.4 Kiểm chứng — đừng tin màu xanh
 
 ```bash
@@ -175,10 +182,19 @@ az containerapp revision list --name $APP_NAME --resource-group $RG -o table
 | `exec format error` trong log | Image build trên máy Apple Silicon mà thiếu `--platform linux/amd64` |
 | Trang trắng, console báo lỗi Supabase | Project Supabase bị tạm dừng (gói Free ngủ sau 7 ngày) → dashboard bấm **Restore** |
 | Hồ sơ kẹt ở `waiting_for_tls`, tech lead mở nhận 404 | Tin tuyển dụng chưa có hội đồng chấm → `scripts/assign_review_panels.py --all` |
+| HR đăng nhập thấy dashboard và danh sách tin **rỗng**, admin vẫn thấy | Tin có `jobs_posting.created_by = NULL` (tạo trước khi tách dữ liệu theo người dùng). Gán chủ: `UPDATE jobs_posting SET created_by = (SELECT id FROM users WHERE email = '<email HR>') WHERE created_by IS NULL;` |
+| Smoke test: hàng loạt phép kiểm theo phạm vi thấy rỗng / 404 | Không có tin PUBLISHED nào có `created_by` → script không đóng vai chủ tin được. Gán chủ như dòng trên |
 
 ---
 
 ## 3. Dựng hạ tầng lần đầu
+
+> **Vùng:** Supabase của nhóm ở Seoul, nên backend đặt ở `koreacentral`. Đặt ở
+> Singapore thì mỗi truy vấn PostgREST mất ~160 ms (đã đo), mọi màn hình chậm
+> theo số truy vấn. Azure for Students chỉ cho **một** Container App
+> Environment mỗi subscription — muốn đổi vùng là phải xoá cái cũ rồi tạo cái
+> mới (backend ngừng ~10–20 phút); sao lưu secret trước bằng
+> `az containerapp secret show` từng cái, vì `JWT_SECRET` phải giữ nguyên.
 
 Chỉ đọc phần này nếu phải dựng lại từ số không — ví dụ credit Azure hết hạn và
 nhóm chuyển sang subscription khác.
@@ -187,8 +203,8 @@ nhóm chuyển sang subscription khác.
 
 ```bash
 export RG=smartats-rg
-export LOCATION=southeastasia
-export ENV_NAME=smartats-env
+export LOCATION=koreacentral   # cùng vùng với Supabase (Seoul): mỗi truy vấn ~15 ms thay vì ~160 ms từ Singapore
+export ENV_NAME=smartats-env-kr
 export APP_NAME=smartats-backend
 export ACR_NAME=smartatsacr$RANDOM && echo "ACR_NAME=$ACR_NAME"   # GHI LẠI dòng này
 ```

@@ -3,6 +3,7 @@
 import React from "react";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import { T } from "./authTheme";
+import { useT } from "../../lib/i18n";
 
 interface GoogleAuthSlotProps {
   onSuccess: (res: CredentialResponse) => void;
@@ -21,6 +22,7 @@ export const GoogleAuthSlot: React.FC<GoogleAuthSlotProps> = ({
   disabled = false,
   text = "signin_with",
 }) => {
+  const t = useT();
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
   if (!clientId) {
@@ -28,7 +30,7 @@ export const GoogleAuthSlot: React.FC<GoogleAuthSlotProps> = ({
       <button
         type="button"
         disabled
-        title="Google sign-in unavailable"
+        title={t("auth.google.unavailable")}
         style={{
           width: "100%",
           height: T.field,
@@ -47,7 +49,7 @@ export const GoogleAuthSlot: React.FC<GoogleAuthSlotProps> = ({
         }}
       >
         <GoogleGlyph muted />
-        {text === "signup_with" ? "Sign up with Google" : "Sign in with Google"}
+        {text === "signup_with" ? t("auth.google.signUp") : t("auth.google.signIn")}
       </button>
     );
   }

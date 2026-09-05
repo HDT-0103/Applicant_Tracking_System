@@ -60,13 +60,25 @@ async def list_available_reviewers(
     return await service.list_available_reviewers()
 
 
+# 404 chứ không 403 cho tin ngoài phạm vi: 403 xác nhận tin đó tồn tại.
+_JOB_NOT_FOUND = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found."
+)
+
+
+async def _require_job_access(service: ReviewService, job_posting_id: str, user: AuthUser) -> None:
+    if not await service.may_access_job_posting(job_posting_id, user.id, user.role):
+        raise _JOB_NOT_FOUND
+
+
 @router.get("/panels/{job_posting_id}", response_model=List[PanelMember])
 async def get_panel(
     job_posting_id: str,
     service: ServiceDep,
-    _current_user: Annotated[AuthUser, Depends(require_operational_roles())],
+    current_user: Annotated[AuthUser, Depends(require_operational_roles())],
 ) -> List[PanelMember]:
-    """Hội đồng Tech Lead của một tin tuyển dụng."""
+    """Hội đồng Tech Lead của một tin tuyển dụng — của tin mình được thấy."""
+    await _require_job_access(service, job_posting_id, current_user)
     return await service.get_panel(job_posting_id)
 
 
@@ -77,11 +89,14 @@ async def invite_reviewer(
     service: ServiceDep,
     current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> List[PanelMember]:
-    """Mời một Tech Lead vào hội đồng. Chỉ HR mời được.
+    """Mời một Tech Lead vào hội đồng. Chỉ HR TẠO TIN mời được.
 
     Quyết định ai chấm hồ sơ là quyết định nhân sự; để tech lead tự thêm mình
-    vào thì họ tự cấp quyền xem PII cho chính mình.
+    vào thì họ tự cấp quyền xem PII cho chính mình. Và một HR lập hội đồng
+    cho tin của HR khác là tự cấp cho tech lead của mình quyền đọc hồ sơ của
+    người khác.
     """
+    await _require_job_access(service, job_posting_id, current_user)
     return await service.invite_reviewer(
         job_posting_id=job_posting_id,
         reviewer_id=body.reviewer_id,
@@ -94,8 +109,9 @@ async def remove_reviewer(
     job_posting_id: str,
     reviewer_id: str,
     service: ServiceDep,
-    _current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
+    current_user: Annotated[AuthUser, Depends(require_roles("hr"))],
 ) -> List[PanelMember]:
+    await _require_job_access(service, job_posting_id, current_user)
     return await service.remove_reviewer(job_posting_id, reviewer_id)
 
 
@@ -152,10 +168,9 @@ async def get_review_status(
 ) -> ReviewStatus:
     # 404 chứ không 403: 403 xác nhận ứng viên đó tồn tại, biến endpoint thành
     # công cụ dò xem một người có ứng tuyển hay không.
-    if not await service.may_access_candidate(
-        candidate_uuid, current_user.id, current_user.role
-    ):
+    result = await service.get_status_for(candidate_uuid, current_user.id, current_user.role)
+    if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found."
         )
-    return await service.get_status(candidate_uuid)
+    return result

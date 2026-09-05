@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { D, SectionLabel } from "@/lib/shared";
+import { D, SectionLabel, tint } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import { submitReview, type ReviewStatus, type ReviewDecision } from "@/services/reviewService";
 
 // ─── Review Panel ──────────────────────────────────────────────────────────────
@@ -19,6 +20,7 @@ export function ReviewPanel({
   reviewStatus: ReviewStatus | null;
   onRefresh: () => void;
 }) {
+  const t = useT();
   const [decision, setDecision] = useState<ReviewDecision | null>(null);
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -48,7 +50,7 @@ export function ReviewPanel({
     } catch (err) {
       // Backend từ chối có lý do (sai thứ tự duyệt, hết phiên…). Nuốt lỗi thì
       // người duyệt bấm mãi mà không hiểu vì sao phiếu không được ghi.
-      setError(err instanceof Error ? err.message : "Could not submit the review.");
+      setError(err instanceof Error ? err.message : t("candidate.review.submitFailed"));
     }
     setSubmitting(false);
   };
@@ -81,19 +83,21 @@ export function ReviewPanel({
         background: D.surface,
       }}
     >
-      <SectionLabel>CV Review</SectionLabel>
+      <SectionLabel>{t("candidate.review.title")}</SectionLabel>
 
       {!reviewStatus ? (
         <div style={box}>
           <div style={{ fontSize: 10, color: D.muted, textAlign: "center" }}>
-            ⏳ Loading review status…
+            {t("candidate.review.loadingStatus")}
           </div>
         </div>
       ) : hrBlocked ? (
-        <div style={{ ...box, border: `1px solid ${D.amber}30`, background: `${D.amber}08` }}>
+        <div style={{ ...box, border: `1px solid ${tint("amber", "30")}`, background: `${tint("amber", "08")}` }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: D.amber, textAlign: "center" }}>
-            ⏳ Waiting for the Tech Lead panel — {reviewStatus?.required_tl_approvals} of{" "}
-            {reviewStatus?.total_tls} must approve
+            {t("candidate.review.hrBlocked", {
+              required: reviewStatus?.required_tl_approvals ?? 0,
+              total: reviewStatus?.total_tls ?? 0,
+            })}
           </div>
         </div>
       ) : (
@@ -115,7 +119,7 @@ export function ReviewPanel({
                   cursor: "pointer",
                 }}
               >
-                ✓ Approve
+                {t("candidate.review.approve")}
               </button>
               <button
                 type="button"
@@ -132,13 +136,13 @@ export function ReviewPanel({
                   cursor: "pointer",
                 }}
               >
-                ✗ Reject
+                {t("candidate.review.reject")}
               </button>
             </div>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Add notes (required if rejecting)…"
+              placeholder={t("candidate.review.notesPlaceholder")}
               style={{
                 width: "100%",
                 minHeight: 50,
@@ -156,8 +160,8 @@ export function ReviewPanel({
                 style={{
                   fontSize: 10.5,
                   color: D.red,
-                  background: `${D.red}0D`,
-                  border: `1px solid ${D.red}28`,
+                  background: `${tint("red", "0D")}`,
+                  border: `1px solid ${tint("red", "28")}`,
                   borderRadius: 4,
                   padding: "6px 8px",
                 }}
@@ -181,7 +185,7 @@ export function ReviewPanel({
                 opacity: decision && !submitting ? 1 : 0.5,
               }}
             >
-              {submitting ? "Submitting…" : "Submit Review"}
+              {submitting ? t("candidate.review.submitting") : t("candidate.review.submit")}
             </button>
           </div>
         )
@@ -191,18 +195,18 @@ export function ReviewPanel({
       {reviewStatus && (
         <div style={{ marginTop: 10, fontSize: 10.5, display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: D.muted }}>Your decision:</span>
+            <span style={{ color: D.muted }}>{t("candidate.review.yourDecision")}</span>
             <span
               style={{
                 fontWeight: 600,
                 color: myDecision === "approved" ? D.mint : myDecision === "rejected" ? D.red : D.dim,
               }}
             >
-              {myDecision === "pending" ? "Not submitted" : myDecision === "approved" ? "Approved" : "Rejected"}
+              {myDecision === "pending" ? t("candidate.review.notSubmitted") : myDecision === "approved" ? t("candidate.review.approved") : t("candidate.review.rejected")}
             </span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: D.muted }}>Tech Lead panel:</span>
+            <span style={{ color: D.muted }}>{t("candidate.review.tlPanel")}</span>
             <span
               title={reviewStatus.panel_rule}
               style={{
@@ -214,12 +218,16 @@ export function ReviewPanel({
                     : D.sub,
               }}
             >
-              {reviewStatus.approved_tls}/{reviewStatus.required_tl_approvals} approved
-              {reviewStatus.rejected_tls > 0 && ` · ${reviewStatus.rejected_tls} rejected`}
+              {t("candidate.review.tlApproved", {
+                approved: reviewStatus.approved_tls,
+                required: reviewStatus.required_tl_approvals,
+              })}
+              {reviewStatus.rejected_tls > 0 &&
+                t("candidate.review.tlRejected", { n: reviewStatus.rejected_tls })}
             </span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: D.muted }}>HR:</span>
+            <span style={{ color: D.muted }}>{t("candidate.review.hr")}</span>
             <span
               style={{
                 fontWeight: 600,
@@ -232,10 +240,10 @@ export function ReviewPanel({
               }}
             >
               {reviewStatus.hr_decision === "pending"
-                ? "Waiting…"
+                ? t("candidate.review.waiting")
                 : reviewStatus.hr_decision === "approved"
-                  ? "Approved"
-                  : "Rejected"}
+                  ? t("candidate.review.approved")
+                  : t("candidate.review.rejected")}
             </span>
           </div>
         </div>
@@ -258,7 +266,7 @@ export function ReviewPanel({
             }}
           >
             <strong style={{ color: r.decision === "approved" ? D.mint : D.red }}>
-              {r.decision === "approved" ? "✓" : "✗"} Tech Lead
+              {r.decision === "approved" ? "✓" : "✗"} {t("candidate.review.techLead")}
             </strong>{" "}
             {r.review_text}
           </div>
@@ -276,7 +284,7 @@ export function ReviewPanel({
             border: `1px solid ${D.line}`,
           }}
         >
-          <strong>HR&apos;s notes:</strong> {reviewStatus.hr_review_text}
+          <strong>{t("candidate.review.hrNotes")}</strong> {reviewStatus.hr_review_text}
         </div>
       )}
 
@@ -286,11 +294,11 @@ export function ReviewPanel({
         </div>
       )}
 
-      {status === "waiting_for_tls" && statusLine(D.amber, "⏳ Waiting for the Tech Lead panel…")}
-      {status === "waiting_for_hr" && statusLine(D.amber, "⚠️ Tech Leads approved — waiting for HR")}
-      {status === "ready_to_schedule" && statusLine(D.mint, "✅ Approved — ready to schedule")}
-      {status === "rejected_by_tls" && statusLine(D.red, "❌ Rejected by the Tech Lead panel")}
-      {status === "rejected_by_hr" && statusLine(D.red, "❌ Rejected by HR — notification sent")}
+      {status === "waiting_for_tls" && statusLine(D.amber, t("candidate.review.status.waitingForTls"))}
+      {status === "waiting_for_hr" && statusLine(D.amber, t("candidate.review.status.waitingForHr"))}
+      {status === "ready_to_schedule" && statusLine(D.mint, t("candidate.review.status.ready"))}
+      {status === "rejected_by_tls" && statusLine(D.red, t("candidate.review.status.rejectedByTls"))}
+      {status === "rejected_by_hr" && statusLine(D.red, t("candidate.review.status.rejectedByHr"))}
     </div>
   );
 }

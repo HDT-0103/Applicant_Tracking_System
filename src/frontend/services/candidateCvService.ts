@@ -1,8 +1,11 @@
 import { api } from "./httpClient";
 
 export interface CandidateCvLink {
+  /** Mở/hiển thị inline (iframe, tab mới). */
   url: string;
   expires_in_seconds: number | null;
+  /** Cùng file, máy chủ ép `Content-Disposition: attachment` để tải về. */
+  download_url: string | null;
 }
 
 /**
@@ -13,11 +16,8 @@ export interface CandidateCvLink {
  * buộc phải để mở — ai biết `candidate_uuid` là tải được CV, khỏi cần tài
  * khoản. Đi qua `api` thì request mang token, và backend gác được.
  */
-export async function getCandidateCvLink(candidateUuid: string): Promise<string> {
-  const { url } = await api.get<CandidateCvLink>(
-    `/api/v1/candidates/${candidateUuid}/cv`,
-  );
-  return url;
+export async function getCandidateCvLink(candidateUuid: string): Promise<CandidateCvLink> {
+  return api.get<CandidateCvLink>(`/api/v1/candidates/${candidateUuid}/cv`);
 }
 
 /**
@@ -31,7 +31,7 @@ export async function getCandidateCvLink(candidateUuid: string): Promise<string>
 export async function openCandidateCv(candidateUuid: string): Promise<void> {
   const tab = window.open("", "_blank");
   try {
-    const url = await getCandidateCvLink(candidateUuid);
+    const { url } = await getCandidateCvLink(candidateUuid);
     if (tab) {
       tab.location.href = url;
     } else {

@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Literal, Optional, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -32,7 +32,13 @@ from modules.shared.infrastructure.rate_limit import agent_rate_limit
 from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
 from pydantic import BaseModel, Field
 
-from src.backend.app.agents.nodes.interaction import CLIInteractionGateway
+from src.backend.app.agents.candidate_qa import (
+    CandidateAnswer,
+    HistoryTurn,
+    answer_about_candidate,
+    load_candidate_context,
+)
+from src.backend.app.agents.nodes.interaction import HumanInteractionGateway
 from src.backend.app.agents.state import (
     ATSState,
     CandidateSearchState,
@@ -54,14 +60,51 @@ logger = logging.getLogger(__name__)
 class AgentContext(BaseModel):
     current_page: str = Field(default="candidates_dashboard", max_length=100)
     user_id: str = Field(min_length=1, max_length=200)
+    #: Ứng viên đang mở trên màn hình. Có → chế độ hỏi đáp về đúng người đó
+    #: (candidate_qa.py); không → chế độ tìm ứng viên (đồ thị agent).
+    candidate_uuid: Optional[str] = Field(default=None, max_length=100)
+    #: Ngôn ngữ giao diện, để trả lời cùng ngôn ngữ.
+    lang: Literal["en", "vi"] = "en"
 
 
 class AgentChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=12000)
     conversation_id: UUID
     context: AgentContext
-    history: list[str] = Field(default_factory=list, max_length=20)
-    initial_search_criteria: dict[str, object] | None = None
+    #: Lịch sử phiên. Chế độ hỏi đáp ứng viên: các lượt {role, content} gần
+    #: nhất để "the core skills" được hiểu là câu tiếp theo. Chế độ tìm ứng
+    #: viên: chỉ tin TRƯỚC của người dùng khi họ trả lời câu hỏi làm rõ (planner
+    #: chỉ đọc tin cuối nên phải ghép lại).
+    history: list[Union[str, HistoryTurn]] = Field(default_factory=list, max_length=12)
+
+    def user_history(self) -> list[str]:
+        return [h if isinstance(h, str) else h.content for h in self.history
+                if isinstance(h, str) or h.role == "user"]
+
+    def turns(self) -> list[HistoryTurn]:
+        return [h if isinstance(h, HistoryTurn) else HistoryTurn(role="user", content=h) for h in self.history]
+
+
+class ClarificationNeeded(Exception):
+    """Agent cần hỏi lại người dùng trước khi làm tiếp."""
+
+    def __init__(self, question: str) -> None:
+        super().__init__(question)
+        self.question = question
+
+
+class HttpInteractionGateway(HumanInteractionGateway):
+    """Gateway cho HTTP: không chờ được câu trả lời trong cùng một request.
+
+    Gateway CLI cũ gọi `input()` — đọc stdin của SERVER — nên trên production
+    nó ném `EOFError`, câu hỏi làm rõ không bao giờ tới người dùng và chat chỉ
+    thấy "The agent could not complete this request." Ở đây câu hỏi được ném
+    lên để route trả về cho client như một lượt trả lời; người dùng đáp lại
+    bằng request tiếp theo (kèm `history`).
+    """
+
+    async def ask(self, question: str) -> str:
+        raise ClarificationNeeded(question)
 
 
 def _agent_graph(settings: Settings):
@@ -88,7 +131,7 @@ def _agent_graph(settings: Settings):
             fallback=HFProvider(),
         ),
         search_service=search_service,
-        interaction_gateway=CLIInteractionGateway(),
+        interaction_gateway=HttpInteractionGateway(),
     )
 
 
@@ -134,15 +177,78 @@ def _extract_final_decision(value: object):
     return None
 
 
-async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncIterator[str]:
+def _llm_provider():
+    return FallbackLLMProvider(primary=GroqProvider(), fallback=HFProvider())
+
+
+async def _candidate_access(candidate_uuid: str, user: AuthUser | None, settings: Settings) -> bool:
+    """Cùng luật với mọi endpoint hồ sơ: HR tạo tin / tech lead trong hội đồng."""
+    from modules.review.application.review_service import ReviewService
+    from modules.review.infra.impl_supabase import SupabaseReviewRepo
+
+    if user is None:
+        return False
+    client = get_supabase_admin_client(settings)
+    if client is None:
+        return False
+    return await ReviewService(SupabaseReviewRepo(client)).may_access_candidate(
+        candidate_uuid, user.id, user.role
+    )
+
+
+async def _stream_candidate_qa(
+    request: AgentChatRequest, settings: Settings, user: AuthUser | None
+) -> AsyncIterator[str]:
+    """Chế độ hỏi đáp về ứng viên đang mở."""
+    candidate_uuid = request.context.candidate_uuid or ""
+    try:
+        # 404 chứ không 403, cùng lý do với các endpoint hồ sơ khác.
+        if not await _candidate_access(candidate_uuid, user, settings):
+            yield _sse("error", {"message": "Candidate not found."})
+            return
+        yield _sse("status", {"message": "Reading the candidate's profile..."})
+        client = get_supabase_admin_client(settings)
+        role = user.role if user else "tech_lead"
+        context = await asyncio.to_thread(load_candidate_context, client, candidate_uuid, role)
+        yield _sse("status", {"message": "Agent is thinking..."})
+        answer: CandidateAnswer = await asyncio.to_thread(
+            answer_about_candidate,
+            llm=_llm_provider(),
+            context=context,
+            lang=request.context.lang,
+            message=request.message,
+            history=request.turns(),
+        )
+        yield _sse(
+            "done",
+            {
+                "conversation_id": str(request.conversation_id),
+                "mode": "candidate",
+                "result": {"summary": answer.answer, "candidates": [], "suggestions": answer.suggestions},
+            },
+        )
+    except Exception as exc:
+        logger.exception("Candidate Q&A failed", extra={"error_type": type(exc).__name__})
+        yield _sse("error", {"message": _agent_error_message(exc)})
+
+
+async def _stream_agent(
+    request: AgentChatRequest, settings: Settings, user: AuthUser | None = None
+) -> AsyncIterator[str]:
+    if request.context.candidate_uuid:
+        async for chunk in _stream_candidate_qa(request, settings, user):
+            yield chunk
+        return
     try:
         graph = _agent_graph(settings)
+        # Trả lời câu hỏi làm rõ: ghép tin trước với tin này thành một yêu cầu.
+        prior = request.user_history()
+        objective = "\n".join([*prior, request.message]) if prior else request.message
         initial_state = ATSState(
-            messages=[request.message],
-            initial_search_criteria=request.initial_search_criteria,
+            messages=[objective],
             candidate_search=CandidateSearchState(
                 mission=Mission(
-                    objective=request.message,
+                    objective=objective,
                     current_step="Planner Assessment",
                     status=MissionStatus.PENDING,
                 )
@@ -151,10 +257,23 @@ async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncI
 
         yield _sse("status", {"message": "Agent is thinking..."})
         final_state = None
-        async for update in graph.astream(initial_state, stream_mode="updates"):
-            final_state = update
-            for node_name in update:
-                yield _sse("status", {"message": f"Completed {node_name}"})
+        try:
+            async for update in graph.astream(initial_state, stream_mode="updates"):
+                final_state = update
+                for node_name in update:
+                    yield _sse("status", {"message": f"Completed {node_name}"})
+        except ClarificationNeeded as need:
+            # Câu hỏi làm rõ là một LƯỢT TRẢ LỜI, không phải lỗi: client vẽ nó
+            # như tin nhắn của agent và gửi câu trả lời ở request sau.
+            yield _sse(
+                "done",
+                {
+                    "conversation_id": str(request.conversation_id),
+                    "result": {"summary": need.question, "candidates": []},
+                    "clarification": True,
+                },
+            )
+            return
 
         if not final_state:
             raise RuntimeError("Agent completed without a result")
@@ -188,7 +307,7 @@ async def chat_with_agent(
     _limit: Annotated[None, Depends(agent_rate_limit)] = None,
 ) -> StreamingResponse:
     return StreamingResponse(
-        _stream_agent(request, settings),
+        _stream_agent(request, settings, _user),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

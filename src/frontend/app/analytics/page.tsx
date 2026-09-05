@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { AppShell } from "../../components/AppShell";
 import { D } from "../../lib/shared";
 import { getAnalytics } from "../../services/catalogService";
+import { ANALYTICS_QUERY, fetchQuery } from "../../lib/queryCache";
+import { useT } from "../../lib/i18n";
 import {
   BarChart3,
   TrendingUp,
@@ -49,6 +51,7 @@ interface SkillStat {
 
 export default function AnalyticsPage() {
   const router = useRouter();
+  const t = useT();
   const [selectedJob, setSelectedJob] = useState<string>("ALL");
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>("30d");
   const [activeTab, setActiveTab] = useState<"pipeline" | "ai" | "sourcing">("pipeline");
@@ -61,7 +64,8 @@ export default function AnalyticsPage() {
   const [totalApplications, setTotalApplications] = useState<number>(0);
   const [avgMatchScore, setAvgMatchScore] = useState<number>(84.2);
   const [avgTimeToHire, setAvgTimeToHire] = useState<number>(12.5);
-  const [channelStats, setChannelStats] = useState<{ label: string; count: number; pct: number }[]>([]);
+  /** `labelKey` chỉ có ở ba kênh mẫu khi chưa có dữ liệu — dịch lúc render; `label` thật đến từ referral_source. */
+  const [channelStats, setChannelStats] = useState<{ label: string; labelKey?: string; count: number; pct: number }[]>([]);
   const [skillStats, setSkillStats] = useState<SkillStat[]>([]);
 
   useEffect(() => {
@@ -74,7 +78,7 @@ export default function AnalyticsPage() {
         // Đáng chú ý: bản cũ kéo về full_name, email, github_username,
         // linkedin_url của MỌI ứng viên chỉ để hiện ra vài con số tổng. Danh
         // tính không cần rời khỏi máy chủ để đếm; endpoint mới trả về số đếm.
-        const analytics = await getAnalytics();
+        const analytics = await fetchQuery(ANALYTICS_QUERY, getAnalytics);
         const jobData = analytics.jobs as any[];
         const appData = analytics.applications as any[];
 
@@ -174,9 +178,9 @@ export default function AnalyticsPage() {
         }));
 
         setChannelStats(mappedChannels.length > 0 ? mappedChannels : [
-          { label: "Public Career Portal", count: 95, pct: 64 },
-          { label: "Direct HR PDF Upload", count: 36, pct: 24 },
-          { label: "Referral & Public Share Links", count: 17, pct: 12 },
+          { label: "Public Career Portal", labelKey: "analytics.channel.portal", count: 95, pct: 64 },
+          { label: "Direct HR PDF Upload", labelKey: "analytics.channel.upload", count: 36, pct: 24 },
+          { label: "Referral & Public Share Links", labelKey: "analytics.channel.referral", count: 17, pct: 12 },
         ]);
 
       } catch (err) {
@@ -209,11 +213,11 @@ export default function AnalyticsPage() {
                   <BarChart3 className="w-4 h-4 text-primary" />
                 </div>
                 <h1 className="text-xl font-bold text-foreground tracking-tight">
-                  Recruitment & AI Intelligence Analytics
+                  {t("analytics.title")}
                 </h1>
               </div>
               <p className="text-xs text-muted-foreground ml-10">
-                Real-time database insights on applicant pipeline, AI matching scores, and skill gap matrix.
+                {t("analytics.subtitle")}
               </p>
             </div>
 
@@ -226,7 +230,7 @@ export default function AnalyticsPage() {
                   onChange={(e) => setSelectedJob(e.target.value)}
                   className="h-9 text-xs border border-border bg-white rounded-lg px-3 pr-8 font-medium text-foreground outline-none cursor-pointer hover:border-border/80 transition-all appearance-none"
                 >
-                  <option value="ALL">All Positions ({jobs.length} Active Jobs)</option>
+                  <option value="ALL">{t("analytics.allPositions", { n: jobs.length })}</option>
                   {jobs.map(j => (
                     <option key={j.id} value={j.id}>{j.title}</option>
                   ))}
@@ -241,10 +245,10 @@ export default function AnalyticsPage() {
                   onChange={(e) => setSelectedTimeRange(e.target.value)}
                   className="h-9 text-xs border border-border bg-white rounded-lg px-3 pr-8 font-medium text-foreground outline-none cursor-pointer hover:border-border/80 transition-all appearance-none"
                 >
-                  <option value="7d">Last 7 Days</option>
-                  <option value="30d">Last 30 Days</option>
-                  <option value="quarter">Quarter to Date</option>
-                  <option value="all">All Time</option>
+                  <option value="7d">{t("analytics.range.7d")}</option>
+                  <option value="30d">{t("analytics.range.30d")}</option>
+                  <option value="quarter">{t("analytics.range.quarter")}</option>
+                  <option value="all">{t("analytics.range.all")}</option>
                 </select>
                 <ChevronDown className="w-3.5 h-3.5 text-muted-foreground absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
@@ -256,7 +260,7 @@ export default function AnalyticsPage() {
                 className="h-9 px-3.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm shadow-primary/20"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Report</span>
+                <span>{t("analytics.exportReport")}</span>
               </button>
             </div>
           </div>
@@ -265,7 +269,7 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-border p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total Candidates</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("analytics.kpi.totalCandidates")}</span>
                 <Users className="w-4 h-4 text-blue-600" />
               </div>
               <div className="flex items-baseline gap-2">
@@ -275,33 +279,33 @@ export default function AnalyticsPage() {
 
             <div className="bg-white rounded-xl border border-border p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Avg AI Match</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("analytics.kpi.avgMatch")}</span>
                 <Sparkles className="w-4 h-4 text-purple-600" />
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-xl font-bold text-foreground">{avgMatchScore}%</span>
-                <span className="text-xs font-semibold text-emerald-600">+3.2% High</span>
+                <span className="text-xs font-semibold text-emerald-600">{t("analytics.kpi.avgMatchDelta")}</span>
               </div>
             </div>
 
             <div className="bg-white rounded-xl border border-border p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Time-to-Hire</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("analytics.kpi.timeToHire")}</span>
                 <Clock className="w-4 h-4 text-amber-600" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-bold text-foreground">{avgTimeToHire} Days</span>
-                <span className="text-xs font-semibold text-emerald-600">-2.4d Speed</span>
+                <span className="text-xl font-bold text-foreground">{t("analytics.kpi.days", { n: avgTimeToHire })}</span>
+                <span className="text-xs font-semibold text-emerald-600">{t("analytics.kpi.timeToHireDelta")}</span>
               </div>
             </div>
 
             <div className="bg-white rounded-xl border border-border p-4 shadow-sm">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Active Job Postings</span>
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t("analytics.kpi.activeJobs")}</span>
                 <Briefcase className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-bold text-foreground">{jobs.length} Positions</span>
+                <span className="text-xl font-bold text-foreground">{t("analytics.kpi.positions", { n: jobs.length })}</span>
               </div>
             </div>
           </div>
@@ -318,7 +322,7 @@ export default function AnalyticsPage() {
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>1. Pipeline & Job Performance</span>
+              <span>{t("analytics.tab.pipeline")}</span>
             </button>
 
             <button
@@ -331,7 +335,7 @@ export default function AnalyticsPage() {
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>2. AI Match & Skill Matrix</span>
+              <span>{t("analytics.tab.ai")}</span>
             </button>
 
             <button
@@ -344,7 +348,7 @@ export default function AnalyticsPage() {
               }`}
             >
               <Globe className="w-3.5 h-3.5" />
-              <span>3. Sourcing & Operations</span>
+              <span>{t("analytics.tab.sourcing")}</span>
             </button>
           </div>
 
@@ -357,14 +361,14 @@ export default function AnalyticsPage() {
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                      Recruitment Pipeline Velocity
+                      {t("analytics.funnel.title")}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Tracking candidate progression from initial application to offer acceptance
+                      {t("analytics.funnel.subtitle")}
                     </p>
                   </div>
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    94.2% Funnel Efficiency
+                    {t("analytics.funnel.efficiency")}
                   </span>
                 </div>
 
@@ -378,11 +382,11 @@ export default function AnalyticsPage() {
                     const interviewScheduled = Math.round(total * 0.12);
 
                     const stages = [
-                      { stage: "1. Applications Received", count: total, fraction: `${total}/${total}`, pct: 100, color: D.blue, days: "0d", note: "Total Ingested" },
-                      { stage: "2. AI Analyzed", count: analyzed, fraction: `${analyzed}/${total}`, pct: Math.round((analyzed / total) * 100), color: "#10b981", days: "0.2d", note: `${unanalyzed}/${total} Unanalyzed` },
-                      { stage: "3. Passed AI Match (>75%)", count: passedMatch, fraction: `${passedMatch}/${total}`, pct: Math.round((passedMatch / total) * 100), color: "#8b5cf6", days: "1.5d", note: "Top Tier Candidates" },
-                      { stage: "4. CV Reviewed & Approved", count: cvApproved, fraction: `${cvApproved}/${total}`, pct: Math.round((cvApproved / total) * 100), color: "#ec4899", days: "3.2d", note: "Recruiter Approved" },
-                      { stage: "5. Interview Scheduled", count: interviewScheduled, fraction: `${interviewScheduled}/${total}`, pct: Math.round((interviewScheduled / total) * 100), color: "#f59e0b", days: "5.8d", note: "Scheduled in Calendar" },
+                      { stage: t("analytics.stage.received"), count: total, fraction: `${total}/${total}`, pct: 100, color: D.blue, days: "0d", note: t("analytics.stage.receivedNote") },
+                      { stage: t("analytics.stage.analyzed"), count: analyzed, fraction: `${analyzed}/${total}`, pct: Math.round((analyzed / total) * 100), color: "#10b981", days: "0.2d", note: t("analytics.stage.analyzedNote", { unanalyzed, total }) },
+                      { stage: t("analytics.stage.passed"), count: passedMatch, fraction: `${passedMatch}/${total}`, pct: Math.round((passedMatch / total) * 100), color: "#8b5cf6", days: "1.5d", note: t("analytics.stage.passedNote") },
+                      { stage: t("analytics.stage.cvApproved"), count: cvApproved, fraction: `${cvApproved}/${total}`, pct: Math.round((cvApproved / total) * 100), color: "#ec4899", days: "3.2d", note: t("analytics.stage.cvApprovedNote") },
+                      { stage: t("analytics.stage.interview"), count: interviewScheduled, fraction: `${interviewScheduled}/${total}`, pct: Math.round((interviewScheduled / total) * 100), color: "#f59e0b", days: "5.8d", note: t("analytics.stage.interviewNote") },
                     ];
 
                     return stages.map((item, idx) => (
@@ -395,9 +399,9 @@ export default function AnalyticsPage() {
                             </span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <span className="text-muted-foreground font-mono text-[11px]">{item.days} avg</span>
+                            <span className="text-muted-foreground font-mono text-[11px]">{t("analytics.funnel.avg", { days: item.days })}</span>
                             <span className="font-mono font-bold text-primary text-xs bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                              {item.fraction} Candidates
+                              {t("analytics.funnel.candidates", { fraction: item.fraction })}
                             </span>
                             <span className="text-[11px] font-bold text-muted-foreground w-10 text-right">{item.pct}%</span>
                           </div>
@@ -415,14 +419,14 @@ export default function AnalyticsPage() {
               <div className="bg-white rounded-xl border border-border p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                    Job Posting Performance (Supabase Live Data)
+                    {t("analytics.jobs.title")}
                   </h2>
                   <button
                     type="button"
                     onClick={() => router.push('/job-postings/create')}
                     className="text-xs text-primary font-semibold hover:underline flex items-center gap-1"
                   >
-                    <span>Create New Position</span>
+                    <span>{t("analytics.jobs.create")}</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -431,11 +435,11 @@ export default function AnalyticsPage() {
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-border bg-[#fafafa]">
-                        <th className="py-2.5 px-3 font-semibold text-muted-foreground">Job Position Title</th>
-                        <th className="py-2.5 px-3 font-semibold text-muted-foreground">Department</th>
-                        <th className="py-2.5 px-3 font-semibold text-muted-foreground text-center">Applications Received</th>
-                        <th className="py-2.5 px-3 font-semibold text-muted-foreground text-center">Avg AI Match</th>
-                        <th className="py-2.5 px-3 font-semibold text-muted-foreground text-right">Status</th>
+                        <th className="py-2.5 px-3 font-semibold text-muted-foreground">{t("analytics.jobs.col.title")}</th>
+                        <th className="py-2.5 px-3 font-semibold text-muted-foreground">{t("analytics.jobs.col.department")}</th>
+                        <th className="py-2.5 px-3 font-semibold text-muted-foreground text-center">{t("analytics.jobs.col.applications")}</th>
+                        <th className="py-2.5 px-3 font-semibold text-muted-foreground text-center">{t("analytics.jobs.col.avgMatch")}</th>
+                        <th className="py-2.5 px-3 font-semibold text-muted-foreground text-right">{t("analytics.jobs.col.status")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -452,7 +456,8 @@ export default function AnalyticsPage() {
                             </td>
                             <td className="py-3 px-3 text-right">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${job.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
-                                {job.status}
+                                {/* Chỉ dịch ba trạng thái có key; giá trị lạ hiện nguyên thay vì lộ "status.XYZ". */}
+                                {["PUBLISHED", "DRAFT", "CLOSED"].includes(job.status) ? t(`status.${job.status}`) : job.status}
                               </span>
                             </td>
                           </tr>
@@ -460,7 +465,7 @@ export default function AnalyticsPage() {
                       ) : (
                         <tr>
                           <td colSpan={5} className="py-6 text-center text-muted-foreground">
-                            No job postings found.
+                            {t("analytics.jobs.empty")}
                           </td>
                         </tr>
                       )}
@@ -480,7 +485,7 @@ export default function AnalyticsPage() {
                 <div className="bg-white rounded-xl border border-border p-6 shadow-sm">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                      AI Candidate Score Breakdown
+                      {t("analytics.score.title")}
                     </h2>
                     <Sparkles className="w-4 h-4 text-purple-600" />
                   </div>
@@ -494,10 +499,10 @@ export default function AnalyticsPage() {
                       const lowCount = Math.max(0, total - topCount - strongCount - modCount);
 
                       const scoreItems = [
-                        { label: "Top Match (85 - 100%)", count: topCount, color: "#10b981" },
-                        { label: "Strong Match (70 - 84%)", count: strongCount, color: D.blue },
-                        { label: "Moderate Match (50 - 69%)", count: modCount, color: "#f59e0b" },
-                        { label: "Low Match (< 50%)", count: lowCount, color: "#ef4444" },
+                        { label: t("analytics.score.top"), count: topCount, color: "#10b981" },
+                        { label: t("analytics.score.strong"), count: strongCount, color: D.blue },
+                        { label: t("analytics.score.moderate"), count: modCount, color: "#f59e0b" },
+                        { label: t("analytics.score.low"), count: lowCount, color: "#ef4444" },
                       ];
 
                       return scoreItems.map((item, idx) => {
@@ -508,7 +513,7 @@ export default function AnalyticsPage() {
                             <div className="flex items-center justify-between text-xs">
                               <span className="font-semibold text-foreground">{item.label}</span>
                               <span className="font-mono text-xs font-bold text-foreground">
-                                {item.count}/{total} Candidates ({pct.toFixed(0)}%)
+                                {t("analytics.score.count", { count: item.count, total, pct: pct.toFixed(0) })}
                               </span>
                             </div>
                             <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
@@ -528,20 +533,20 @@ export default function AnalyticsPage() {
                 <div className="bg-white rounded-xl border border-border p-6 shadow-sm flex flex-col justify-between">
                   <div>
                     <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-2">
-                      Recruiter AI Acceptance Rate
+                      {t("analytics.acceptance.title")}
                     </h2>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Measures how frequently recruiters and tech leads approve and interview candidates recommended as Top Matches by the AI engine.
+                      {t("analytics.acceptance.desc")}
                     </p>
                   </div>
 
                   <div className="my-6 text-center">
                     <span className="text-4xl font-extrabold text-primary">87.5%</span>
-                    <p className="text-xs font-semibold text-emerald-600 mt-1">High Recruiter Trust & Alignment</p>
+                    <p className="text-xs font-semibold text-emerald-600 mt-1">{t("analytics.acceptance.trust")}</p>
                   </div>
 
                   <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-900">
-                    💡 AI recommendations reduce screening time by an average of 4.5 hours per job posting.
+                    {t("analytics.acceptance.tip")}
                   </div>
                 </div>
               </div>
@@ -551,14 +556,14 @@ export default function AnalyticsPage() {
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                      Skill Supply vs. Demand Matrix (Supabase Extraction)
+                      {t("analytics.skills.title")}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Extracted from required skills in jobs_posting vs candidate profile skill ratings
+                      {t("analytics.skills.subtitle")}
                     </p>
                   </div>
                   <span className="px-3 py-1 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold">
-                    Skill Gap Detected
+                    {t("analytics.skills.gapDetected")}
                   </span>
                 </div>
 
@@ -566,10 +571,10 @@ export default function AnalyticsPage() {
                   {skillStats.map((s, idx) => {
                     const gap = s.demandPct - s.supplyPct;
                     const statusText = gap > 5 
-                      ? `Shortage (-${gap}%)` 
+                      ? t("analytics.skills.shortage", { gap }) 
                       : gap < -5 
-                      ? `Surplus (+${Math.abs(gap)}%)` 
-                      : "Balanced";
+                      ? t("analytics.skills.surplus", { gap: Math.abs(gap) }) 
+                      : t("analytics.skills.balanced");
                     const statusBg = gap > 5 
                       ? "bg-amber-100 text-amber-900 border-amber-300" 
                       : gap < -5 
@@ -587,9 +592,9 @@ export default function AnalyticsPage() {
 
                         <div className="flex flex-col gap-1.5">
                           <div className="flex justify-between text-[11px]">
-                            <span className="text-muted-foreground">Job Demand:</span>
+                            <span className="text-muted-foreground">{t("analytics.skills.demand")}</span>
                             <span className="font-semibold text-foreground">
-                              {s.jobsWithSkill}/{s.totalJobs} Jobs ({s.demandPct}%)
+                              {t("analytics.skills.demandCount", { n: s.jobsWithSkill, total: s.totalJobs, pct: s.demandPct })}
                             </span>
                           </div>
                           <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
@@ -597,9 +602,9 @@ export default function AnalyticsPage() {
                           </div>
 
                           <div className="flex justify-between text-[11px] mt-1">
-                            <span className="text-muted-foreground">Candidate Supply:</span>
+                            <span className="text-muted-foreground">{t("analytics.skills.supply")}</span>
                             <span className="font-semibold text-foreground">
-                              {s.candidatesWithSkill}/{s.totalCandidates} Candidates ({s.supplyPct}%)
+                              {t("analytics.skills.supplyCount", { n: s.candidatesWithSkill, total: s.totalCandidates, pct: s.supplyPct })}
                             </span>
                           </div>
                           <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
@@ -623,7 +628,7 @@ export default function AnalyticsPage() {
               <div className="lg:col-span-7 bg-white rounded-xl border border-border p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
-                    Candidate Sourcing Channels (Supabase Live)
+                    {t("analytics.channels.title")}
                   </h2>
                   <Globe className="w-4 h-4 text-blue-600" />
                 </div>
@@ -635,9 +640,9 @@ export default function AnalyticsPage() {
                     return (
                       <div key={idx} className="p-4 rounded-lg border border-border bg-[#fafafa] flex flex-col gap-2">
                         <div className="flex items-center justify-between text-xs font-semibold text-foreground">
-                          <span>{ch.label}</span>
+                          <span>{ch.labelKey ? t(ch.labelKey) : ch.label}</span>
                           <span className="font-mono text-xs text-primary font-bold">
-                            {ch.count}/{total} Candidates ({pct.toFixed(0)}%)
+                            {t("analytics.channels.count", { count: ch.count, total, pct: pct.toFixed(0) })}
                           </span>
                         </div>
                         <div className="h-2.5 w-full bg-slate-200 rounded-full overflow-hidden">
@@ -653,31 +658,31 @@ export default function AnalyticsPage() {
               <div className="lg:col-span-5 bg-white rounded-xl border border-border p-6 shadow-sm flex flex-col justify-between">
                 <div>
                   <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-2">
-                    AI Ingestion & Parsing Metrics
+                    {t("analytics.ingestion.title")}
                   </h2>
                   <p className="text-xs text-muted-foreground leading-relaxed mb-4">
-                    PDF parsing performance, text extraction, and automated metadata enrichment stats.
+                    {t("analytics.ingestion.desc")}
                   </p>
 
                   <div className="flex flex-col gap-3">
                     <div className="p-3 rounded-lg border border-border bg-[#fafafa] flex items-center justify-between">
-                      <span className="text-xs font-medium text-foreground">Parser Extraction Accuracy</span>
+                      <span className="text-xs font-medium text-foreground">{t("analytics.ingestion.accuracy")}</span>
                       <span className="text-xs font-bold text-emerald-600">98.6%</span>
                     </div>
                     <div className="p-3 rounded-lg border border-border bg-[#fafafa] flex items-center justify-between">
-                      <span className="text-xs font-medium text-foreground">Average Parse Time / CV</span>
-                      <span className="text-xs font-bold text-indigo-600">1.15 Seconds</span>
+                      <span className="text-xs font-medium text-foreground">{t("analytics.ingestion.parseTime")}</span>
+                      <span className="text-xs font-bold text-indigo-600">{t("analytics.ingestion.seconds")}</span>
                     </div>
                     <div className="p-3 rounded-lg border border-border bg-[#fafafa] flex items-center justify-between">
-                      <span className="text-xs font-medium text-foreground">Parsing Errors / Failures</span>
-                      <span className="text-xs font-bold text-slate-600">0 Errors</span>
+                      <span className="text-xs font-medium text-foreground">{t("analytics.ingestion.errors")}</span>
+                      <span className="text-xs font-bold text-slate-600">{t("analytics.ingestion.errorCount")}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-6 p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>All CV Ingestion Pipelines operating at optimal performance.</span>
+                  <span>{t("analytics.ingestion.healthy")}</span>
                 </div>
               </div>
 

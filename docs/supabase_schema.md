@@ -14,6 +14,10 @@ CREATE TABLE public.users (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   password_hash character varying,
   is_approved boolean NOT NULL DEFAULT false,
+  -- V009: công ty của người dùng nội bộ, khai lúc đăng ký / onboarding.
+  -- NULL = chưa hoàn tất hồ sơ (frontend đưa tới /onboarding/company).
+  company_name character varying,
+  company_website character varying,
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.candidates (

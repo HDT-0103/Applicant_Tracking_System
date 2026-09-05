@@ -2,9 +2,14 @@
 
 import React, { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "../contexts/AuthContext";
+import {
+  COMPANY_ONBOARDING_PATH,
+  needsCompanyOnboarding,
+  useAuth,
+} from "../contexts/AuthContext";
 import { ADMIN_HOME, isAdminAllowedPath, landingPathForRole } from "../lib/rbac";
 import { isAuthRoute, isPublicRoute } from "../lib/routes";
+import { useT } from "../lib/i18n";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -12,6 +17,7 @@ interface AuthGuardProps {
 
 export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   const { isAuthenticated, isLoading, user } = useAuth();
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -27,6 +33,14 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     !publicRoute &&
     !isAdminAllowedPath(pathname);
 
+  // Chưa khai công ty thì chưa vào workspace. Người đăng nhập Google lần đầu
+  // không có chỗ nào khác để được hỏi — Google chỉ trả tên và email.
+  const onboardingPending =
+    isAuthenticated &&
+    needsCompanyOnboarding(user) &&
+    !publicRoute &&
+    pathname !== COMPANY_ONBOARDING_PATH;
+
   useEffect(() => {
     if (isLoading) return;
 
@@ -38,12 +52,19 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     // Only the sign-in screens bounce a logged-in user away — an HR previewing
     // the public career page should stay on it.
     if (isAuthenticated && authRoute) {
-      router.replace(landingPathForRole(user?.role));
+      router.replace(
+        needsCompanyOnboarding(user) ? COMPANY_ONBOARDING_PATH : landingPathForRole(user?.role),
+      );
       return;
     }
 
     if (adminOutsidePanel) {
       router.replace(ADMIN_HOME);
+      return;
+    }
+
+    if (onboardingPending) {
+      router.replace(COMPANY_ONBOARDING_PATH);
     }
   }, [
     isAuthenticated,
@@ -51,6 +72,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     publicRoute,
     authRoute,
     adminOutsidePanel,
+    onboardingPending,
     router,
     user,
   ]);
@@ -59,7 +81,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Loading session&hellip;</p>
+        <p>{t("guard.loadingSession")}</p>
       </div>
     );
   }
@@ -68,7 +90,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to login&hellip;</p>
+        <p>{t("guard.redirectLogin")}</p>
       </div>
     );
   }
@@ -77,7 +99,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to workspace&hellip;</p>
+        <p>{t("guard.redirectWorkspace")}</p>
       </div>
     );
   }
@@ -86,7 +108,16 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     return (
       <div className="auth-loading">
         <div className="auth-loading-spinner" aria-hidden="true" />
-        <p>Redirecting to Admin Panel&hellip;</p>
+        <p>{t("guard.redirectAdmin")}</p>
+      </div>
+    );
+  }
+
+  if (onboardingPending) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-spinner" aria-hidden="true" />
+        <p>{t("guard.completingProfile")}</p>
       </div>
     );
   }

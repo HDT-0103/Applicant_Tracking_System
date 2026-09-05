@@ -73,12 +73,19 @@ def _build_job_texts(job: dict) -> dict[str, str]:
 
 
 async def ensure_job_embeddings(
-    job_id: str, settings: Settings, force: bool = False
+    job_id: str,
+    settings: Settings,
+    force: bool = False,
+    owner_id: Optional[str] = None,
 ) -> JobEmbeddingResult:
     """
     Embed a job posting if its embeddings are missing or stale
     (jobs_posting.updated_at newer than the stored vectors). `force` always
     re-embeds — use after editing the JD or switching models.
+
+    `owner_id`, when given, restricts the call to postings created by that
+    user: a posting owned by someone else is reported as not found, the same
+    way the catalog routes treat it. `None` skips the check (admin scripts).
     """
     client = get_supabase_client(settings, use_admin=True)
     if client is None:
@@ -89,7 +96,8 @@ async def ensure_job_embeddings(
     job_response = (
         client.table("jobs_posting")
         .select(
-            "id,job_title,department,description,requirements,key_responsibilities,updated_at"
+            "id,job_title,department,description,requirements,key_responsibilities,"
+            "updated_at,created_by"
         )
         .eq("id", job_id)
         .limit(1)
@@ -99,6 +107,10 @@ async def ensure_job_embeddings(
     if not rows:
         raise JobNotFoundError(job_id)
     job = rows[0]
+    if owner_id is not None and job.get("created_by") != owner_id:
+        # Không phân biệt "không có" với "của người khác": 404 cho cả hai, nếu
+        # không thì mã trạng thái tự nó là công cụ dò id tin của người khác.
+        raise JobNotFoundError(job_id)
 
     texts = _build_job_texts(job)
     if not texts:

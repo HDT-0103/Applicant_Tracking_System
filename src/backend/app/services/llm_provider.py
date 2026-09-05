@@ -173,8 +173,10 @@ class HFProvider(LLMProvider):
     ):
         self._api_key = api_key or os.getenv("HF_API_KEY")
         self._client: OpenAI | None = None
+        # Qwen2.5-7B trên router bị chuyển sang provider Together đòi endpoint
+        # riêng (400 "non-serverless model"). 72B được phục vụ serverless.
         self.model = model or os.getenv(
-            "HF_MODEL", "Qwen/Qwen2.5-7B-Instruct"
+            "HF_MODEL", "Qwen/Qwen2.5-72B-Instruct"
         )
 
     @property
@@ -240,7 +242,14 @@ def _is_groq_rate_limit(error: Exception) -> bool:
 
 
 class FallbackLLMProvider(LLMProvider):
-    """Use the fallback provider only for an upstream Groq rate limit."""
+    """Gọi provider chính; hỏng vì BẤT KỲ lý do nào thì sang provider dự phòng.
+
+    Trước đây chỉ rate limit (429) mới sang dự phòng. Key Groq hết hạn (401)
+    hay model bị gỡ (400) thì lỗi rơi thẳng ra chatbot dưới dạng "AI service
+    is not configured" — trong khi Hugging Face đã cấu hình sẵn và chạy được.
+    Lý do hỏng của provider chính được ghi log; chỉ khi dự phòng cũng hỏng
+    mới ném lỗi (của dự phòng, kèm lỗi chính trong chuỗi `from`).
+    """
 
     def __init__(self, primary: LLMProvider, fallback: LLMProvider):
         self.primary = primary
@@ -261,14 +270,23 @@ class FallbackLLMProvider(LLMProvider):
                 temperature=temperature,
             )
         except Exception as error:
-            if not _is_groq_rate_limit(error):
-                raise
+            reason = "rate limit" if _is_groq_rate_limit(error) else f"{type(error).__name__}: {str(error)[:200]}"
             logger.warning(
-                "Groq Rate Limit exceeded. Switching to Hugging Face Provider (Qwen 7B)..."
+                "Primary LLM provider failed (%s). Switching to fallback provider %s.",
+                reason,
+                getattr(self.fallback, "model", type(self.fallback).__name__),
             )
-            return self.fallback.invoke(
-                system_prompt=system_prompt,
-                user_input=user_input,
-                response_model=response_model,
-                temperature=temperature,
-            )
+            try:
+                return self.fallback.invoke(
+                    system_prompt=system_prompt,
+                    user_input=user_input,
+                    response_model=response_model,
+                    temperature=temperature,
+                )
+            except Exception as fallback_error:
+                logger.error(
+                    "Fallback LLM provider failed too: %s: %s",
+                    type(fallback_error).__name__,
+                    str(fallback_error)[:200],
+                )
+                raise fallback_error from error

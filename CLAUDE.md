@@ -96,9 +96,13 @@ dưới). `search` là adapter nối Flow B từ cây `app/`.
 
 - Đặt tên field lệch từ vựng của whitelist là **bị che nhầm** — và default-deny
   che theo KIỂU: số → `0`, list → `[]`, chuỗi → `"***"`.
-- Từ vựng chuẩn: `candidate_uuid` (KHÔNG phải `candidate_id`), `title` (không
-  phải `job_title`), `company`, `skills_matrix`.
+- Từ vựng chuẩn: `candidate_uuid` (KHÔNG phải `candidate_id`), `company`,
+  `skills_matrix`, `applied_job_title` (tin ứng viên nộp vào).
 - Đã hai lần phải đổi tên field trong response chỉ để nó đi qua được ABAC.
+- `title` trong whitelist là **chức danh trong lịch sử làm việc** của ứng viên.
+  `CandidateCard` từng mượn tên đó cho tên tin tuyển dụng để lọt ABAC, và
+  frontend vẽ nó ngay dưới tên ứng viên — tech lead đọc thành vị trí hiện tại
+  của người đó. Nay là `applied_job_title`, whitelist riêng.
 
 Thêm field vào whitelist là quyết định bảo mật, không phải sửa lỗi kỹ thuật —
 ghi lý do vào comment.
@@ -150,6 +154,75 @@ sơ nhận **404**, và không có thông báo nào giải thích.
 Ngưỡng 80% nằm ở **một chỗ duy nhất**: `modules/review/domain/policy.py`.
 Backend tính sẵn `required_tl_approvals` và `panel_rule` rồi trả về trong
 `ReviewStatus` — **frontend hiển thị con số nhận được, không tự nhân 0.8**.
+
+### Phạm vi dữ liệu theo người dùng
+
+Luật ai-thấy-tin-nào nằm ở **một chỗ**:
+`modules/shared/domain/job_visibility.py`. `hr` thấy tin **mình tạo**
+(`jobs_posting.created_by`), `tech_lead` thấy tin mình **được mời chấm**
+(`job_posting_reviewers`), ứng viên đi theo tin. Catalog, review, search,
+scheduling, scoring, link CV đều hỏi qua đó; tin ngoài phạm vi trả **404**.
+
+- Trước đây `hr` là "không giới hạn": tài khoản vừa đăng ký thấy toàn bộ dữ
+  liệu của mọi người. `created_by` được ghi từ lâu nhưng chưa từng được đọc.
+- `created_by` **nullable**. Tin tạo trước khi có luật này có `NULL` và biến
+  mất khỏi màn hình mọi HR (chỉ admin còn thấy). Gán chủ bằng SQL trước khi
+  demo — xem `docs/DEPLOY.md` mục 2.
+- Smoke test ký token `hr` bằng **id chủ tin** và `tech_lead` bằng id một thành
+  viên hội đồng (`pick_identities`); id giả thì mọi phép kiểm theo phạm vi thấy
+  dữ liệu rỗng và trông y hệt hệ thống hỏng.
+- Test giả repo: fake phải trả lời 4 câu `job_postings_created_by`,
+  `job_postings_for_reviewer`, `job_posting_of_candidate`,
+  `candidates_on_job_postings`; `is_panel_member` / `filter_accessible` không
+  còn.
+
+### Nhãn ứng viên cho tech lead
+
+`src/frontend/lib/candidateLabel.ts` là **một** cách gọi tên cho mọi màn hình:
+tên thật nếu chưa bị che, ngược lại `Candidate #<8 ký tự uuid>`. ABAC trả
+`"***"` là chuỗi truthy nên `full_name || "Unknown"` không bao giờ rơi vào
+fallback — dashboard từng hiện `***` cho mọi hồ sơ. Đừng tự ghép nhãn ở
+component.
+
+### Màu là biến CSS, có chế độ tối — đừng nối alpha vào token
+
+`D` trong `src/frontend/lib/tokens.ts` là `var(--x)` trỏ vào
+`app/globals.css`: bảng sáng ở `:root`, bảng tối ở `[data-theme="dark"]`.
+`contexts/ThemeContext.tsx` đặt `data-theme` lên `<html>` theo lựa chọn lưu
+trong localStorage (`smartats_theme`); trang công khai (login, register,
+careers) **luôn sáng**.
+
+- **`${D.blue}28` là chuỗi CSS vô nghĩa** (`var(--primary)28`), trình duyệt
+  bỏ qua và màu biến mất không báo lỗi. Dùng `tint("blue", "28")` — nó dựng
+  `rgb(var(--primary-rgb) / a)`. Prop màu không biết trước thì dùng
+  `color-mix(in srgb, ${color} 10%, transparent)`.
+- Thêm biến màu mới thì phải khai ở **cả hai** khối; `tokens.test.ts` bắt
+  thiếu một bên.
+- Trang viết bằng class Tailwind cứng (`bg-white`, `bg-[#f4f5f7]`,
+  `bg-emerald-50`…) được ánh xạ về biến ở cuối `globals.css` khi tối. Dùng
+  class mới thì thêm vào đó, hoặc dùng `bg-card` / `bg-muted`.
+- Hex cứng trong inline style (`#fff` cho chữ trên nền chàm) chỉ ổn khi nó là
+  màu chữ trên màu chính; `background: "#fff"` sẽ loé trắng trong chế độ tối.
+
+### Mỗi truy vấn Supabase từ Azure mất ~160 ms — đừng hỏi theo từng dòng
+
+Azure ở Singapore, Supabase ở xa; `/health` 61 ms nhưng mỗi vòng khứ hồi
+PostgREST ~160 ms. Mọi màn hình chậm đều là "số truy vấn nối tiếp × 160 ms".
+
+- `review/batch` từng hỏi sĩ số hội đồng theo TỪNG ứng viên (2 truy vấn/người,
+  nối tiếp): 20 hồ sơ ≈ 7 giây. Nay `applications_for_candidates` +
+  `count_panels` gộp cả lô, cố định 4 truy vấn. Test
+  `test_the_batch_asks_the_database_once_per_table_not_once_per_candidate`
+  canh việc này. Thêm endpoint đọc nhiều hồ sơ thì viết theo kiểu lô ngay.
+- Sidebar dùng `applications(count)` nhúng của PostgREST: một truy vấn thay
+  cho hai (đã kiểm chạy được trên Supabase thật).
+- Frontend: `lib/queryCache.ts` (hiện cũ trước, làm mới ngầm). Sidebar,
+  dashboard, analytics, ⌘K, danh sách ứng viên ở lịch đều đi qua nó. Thao tác
+  ghi phải `setQueryData` / `invalidateQueries(JOB_POSTINGS_QUERY)`; đăng xuất
+  gọi `clearQueryCache()`.
+- Supabase ở **Seoul**; backend đã dời sang Azure **Korea Central** (2026-09-05)
+  để cùng vùng. Azure for Students chỉ cho 1 Container App Environment, nên
+  đổi vùng = xoá rồi tạo lại (xem `docs/DEPLOY.md` mục 3).
 
 ### Cấu hình frontend nằm ở `src/frontend`, không phải gốc repo
 
@@ -234,6 +307,10 @@ chọn.
 | Chỉ có 1 tech lead | Ngưỡng 80% thành 1/1, không minh hoạ được cơ chế hội đồng |
 | `RECRUITER_EMAIL_DOMAINS` rỗng | Đăng nhập Google **chỉ chạy cho `ADMIN_EMAILS`** |
 | Đăng ký công khai tự chọn `hr` hoặc `tech_lead` | Giữ theo quyết định của chủ dự án. `admin` KHÔNG tự cấp được — `RegisterRequest.role` là Literal hai giá trị, và service kiểm lại lần nữa |
+| **V009 phải chạy trên Supabase trước khi deploy** | `src/backend/migrations/V009__user_company.sql` thêm `users.company_name/company_website`. Thiếu cột: đăng ký 500, `/api/auth/me` 500. Đăng ký bắt buộc công ty; đăng nhập Google lần đầu tự tạo tài khoản `hr` rồi bắt điền ở `/onboarding/company` |
+| Tin có sẵn `created_by = NULL` | Sau khi tách dữ liệu theo người dùng, tin đó không HR nào thấy. Gán chủ bằng SQL trong `docs/DEPLOY.md` mục 2 |
+| Settings `/settings`, menu tài khoản, ⌘K, chế độ tối, EN/VI | `PATCH /api/auth/me` sửa tên/công ty/website; `POST /api/auth/change-password` chỉ cho tài khoản có mật khẩu (`AuthUser.has_password`). Tuỳ chọn thông báo **chưa làm** theo quyết định của chủ dự án |
+| Chatbot: Groq chính, Hugging Face dự phòng | `app/agents/router.py` dựng `FallbackLLMProvider(GroqProvider(), HFProvider())`. Dự phòng gánh **mọi** lỗi của Groq (401/400/429/timeout), không chỉ 429. `GROQ_API_KEY` trong `.env` đang **không hợp lệ** (401) nên thực tế HF phục vụ; `HF_MODEL` phải là model serverless trên router (`Qwen/Qwen2.5-72B-Instruct`; bản 7B bị đẩy sang Together đòi endpoint riêng). Thử nhanh: `tests/test_llm_fallback.py`. Khi planner thấy yêu cầu chưa rõ, đồ thị đi qua node `interaction`: route dùng `HttpInteractionGateway` ném `ClarificationNeeded` và trả câu hỏi về client như một lượt trả lời (`done` kèm `clarification: true`); client gửi lại tin gốc trong `history` ở lượt sau. **Đừng** dùng `CLIInteractionGateway` trong route — nó gọi `input()` trên stdin server, production ném `EOFError`. Có `context.candidate_uuid` (chat mở từ trang ứng viên) thì route đi chế độ **hỏi đáp về ứng viên** (`app/agents/candidate_qa.py`): kiểm quyền như mọi endpoint hồ sơ, nạp CV/làm giàu/đơn/tin, che PII **từng khối** bằng `mask_context` (áp `apply_abac` lên cả cây thì key bao ngoài bị che thành `{}`), một lượt LLM có cấu trúc trả `answer` + `suggestions`; tên cột trong `load_candidate_context` được test đối chiếu với `docs/supabase_schema.md`. Frontend giữ **một phiên chat cho mỗi ứng viên** (`smartats_agent_chat_v2`), gửi 8 lượt gần nhất trong `history` |
 | `/ai-agent-prompt` là mockup tĩnh | Giữ theo quyết định của chủ dự án |
 | 5 component frontend chết | Chưa xoá, cần hỏi người viết |
 

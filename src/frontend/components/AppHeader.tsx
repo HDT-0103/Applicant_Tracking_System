@@ -1,56 +1,44 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from 'next/navigation';
-import { Bell, Search, RefreshCw, ChevronRight, Loader2 } from "lucide-react";
-import { D, Dot, Badge, globalStyles } from "../lib/shared";
+import { Bell, Search, ChevronRight } from "lucide-react";
+import { D, Dot, globalStyles } from "../lib/shared";
 import { useAuth } from "../contexts/AuthContext";
-import { ROLE_LABELS } from "../lib/rbac";
-import { useWorkspace } from "../contexts/WorkspaceContext";
+import { AccountMenu } from "./AccountMenu";
+import { CommandPalette } from "./CommandPalette";
+import { useT } from "../lib/i18n";
 
 
 interface AppHeaderProps {
-  onRunSync?: () => void;
   candidateName?: string | null;
 }
 
-export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }) => {
+// Nút "Run Sync" đã bỏ. Trang ứng viên tự kiểm tra trạng thái làm giàu và tự
+// gọi sync khi mở (candidate-profile/enriched/page.tsx), nên nút chỉ gọi lại
+// đúng lệnh đó rồi điều hướng về chính trang đang mở — không có tác dụng gì,
+// và trên trang tin tuyển dụng thì còn không có ứng viên nào để sync.
+export const AppHeader: React.FC<AppHeaderProps> = ({ candidateName }) => {
   const router = useRouter();
   const pathname = usePathname();
-  const [syncing, setSyncing] = useState(false);
-  const { user, logout } = useAuth();
-  const { syncCandidateProfile, candidateUuid } = useWorkspace();
+  const { user } = useAuth();
+  const t = useT();
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const isLanding  = pathname === "/";
-  const isCandidatePage   = pathname === "/candidate-profile";
   const isEnrichedCandidatePage   = pathname === "/candidate-profile/enriched";
-  const isMainPageSuccess = isLanding && onRunSync !== undefined; // When we're on main page with PDF
 
-  const handleRunSync = async () => {
-    setSyncing(true);
-    try {
-      // If we have a custom onRunSync, use that
-      if (onRunSync) {
-        setTimeout(() => {
-          setSyncing(false);
-          onRunSync();
-        }, 1400);
-      } 
-      // Otherwise, use sync API from workspace
-      else {
-        const response = await syncCandidateProfile();
-        setSyncing(false);
-        router.push(`${response.redirect}?uuid=${candidateUuid}`);
+  // ⌘K / Ctrl+K mở bảng lệnh từ bất kỳ đâu trong workspace.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
       }
-    } catch (err) {
-      console.error("Sync failed:", err);
-      setSyncing(false);
-    }
-  };
-
-  const showRunSync = !isLanding || onRunSync !== undefined;
-  const canClickRunSync = onRunSync !== undefined || isCandidatePage || isEnrichedCandidatePage;
-  const isSynced = false;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (!user) return null;
 
@@ -82,7 +70,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
       </div>
 
       {/* Breadcrumb */}
-      {!isLanding || onRunSync !== undefined ? (
+      {!isLanding ? (
         <div style={{
           display: "flex", alignItems: "center", gap: 5, marginLeft: 20,
           fontSize: 11.5, color: D.muted, fontFamily: D.font,
@@ -90,39 +78,41 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
           <span
             style={{ cursor: "pointer" }}
             onClick={() => router.push("/")}
-          >Candidates</span>
+          >{t("nav.candidates")}</span>
           <ChevronRight size={11} strokeWidth={2} color={D.dim} />
-          <span style={{ color: D.sub, fontWeight: 500 }}>{candidateName || "Candidate"}</span>
+          <span style={{ color: D.sub, fontWeight: 500 }}>{candidateName || t("nav.candidate")}</span>
           {isEnrichedCandidatePage && (
             <>
               <ChevronRight size={11} strokeWidth={2} color={D.dim} />
-              <span style={{ color: D.blue, fontWeight: 500 }}>Profile Enrichment</span>
+              <span style={{ color: D.blue, fontWeight: 500 }}>{t("nav.profileEnrichment")}</span>
             </>
           )}
         </div>
       ) : null}
 
-      {/* Center search */}
+      {/* Center search: mở bảng lệnh ⌘K (components/CommandPalette) */}
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 7, width: 280,
-          padding: "5px 12px", border: `1px solid ${D.line}`,
-          borderRadius: 6, background: D.surface,
-        }}>
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          aria-label={t("nav.searchAria")}
+          style={{
+            display: "flex", alignItems: "center", gap: 7, width: 280,
+            padding: "5px 12px", border: `1px solid ${D.line}`,
+            borderRadius: 6, background: D.surface, cursor: "text", fontFamily: D.font,
+          }}
+        >
           <Search size={11} color={D.dim} strokeWidth={2} />
-          <input
-            placeholder="Search candidates, roles, pipelines…"
-            style={{
-              border: "none", outline: "none", background: "transparent",
-              fontSize: 11.5, color: D.ink, fontFamily: D.font, flex: 1, caretColor: D.blue,
-            }}
-          />
+          <span style={{ flex: 1, textAlign: "left", fontSize: 11.5, color: D.dim }}>
+            {t("nav.searchPlaceholder")}
+          </span>
           <span style={{
             fontSize: 9.5, color: D.dim, fontFamily: D.mono, background: D.canvas,
             padding: "1px 5px", borderRadius: 3, border: `1px solid ${D.line}`,
           }}>⌘K</span>
-        </div>
+        </button>
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
       {/* Right actions */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -138,49 +128,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
               background: "rgba(99, 102, 241, 0.08)",
               cursor: "pointer",
               fontSize: 11.5, fontWeight: 600,
-              color: "#818cf8",
+              color: D.blue,
               fontFamily: D.font,
               transition: "all 0.2s ease",
             }}
           >
-            Admin Panel
+            {t("nav.adminPanel")}
           </button>
         )}
 
-        {/* Run Sync button */}
-        {showRunSync && (
-          <button
-            type="button"
-            onClick={handleRunSync}
-            disabled={!canClickRunSync || syncing}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "6px 14px",
-              border: `1px solid ${isSynced ? D.line : D.blue}`,
-              borderRadius: 6,
-              background: isSynced ? D.surface : D.blue,
-              cursor: canClickRunSync ? "pointer" : "default",
-              fontSize: 11.5, fontWeight: 600,
-              color: isSynced ? D.dim : "#fff",
-              fontFamily: D.font,
-              transition: "all 0.2s ease",
-              opacity: syncing ? 0.75 : 1,
-            }}
-          >
-            {syncing
-              ? <Loader2 size={11} strokeWidth={2} color={isSynced ? D.dim : "#fff"} style={{ animation: "spin 0.8s linear infinite" }} />
-              : <RefreshCw size={11} strokeWidth={2} color={isSynced ? D.dim : "#fff"} />
-            }
-            {syncing ? "Syncing…" : isSynced ? "Synced" : "Run Sync"}
-            {isSynced && (
-              <Badge color={D.mint} bg={D.mintSoft}>
-                <Dot color={D.mint} />
-                Done
-              </Badge>
-            )}
-          </button>
-        )}
- 
         <div style={{ width: 1, height: 16, background: D.line }} />
  
         {/* Icon-only, so the accessible name has to come from aria-label —
@@ -188,8 +144,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
             dot is decoration and is hidden rather than described twice. */}
         <button
           type="button"
-          aria-label="Notifications (unread)"
-          title="Notifications"
+          aria-label={t("nav.notifications")}
+          title={t("nav.notifications")}
           style={{
             position: "relative", background: "none", border: "none", cursor: "pointer",
             display: "flex", alignItems: "center", width: 28, height: 28,
@@ -206,40 +162,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ onRunSync, candidateName }
           /></button>
  
         <div style={{ width: 1, height: 16, background: D.line }} />
- 
-        <button
-          type="button"
-          onClick={logout}
-          style={{
-            padding: "6px 14px",
-            border: `1px solid rgba(239, 68, 68, 0.2)`,
-            borderRadius: 6,
-            background: "rgba(239, 68, 68, 0.05)",
-            cursor: "pointer",
-            fontSize: 11.5, fontWeight: 600,
-            color: "#f87171",
-            fontFamily: D.font,
-            transition: "all 0.2s ease",
-          }}
-        >
-          Logout
-        </button>
 
-        <div style={{ width: 1, height: 16, background: D.line }} />
-
-        {/* Role hiển thị lấy từ JWT. Menu "Demo Role" cũ đã bỏ: nó đổi role
-            bằng localStorage, tức là ai cũng tự nâng quyền cho mình được. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{
-            width: 26, height: 26, borderRadius: "50%", background: D.blue,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 9.5, fontWeight: 700, color: "#fff",
-          }}>{user?.name.charAt(0).toUpperCase()}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 500, color: D.ink, lineHeight: 1.1 }}>{user?.name}</span>
-            <span style={{ fontSize: 9.5, color: D.dim, lineHeight: 1.2 }}>{user?.role ? ROLE_LABELS[user.role] : ''}</span>
-          </div>
-        </div>
+        {/* Tên, role, công ty, theme, Settings, Logout — gộp vào một menu.
+            Role lấy từ JWT; menu "Demo Role" cũ đã bỏ vì nó đổi role bằng
+            localStorage, tức là ai cũng tự nâng quyền cho mình được. */}
+        <AccountMenu />
       </div>
  
       <style>{`

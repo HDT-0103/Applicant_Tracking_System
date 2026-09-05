@@ -1,10 +1,12 @@
 import React from "react";
 import { TrendingUp } from "lucide-react";
-import { D } from "@/lib/shared";
+import { D, tint } from "@/lib/shared";
+import { useT } from "@/lib/i18n";
 import type { MockAnalytics } from "../types";
 
 // ─── Match Confidence (enriched) ───────────────────────────────────────────────
 export function MatchConfidence({ analytics }: { analytics: MockAnalytics | null }) {
+  const t = useT();
   const score = analytics?.match_confidence_score || 89.5;
   const scoreIncrease = analytics?.score_increase || 2.1;
   const r = 44;
@@ -16,8 +18,8 @@ export function MatchConfidence({ analytics }: { analytics: MockAnalytics | null
       style={{
         padding: "16px 18px",
         borderRadius: 8,
-        background: `linear-gradient(145deg, ${D.blue}0A 0%, ${D.canvas} 60%)`,
-        border: `1px solid ${D.blue}28`,
+        background: `linear-gradient(145deg, ${tint("blue", "0A")} 0%, ${D.canvas} 60%)`,
+        border: `1px solid ${tint("blue", "28")}`,
         display: "flex",
         alignItems: "center",
         gap: 20,
@@ -79,7 +81,7 @@ export function MatchConfidence({ analytics }: { analytics: MockAnalytics | null
             marginBottom: 4,
           }}
         >
-          Match Confidence
+          {t("candidate.match.title")}
         </div>
         <div
           style={{
@@ -104,20 +106,20 @@ export function MatchConfidence({ analytics }: { analytics: MockAnalytics | null
             padding: "4px 8px",
             borderRadius: 5,
             background: D.mintSoft,
-            border: `1px solid ${D.mint}28`,
+            border: `1px solid ${tint("mint", "28")}`,
             marginBottom: 10,
           }}
         >
           <TrendingUp size={10} strokeWidth={2} color={D.mint} />
           <span style={{ fontSize: 10.5, fontWeight: 600, color: D.mint }}>
-            +{scoreIncrease} increase from external data enrichment
+            {t("candidate.match.increase", { n: scoreIncrease })}
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           {[
-            { label: "Experience Fit", pct: 93 },
-            { label: "Skills Alignment", pct: 87 },
-            { label: "Culture Signal", pct: 81 },
+            { label: t("candidate.match.experienceFit"), pct: 93 },
+            { label: t("candidate.match.skillsAlignment"), pct: 87 },
+            { label: t("candidate.match.cultureSignal"), pct: 81 },
           ].map((item) => (
             <div
               key={item.label}

@@ -12,6 +12,14 @@ class AuthUser(BaseModel):
     role: UserRole
     picture: str | None = None
     jti: str | None = None
+    # Công ty của người dùng (V009). KHÔNG nằm trong JWT — token chỉ mang danh
+    # tính và role; công ty đọc từ bảng `users` lúc đăng nhập và qua /me.
+    # `None` = chưa khai: frontend đưa người đó tới /onboarding/company.
+    company_name: str | None = None
+    company_website: str | None = None
+    # Tài khoản có mật khẩu (đăng ký bằng email) hay chỉ đăng nhập Google.
+    # Frontend dựa vào đây để ẩn phần "đổi mật khẩu" với tài khoản Google.
+    has_password: bool = False
 
 
 
@@ -62,3 +70,29 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     role: SelfSignupRole = "hr"
+    # Bắt buộc từ V009: tài khoản nội bộ phải thuộc về một công ty. Website
+    # thì tuỳ chọn.
+    company_name: str = Field(min_length=2, max_length=200)
+    company_website: str | None = Field(default=None, max_length=500)
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Sửa hồ sơ của CHÍNH MÌNH (PATCH /api/auth/me).
+
+    Chỉ ba trường hiển thị. Email, role, is_approved KHÔNG đi qua đây — đó là
+    việc của admin. Trường nào bỏ qua thì giữ nguyên; màn hình onboarding chỉ
+    gửi công ty, màn hình Settings gửi cả tên.
+    """
+
+    name: str | None = Field(default=None, min_length=2, max_length=100)
+    company_name: str | None = Field(default=None, min_length=2, max_length=200)
+    company_website: str | None = Field(default=None, max_length=500)
+
+
+# Tên cũ, giữ để import cũ không gãy.
+CompanyUpdateRequest = ProfileUpdateRequest
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=6, max_length=200)

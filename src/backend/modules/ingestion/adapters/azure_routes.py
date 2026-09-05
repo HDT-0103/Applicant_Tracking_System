@@ -13,6 +13,8 @@ from modules.ingestion.infra.azure_blob_service import BLOB_CONTAINER_NAME, Azur
 from modules.ingestion.infra.azure_service_bus_service import AzureServiceBusService
 from modules.enrichment.application.enrichment_service import enrichment_worker
 from modules.auth.domain.models import AuthUser
+from modules.review.adapters.routes import get_review_repo
+from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles
 from modules.shared.infrastructure.rate_limit import ingest_rate_limit
 from modules.shared.infrastructure.config import Settings, get_settings
@@ -359,6 +361,10 @@ class CandidateCvLink(BaseModel):
     url: str
     #: Giây còn lại trước khi link hết hạn, hoặc None nếu link không có hạn.
     expires_in_seconds: Optional[int] = None
+    #: Cùng blob, nhưng ép `Content-Disposition: attachment` để nút Download
+    #: tải về thay vì mở. `download` trên thẻ <a> bị trình duyệt bỏ qua với
+    #: link khác origin, nên phải quyết ở phía máy chủ lưu trữ.
+    download_url: Optional[str] = None
 
 
 #: Link SAS sống bấy nhiêu lâu. Đủ để đọc xong một CV, không đủ để phát tán.
@@ -370,6 +376,7 @@ async def get_candidate_cv(
     candidate_uuid: str,
     settings: Annotated[Settings, Depends(get_settings)],
     _user: Annotated[AuthUser, Depends(require_operational_roles())],
+    review_repo: Annotated[IReviewRepo, Depends(get_review_repo)],
 ) -> CandidateCvLink:
     """Cấp một đường dẫn tạm để xem CV của ứng viên.
 
@@ -386,14 +393,14 @@ async def get_candidate_cv(
     Hạn link cũng rút từ 1 giờ xuống 15 phút: SAS URL không kiểm tra danh tính
     người mở, nên thời gian sống của nó chính là cửa sổ để nó bị chuyển tiếp.
     """
-    # Hồ sơ CV là PII: tech lead ngoài hội đồng không được xem, cùng luật với
-    # màn hình enrichment. 404 chứ không 403 — 403 xác nhận ứng viên tồn tại.
+    # Hồ sơ CV là PII: chỉ người trong phạm vi (HR tạo tin, tech lead trong
+    # hội đồng) được xem, cùng luật với màn hình enrichment. 404 chứ không 403
+    # — 403 xác nhận ứng viên tồn tại. Repo review nhận qua dependency chứ
+    # không tự dựng: đây là ranh giới bảo mật, và một ranh giới không thay thế
+    # được thì không kiểm thử được.
     from modules.review.application.review_service import ReviewService
-    from modules.review.infra.impl_supabase import SupabaseReviewRepo
 
-    review = ReviewService(
-        repo=SupabaseReviewRepo(get_supabase_client(settings, use_admin=True))
-    )
+    review = ReviewService(repo=review_repo)
     if not await review.may_access_candidate(candidate_uuid, _user.id, _user.role):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="CV file for this candidate was not found."
@@ -422,10 +429,15 @@ async def get_candidate_cv(
     sas_url = _build_sas_url(candidate_uuid, settings)
     if sas_url:
         return CandidateCvLink(
-            url=sas_url, expires_in_seconds=int(CV_LINK_TTL.total_seconds())
+            url=sas_url,
+            expires_in_seconds=int(CV_LINK_TTL.total_seconds()),
+            download_url=_build_sas_url(candidate_uuid, settings, disposition="attachment"),
         )
 
-    if stored_path:
+    # Chỉ đưa cho trình duyệt một đường dẫn nó mở được. Hồ sơ seed cũ ghi
+    # `uploads/x.pdf` — đường dẫn trên đĩa của máy dev — và trình duyệt mở nó
+    # ra một trang lỗi vô nghĩa. Không có CV thì nói là không có.
+    if stored_path and stored_path.lower().startswith(("http://", "https://")):
         return CandidateCvLink(url=stored_path)
 
     raise HTTPException(
@@ -434,8 +446,18 @@ async def get_candidate_cv(
     )
 
 
-def _build_sas_url(candidate_uuid: str, settings: Settings) -> Optional[str]:
-    """Ký một SAS URL chỉ-đọc cho blob CV. `None` nếu không ký được."""
+def _build_sas_url(
+    candidate_uuid: str, settings: Settings, *, disposition: str = "inline"
+) -> Optional[str]:
+    """Ký một SAS URL chỉ-đọc cho blob CV. `None` nếu không ký được.
+
+    Blob được tải lên không có content type (Azure mặc định
+    `application/octet-stream`), nên trình duyệt TẢI VỀ thay vì hiển thị:
+    iframe trắng tinh, bấm Open cũng ra file. SAS cho phép ép header phản hồi
+    (`rsct` / `rscd`), nên ta ký kèm `application/pdf` + `inline` — sửa được
+    cho cả blob cũ mà không phải đụng vào chúng. `disposition="attachment"`
+    cho nút Download.
+    """
     conn_str = getattr(settings, "azure_storage_connection_string", "")
     if not conn_str:
         return None
@@ -453,6 +475,22 @@ def _build_sas_url(candidate_uuid: str, settings: Settings) -> Optional[str]:
         if not (account_name and account_key):
             return None
 
+        # Ký được KHÔNG có nghĩa là blob tồn tại: SAS chỉ là chữ ký trên một
+        # cái tên. Trước đây hàm này ký cho `{uuid}.pdf` của MỌI ứng viên,
+        # kể cả 24 hồ sơ seed chưa từng được tải lên Azure, và trình duyệt mở
+        # ra trang XML "BlobNotFound" thay vì CV. Hỏi tồn tại trước.
+        blob_client = blob_service_client.get_blob_client(
+            container=BLOB_CONTAINER_NAME, blob=f"{candidate_uuid}.pdf"
+        )
+        if not blob_client.exists():
+            logger.info("cv.blob_missing", candidate_uuid=candidate_uuid)
+            return None
+
+        if disposition == "attachment":
+            content_disposition = f'attachment; filename="CV-{candidate_uuid[:8]}.pdf"'
+        else:
+            content_disposition = "inline"
+
         sas_token = generate_blob_sas(
             account_name=account_name,
             container_name=BLOB_CONTAINER_NAME,
@@ -460,6 +498,8 @@ def _build_sas_url(candidate_uuid: str, settings: Settings) -> Optional[str]:
             account_key=account_key,
             permission=BlobSasPermissions(read=True),
             expiry=datetime.now(timezone.utc) + CV_LINK_TTL,
+            content_type="application/pdf",
+            content_disposition=content_disposition,
         )
         return (
             f"https://{account_name}.blob.core.windows.net/"

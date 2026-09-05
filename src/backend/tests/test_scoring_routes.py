@@ -61,13 +61,17 @@ class _Result(SimpleNamespace):
 def embedding_result(monkeypatch):
     """Replace the embedding call with a stub whose behaviour a test chooses."""
 
+    calls: list[dict] = []
+
     def _set(outcome):
-        async def _fake(job_id, settings, force=False):
+        async def _fake(job_id, settings, force=False, owner_id=None):
+            calls.append({"job_id": job_id, "force": force, "owner_id": owner_id})
             if isinstance(outcome, Exception):
                 raise outcome
             return _Result(job_posting_id=job_id, **outcome)
 
         monkeypatch.setattr(scoring_routes, "ensure_job_embeddings", _fake)
+        return calls
 
     return _set
 
@@ -87,6 +91,17 @@ class TestPermissions:
         as_role("hr")
         embedding_result(OK)
         assert client.post(f"/api/v1/jobs/{JOB_ID}/embeddings").status_code == 200
+
+    def test_the_caller_is_passed_down_as_the_required_owner(
+        self, client, as_role, embedding_result
+    ):
+        # Nhúng lại đổi vector mà tin được so khớp — là hành động của người
+        # soạn tin. Route phải nói cho tầng dưới biết AI đang gọi, để tin của
+        # HR khác được trả lời như không tồn tại.
+        as_role("hr")
+        calls = embedding_result(OK)
+        client.post(f"/api/v1/jobs/{JOB_ID}/embeddings")
+        assert calls[0]["owner_id"] is not None
 
     @pytest.mark.parametrize("role", ["tech_lead", "admin"])
     def test_other_roles_may_not_embed(self, client, as_role, embedding_result, role):

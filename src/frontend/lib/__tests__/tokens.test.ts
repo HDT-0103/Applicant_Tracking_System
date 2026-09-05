@@ -1,96 +1,70 @@
 /**
- * Canh cho hai hệ design token không lệch nhau.
+ * Canh cho hệ design token không gãy khi đổi theme.
  *
- * App tô màu bằng hai đường: inline style đọc object `D` (lib/shared.tsx) và
- * class Tailwind đọc biến CSS (`app/globals.css`). Hai nguồn cho cùng một thứ.
- *
- * Chúng ĐÃ từng lệch: `D.blue` là #1B62F0 còn `--primary` là #4f46e5, khiến
- * màu thương hiệu đổi theo trang. Không ai phát hiện vì cả hai đều "chạy được"
- * — chỉ là ra hai màu khác nhau. Test này biến kiểu lệch đó thành lỗi đỏ.
+ * Mọi màu trong `D` là `var(--x)` trỏ vào app/globals.css. Bảng sáng ở `:root`,
+ * bảng tối ở `[data-theme="dark"]`. Một biến có ở bảng này mà thiếu ở bảng kia
+ * thì khi đổi theme màu đó giữ nguyên — nền đổi sang tối mà chữ vẫn đen, và
+ * không có lỗi nào báo.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { D } from "../tokens";
+import { D, tint } from "../tokens";
 
-const GLOBALS_CSS = readFileSync(
-  join(__dirname, "..", "..", "app", "globals.css"),
-  "utf-8",
-);
+const GLOBALS_CSS = readFileSync(join(__dirname, "..", "..", "app", "globals.css"), "utf-8");
 
-/** Đọc giá trị một biến CSS trong khối `:root` đầu tiên. */
-function cssVar(name: string): string | undefined {
-  const match = GLOBALS_CSS.match(new RegExp(`--${name}:\\s*([^;]+);`));
-  return match?.[1].trim().toLowerCase();
+function block(selector: string): string {
+  const start = GLOBALS_CSS.indexOf(`${selector} {`);
+  expect(start, `globals.css thiếu khối ${selector}`).toBeGreaterThan(-1);
+  return GLOBALS_CSS.slice(start, GLOBALS_CSS.indexOf("}", start));
 }
+const LIGHT = block(":root");
+const DARK = block('[data-theme="dark"]');
 
-/**
- * So hai giá trị CSS theo đúng cách trình duyệt hiểu chúng.
- *
- * Bỏ qua hoa/thường (#4F46E5 ≡ #4f46e5) và khoảng trắng sau dấu phẩy
- * (`rgba(15,17,23,.04)` ≡ `rgba(15, 17, 23, .04)`). Hai khác biệt này thuần
- * hình thức; bắt lỗi vì chúng thì test chỉ gây phiền chứ không bảo vệ gì.
- */
-function sameColor(a: string | undefined, b: string | undefined): boolean {
-  const normalise = (value: string | undefined) =>
-    value?.toLowerCase().replace(/\s+/g, "");
-  return normalise(a) === normalise(b);
-}
+const varsIn = (value: string): string[] =>
+  Array.from(value.matchAll(/var\((--[a-z0-9-]+)\)/g)).map((m) => m[1]);
 
-describe("design token: D (inline style) ↔ globals.css (Tailwind)", () => {
-  const PAIRS: ReadonlyArray<[keyof typeof D, string]> = [
-    ["blue", "primary"],
-    ["blueDeep", "primary-hover"],
-    ["ink", "foreground"],
-    ["bg", "background"],
-    ["canvas", "card"],
-    ["muted", "muted-foreground"],
-    ["line", "border"],
-    ["red", "destructive"],
-    ["r1", "radius-1"],
-    ["r2", "radius-2"],
-    ["r3", "radius-3"],
-    ["sh1", "shadow-1"],
-    ["sh2", "shadow-2"],
-    ["sh3", "shadow-3"],
-    ["ease", "ease"],
-  ];
+const COLOR_KEYS = ["bg", "canvas", "surface", "ink", "sub", "muted", "dim", "line", "lineSoft",
+  "blue", "blueSoft", "blueMid", "blueDeep", "mint", "mintSoft", "purple", "amber", "red"] as const;
 
-  it.each(PAIRS)("D.%s khớp với --%s", (tokenKey, varName) => {
-    const fromCss = cssVar(varName);
-    expect(fromCss, `globals.css thiếu biến --${varName}`).toBeDefined();
-    expect(
-      sameColor(String(D[tokenKey]), fromCss),
-      `D.${String(tokenKey)} = ${String(D[tokenKey])} nhưng --${varName} = ${fromCss}`,
-    ).toBe(true);
+describe("design token: D ↔ globals.css", () => {
+  it.each(COLOR_KEYS)("D.%s trỏ tới biến có ở CẢ bảng sáng lẫn bảng tối", (key) => {
+    const names = varsIn(D[key]);
+    expect(names.length, `D.${key} phải là var(--x)`).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(LIGHT, `:root thiếu ${name}`).toContain(`${name}:`);
+      expect(DARK, `[data-theme="dark"] thiếu ${name}`).toContain(`${name}:`);
+    }
+  });
+
+  it("không còn hex cứng trong token màu — nếu không theme tối không đổi được nó", () => {
+    for (const key of COLOR_KEYS) expect(D[key]).not.toMatch(/^#/);
+  });
+
+  it("font trỏ tới biến do next/font cấp, kèm dự phòng", () => {
+    expect(D.font).toContain("--font-inter");
+    expect(D.font).toContain("system-ui");
   });
 });
 
-describe("design token: tính toàn vẹn", () => {
-  it("mọi màu đều là hex hoặc rgba, không phải var()", () => {
-    // 14 file đang nối alpha vào token kiểu `${D.blue}28`. Nếu giá trị là
-    // `var(--primary)` thì kết quả là `var(--primary)28` — chuỗi vô nghĩa,
-    // trình duyệt bỏ qua và màu biến mất mà không báo lỗi.
-    const colorKeys = ["bg", "canvas", "surface", "ink", "sub", "muted", "dim",
-      "line", "lineSoft", "blue", "blueDeep", "mint", "purple", "amber", "red"] as const;
-
-    for (const key of colorKeys) {
-      expect(D[key], `D.${key} không được dùng var()`).not.toContain("var(");
-      expect(D[key], `D.${key} phải là hex`).toMatch(/^#[0-9A-Fa-f]{6}$/);
-    }
+describe("tint — thay cho kiểu nối alpha `${D.blue}28`", () => {
+  // `var(--primary)28` là chuỗi CSS vô nghĩa; trình duyệt bỏ qua trong im lặng.
+  it("dựng rgb(var(--x-rgb) / a) từ 2 ký tự hex", () => {
+    expect(tint("blue", "28")).toBe("rgb(var(--primary-rgb) / 0.157)");
+    expect(tint("red", "FF")).toBe("rgb(var(--destructive-rgb) / 1)");
   });
 
-  it("token nối alpha được phải là hex 6 ký tự", () => {
-    // Chỉ hex 6 ký tự mới nối thêm 2 ký tự alpha thành hex 8 hợp lệ.
+  it("nhận cả số 0–1", () => {
+    expect(tint("mint", 0.5)).toBe("rgb(var(--mint-rgb) / 0.5)");
+  });
+
+  it("mọi biến -rgb nó dùng đều có ở cả hai bảng", () => {
     for (const key of ["blue", "mint", "purple", "amber", "red"] as const) {
-      expect(D[key]).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      for (const name of varsIn(tint(key, "10"))) {
+        expect(LIGHT).toContain(`${name}:`);
+        expect(DARK).toContain(`${name}:`);
+      }
     }
-  });
-
-  it("font trỏ tới biến do next/font cấp", () => {
-    expect(D.font).toContain("--font-inter");
-    // Phải có font dự phòng: lúc font chính chưa tải xong, chữ vẫn phải đọc được.
-    expect(D.font).toContain("system-ui");
   });
 });

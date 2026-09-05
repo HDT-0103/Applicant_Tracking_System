@@ -2,7 +2,8 @@
 
 import React from "react";
 import { Check, X, Plus } from "lucide-react";
-import { D } from "../lib/shared";
+import { D, tint } from "../lib/shared";
+import { useT } from "../lib/i18n";
 import { parseSkillMatrix, type SkillMatch } from "../lib/skillMatrix";
 
 /**
@@ -29,19 +30,20 @@ export const SkillMatchPanel: React.FC<SkillMatchPanelProps> = ({
   skillMatrix,
   score,
 }) => {
+  const t = useT();
   const match = parseSkillMatrix(skillMatrix);
 
   if (!match) {
     return (
       <div style={{ fontSize: 12.5, color: D.muted }}>
-        No skill breakdown yet — run enrichment for this candidate to generate one.
+        {t("candidate.skills.empty")}
       </div>
     );
   }
 
   return (
     <section
-      aria-label="Skill match breakdown"
+      aria-label={t("candidate.skills.aria")}
       style={{ display: "flex", flexDirection: "column", gap: 14 }}
     >
       {typeof score === "number" && (
@@ -49,28 +51,28 @@ export const SkillMatchPanel: React.FC<SkillMatchPanelProps> = ({
       )}
 
       <ChipRow
-        title="Required — matched"
+        title={t("candidate.skills.requiredMatched")}
         tone={D.mint}
         icon={<Check size={11} strokeWidth={2.5} aria-hidden="true" />}
         skills={match.mustHave.matched}
       />
       <ChipRow
-        title="Required — missing"
+        title={t("candidate.skills.requiredMissing")}
         tone={D.red}
         icon={<X size={11} strokeWidth={2.5} aria-hidden="true" />}
         skills={match.mustHave.missing}
         // Silence is ambiguous here: an empty "missing" row reads very
         // differently from no row at all, and it is the reassuring case.
-        emptyLabel="None — every required skill is covered"
+        emptyLabel={t("candidate.skills.noneMissing")}
       />
       <ChipRow
-        title="Nice to have — matched"
+        title={t("candidate.skills.niceToHaveMatched")}
         tone={D.blue}
         icon={<Check size={11} strokeWidth={2.5} aria-hidden="true" />}
         skills={match.niceToHave.matched}
       />
       <ChipRow
-        title="Beyond the posting"
+        title={t("candidate.skills.beyondPosting")}
         tone={D.purple}
         icon={<Plus size={11} strokeWidth={2.5} aria-hidden="true" />}
         skills={match.extra}
@@ -80,6 +82,7 @@ export const SkillMatchPanel: React.FC<SkillMatchPanelProps> = ({
 };
 
 function Headline({ score, match }: { score: number; match: SkillMatch }) {
+  const t = useT();
   const matched = match.mustHave.matched.length;
   const total = match.mustHave.total;
   const complete = total > 0 && matched === total;
@@ -98,7 +101,7 @@ function Headline({ score, match }: { score: number; match: SkillMatch }) {
         {Math.round(score)}%
       </span>
       <span style={{ fontSize: 12.5, color: D.muted }}>
-        overall match
+        {t("candidate.skills.overallMatch")}
       </span>
       {total > 0 && (
         <span
@@ -108,10 +111,10 @@ function Headline({ score, match }: { score: number; match: SkillMatch }) {
             color: complete ? D.mint : D.amber,
             padding: "2px 8px",
             borderRadius: 999,
-            background: complete ? `${D.mint}12` : `${D.amber}12`,
+            background: complete ? `${tint("mint", "12")}` : `${tint("amber", "12")}`,
           }}
         >
-          {matched}/{total} required skills
+          {t("candidate.skills.requiredCount", { matched, total })}
         </span>
       )}
     </div>

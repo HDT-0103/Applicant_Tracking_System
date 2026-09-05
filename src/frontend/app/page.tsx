@@ -1,28 +1,44 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/AppShell";
-import { D } from "../lib/shared";
+import { D, tint } from "../lib/shared";
 import {
   readMustHave,
   topLanguages,
   candidateContext,
 } from "../lib/candidateSummary";
-import { getDashboard } from "../services/catalogService";
+import { getDashboard, type DashboardData } from "../services/catalogService";
+import { DASHBOARD_QUERY, fetchQuery, getQueryData } from "../lib/queryCache";
+import {
+  candidateDisplayName,
+  candidateInitials,
+  isMasked,
+} from "../lib/candidateLabel";
+import { useLang, useT } from "../lib/i18n";
 import { BarChart3, CalendarDays, Loader2, Send, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { getReviewStatuses, ReviewStatus } from "../services/reviewService";
 import { sendInterviewDetails } from "../services/schedulingService";
 import { SendDetailsModal } from "../components/SendDetailsModal";
 
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
 interface ExtendedCandidate {
   uuid: string;
+  /** Tên thật, hoặc `Candidate #1a2b3c4d` khi bị che / chưa có — xem lib/candidateLabel. */
   name: string;
+  initials: string;
   email?: string;
-  role: string;
+  /**
+   * Tin tuyển dụng ứng viên nộp vào (null khi thiếu hoặc bị che). Dịch thành
+   * "Applying for: …" lúc render — KHÔNG phải chức danh hiện tại của ứng viên.
+   */
+  appliedJobTitle: string | null;
   score: number | null;
-  time: string;
+  /** Mili-giây kể từ lúc nộp, tính lúc tải; dịch thành "5m ago" lúc render để đổi ngôn ngữ không cần tải lại. */
+  elapsedMs: number;
   scheduledSlot: any | null;
   reviewStatus: ReviewStatus | null;
   /** "Công ty · Địa điểm" — bỏ trống vế nào thiếu, không hiện dấu chấm mồ côi. */
@@ -34,9 +50,27 @@ interface ExtendedCandidate {
   mustHave: { matched: number; total: number } | null;
 }
 
+/** "Just now" / "5m ago" / "3h ago" / "2d ago" — cùng ngưỡng như trước, chỉ đổi chỗ dịch. */
+function relativeTime(t: Translate, elapsed: number): string {
+  if (elapsed < 60000) return t("time.justNow");
+  if (elapsed < 3600000) return t("time.minutesAgo", { n: Math.floor(elapsed / 60000) });
+  if (elapsed < 86400000) return t("time.hoursAgo", { n: Math.floor(elapsed / 3600000) });
+  return t("time.daysAgo", { n: Math.floor(elapsed / 86400000) });
+}
+
+/** Dòng phụ dưới tên: ghi rõ "Applying for" để không bị đọc thành chức danh hiện tại. */
+function appliedForText(t: Translate, title: string | null): string {
+  return title
+    ? t("candidate.applyingFor", { title })
+    : t("candidate.generalApplication");
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { user } = useAuth();
+  const t = useT();
+  const { lang } = useLang();
+  const locale = lang === "vi" ? "vi-VN" : "en-US";
   const [candidates, setCandidates] = useState<ExtendedCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -46,66 +80,34 @@ export default function Dashboard() {
   const [notice, setNotice] = useState<string | null>(null);
   /** Đọc trạng thái duyệt hỏng. Hồ sơ vẫn hiện, nhưng phân nhóm sẽ không chính xác. */
   const [reviewError, setReviewError] = useState<string | null>(null);
+  /** Hồ sơ đã hiện, trạng thái duyệt còn đang về: phân nhóm tạm thời. */
+  const [reviewLoading, setReviewLoading] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      // Một request duy nhất, đi qua backend.
-      //
-      // Trước đây chỗ này `select` thẳng vào Supabase bằng anon key — khoá nằm
-      // trong bundle JS công khai, nên toàn bộ bảng `candidates` đọc được mà
-      // không cần đăng nhập, và tầng che PII ở backend bị đi vòng hoàn toàn.
-      // Endpoint mới lọc theo hội đồng của người đang đăng nhập và che PII
-      // theo role trước khi trả về.
-      let dashboard;
-      try {
-        dashboard = await getDashboard();
-      } catch (err) {
-        if (!mounted) return;
-        setLoading(false);
-        setNotice(null);
-        setSendError(err instanceof Error ? err.message : "Could not load candidates.");
-        return;
-      }
-      if (!mounted) return;
-
+  /** Dựng danh sách từ dữ liệu dashboard + trạng thái duyệt (có thể rỗng). */
+  const applyDashboard = useCallback(
+    (dashboard: DashboardData, reviewByUuid: Record<string, ReviewStatus>) => {
       const slots = dashboard.slots;
-
-      // Hỏng ở đây KHÔNG được làm hồ sơ biến mất — hồ sơ vẫn hiện, chỉ là
-      // chưa biết trạng thái duyệt. Nhưng phải nói ra: nuốt lỗi rồi để danh
-      // sách trống là cách hỏng tệ nhất, vì trông y hệt "không có ứng viên nào".
-      let reviewByUuid: Record<string, ReviewStatus> = {};
-      let reviewFailed: string | null = null;
-      try {
-        reviewByUuid = await getReviewStatuses(
-          dashboard.candidates.map((c) => c.candidate_uuid),
-        );
-      } catch (err) {
-        reviewFailed =
-          err instanceof Error ? err.message : "Could not load review status.";
-      }
-
       const now = new Date().toISOString();
       const mapped = dashboard.candidates.map((c) => {
         const ts = c.created_at ? new Date(c.created_at).getTime() : Date.now();
-        const elapsed = Date.now() - ts;
-        let time: string;
-        if (elapsed < 60000) time = "Just now";
-        else if (elapsed < 3600000) time = `${Math.floor(elapsed / 60000)}m ago`;
-        else if (elapsed < 86400000) time = `${Math.floor(elapsed / 3600000)}h ago`;
-        else time = `${Math.floor(elapsed / 86400000)}d ago`;
+        const elapsedMs = Date.now() - ts;
 
         const futureSlot = slots.find(
           (s) => s.candidate_uuid === c.candidate_uuid && s.start_time > now,
         );
 
+        // Tin bị ABAC che về "***" thì coi như không có, giống appliedForLabel cũ.
+        const jobTitle =
+          typeof c.applied_job_title === "string" ? c.applied_job_title.trim() : "";
+
         return {
           uuid: c.candidate_uuid,
-          name: c.full_name || "Unknown Candidate",
+          name: candidateDisplayName(c.full_name, c.candidate_uuid),
+          initials: candidateInitials(c.full_name, c.candidate_uuid),
           email: c.email || undefined,
-          role: c.title || "General Application",
+          appliedJobTitle: jobTitle && !isMasked(jobTitle) ? jobTitle : null,
           score: c.match_confidence_score ?? null,
-          time,
+          elapsedMs,
           scheduledSlot: futureSlot || null,
           reviewStatus: reviewByUuid[c.candidate_uuid] ?? null,
           context: candidateContext(c.company, c.current_location),
@@ -114,18 +116,71 @@ export default function Dashboard() {
           mustHave: readMustHave(c.skills_matrix),
         };
       });
+      setCandidates(mapped);
+    },
+    [],
+  );
 
-      if (mounted) {
-        setCandidates(mapped);
-        setReviewError(reviewFailed);
+  useEffect(() => {
+    let mounted = true;
+    const REVIEW_QUERY = "review:batch";
+
+    // Có bản cache (vừa rời trang rồi quay lại) thì vẽ NGAY, rồi làm mới ngầm.
+    // Trước đây mỗi lần về dashboard là vòng xoay vài giây dù dữ liệu vừa có.
+    const cachedDashboard = getQueryData<DashboardData>(DASHBOARD_QUERY);
+    const cachedReview = getQueryData<Record<string, ReviewStatus>>(REVIEW_QUERY) ?? {};
+    if (cachedDashboard) {
+      applyDashboard(cachedDashboard, cachedReview);
+      setLoading(false);
+    }
+
+    (async () => {
+      // Một request đi qua backend: lọc theo phạm vi người đăng nhập và che
+      // PII theo role trước khi trả về.
+      let dashboard: DashboardData;
+      try {
+        dashboard = await fetchQuery(DASHBOARD_QUERY, getDashboard);
+      } catch (err) {
+        if (!mounted) return;
         setLoading(false);
+        setNotice(null);
+        setSendError(err instanceof Error ? err.message : t("dashboard.loadError"));
+        return;
+      }
+      if (!mounted) return;
+
+      // Hồ sơ hiện TRƯỚC, trạng thái duyệt đổ vào sau. Chờ cả hai là bắt
+      // người dùng nhìn vòng xoay suốt thời gian của request chậm nhất.
+      applyDashboard(dashboard, cachedReview);
+      setLoading(false);
+      setReviewLoading(true);
+
+      // Hỏng ở đây KHÔNG được làm hồ sơ biến mất — hồ sơ vẫn hiện, chỉ là
+      // chưa biết trạng thái duyệt. Nhưng phải nói ra: nuốt lỗi rồi để danh
+      // sách trống là cách hỏng tệ nhất, vì trông y hệt "không có ứng viên nào".
+      const uuids = dashboard.candidates.map((c) => c.candidate_uuid);
+      try {
+        const reviewByUuid = uuids.length
+          ? await fetchQuery(REVIEW_QUERY, () => getReviewStatuses(uuids))
+          : {};
+        if (!mounted) return;
+        applyDashboard(dashboard, reviewByUuid);
+        setReviewError(null);
+      } catch (err) {
+        if (!mounted) return;
+        setReviewError(err instanceof Error ? err.message : t("dashboard.reviewLoadError"));
+      } finally {
+        if (mounted) setReviewLoading(false);
       }
     })();
 
     return () => {
       mounted = false;
     };
-  }, []);
+    // Chỉ tải một lần; đổi ngôn ngữ không được kéo lại dữ liệu. Hai chuỗi lỗi
+    // dùng `t` ở đây là của lần tải đó, chấp nhận giữ ngôn ngữ lúc xảy ra.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyDashboard]);
 
   const openSendDetails = (e: React.MouseEvent, c: ExtendedCandidate) => {
     e.stopPropagation();
@@ -143,9 +198,9 @@ export default function Dashboard() {
     try {
       await sendInterviewDetails(c.scheduledSlot.id, room, address);
       setDetailsFor(null);
-      setNotice(`Interview details sent to ${c.name}.`);
+      setNotice(t("dashboard.sentTo", { name: c.name }));
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : "Could not send the email.");
+      setSendError(err instanceof Error ? err.message : t("dashboard.sendError"));
     } finally {
       setSending(false);
     }
@@ -173,7 +228,7 @@ export default function Dashboard() {
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 14, fontWeight: 600, color: "#fff", flexShrink: 0,
       }}>
-        {c.name.split(" ").map((n) => n[0]).join("").substring(0, 2)}
+        {c.initials}
       </div>
       
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -181,7 +236,7 @@ export default function Dashboard() {
           {c.name}
         </div>
         <div style={{ fontSize: 12, color: D.muted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span>{c.role}</span>
+          <span>{appliedForText(t, c.appliedJobTitle)}</span>
           {c.context && (
             <>
               <span style={{ color: D.dim }}>•</span>
@@ -210,7 +265,7 @@ export default function Dashboard() {
               </span>
             ))}
             {c.repoCount !== null && (
-              <span style={{ fontSize: 10.5, color: D.dim }}>{c.repoCount} repo</span>
+              <span style={{ fontSize: 10.5, color: D.dim }}>{t("dashboard.repoCount", { n: c.repoCount })}</span>
             )}
           </div>
         )}
@@ -220,7 +275,7 @@ export default function Dashboard() {
           Một con số trần trụi thì không ai dám tin. */}
       {c.mustHave && (
         <div
-          title={`Matches ${c.mustHave.matched} of ${c.mustHave.total} required skills`}
+          title={t("dashboard.mustHaveTitle", { matched: c.mustHave.matched, total: c.mustHave.total })}
           style={{
             padding: "4px 10px",
             borderRadius: 99,
@@ -228,20 +283,20 @@ export default function Dashboard() {
             fontWeight: 600,
             fontFamily: D.mono,
             background:
-              c.mustHave.matched === c.mustHave.total ? `${D.mint}10` : `${D.amber}10`,
+              c.mustHave.matched === c.mustHave.total ? `${tint("mint", "10")}` : `${tint("amber", "10")}`,
             color: c.mustHave.matched === c.mustHave.total ? D.mint : D.amber,
           }}
         >
-          {c.mustHave.matched}/{c.mustHave.total} skills
+          {t("dashboard.skillsCount", { matched: c.mustHave.matched, total: c.mustHave.total })}
         </div>
       )}
 
       {c.score !== null && (
         <div style={{
-          padding: "4px 10px", borderRadius: 99, background: `${D.blue}10`,
+          padding: "4px 10px", borderRadius: 99, background: `${tint("blue", "10")}`,
           fontSize: 11, fontWeight: 600, color: D.blue, fontFamily: "monospace",
         }}>
-          {c.score}% match
+          {t("dashboard.matchPct", { score: c.score })}
         </div>
       )}
 
@@ -249,7 +304,7 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
            <div style={{ fontSize: 12, color: D.blue, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}>
               <CalendarDays size={14} />
-              {new Date(c.scheduledSlot.start_time).toLocaleString("en-US")}
+              {new Date(c.scheduledSlot.start_time).toLocaleString(locale)}
            </div>
            {user?.role === "hr" && (
              <button
@@ -262,14 +317,14 @@ export default function Dashboard() {
                }}
              >
                 <Send size={14} />
-                Send Details
+                {t("dashboard.sendDetails")}
              </button>
            )}
         </div>
       )}
 
       <div style={{ fontSize: 12, color: D.dim, minWidth: 60, textAlign: "right" }}>
-        {c.time}
+        {relativeTime(t, c.elapsedMs)}
       </div>
     </div>
   );
@@ -320,7 +375,7 @@ export default function Dashboard() {
         candidateName={detailsFor?.name ?? ""}
         slotTime={
           detailsFor?.scheduledSlot
-            ? new Date(detailsFor.scheduledSlot.start_time).toLocaleString("en-US")
+            ? new Date(detailsFor.scheduledSlot.start_time).toLocaleString(locale)
             : ""
         }
         sending={sending}
@@ -336,15 +391,20 @@ export default function Dashboard() {
             marginBottom: 16,
             padding: "10px 14px",
             borderRadius: 8,
-            border: `1px solid ${D.amber}40`,
-            background: `${D.amber}10`,
+            border: `1px solid ${tint("amber", "40")}`,
+            background: `${tint("amber", "10")}`,
             color: D.amber,
             fontSize: 12.5,
             lineHeight: 1.5,
           }}
         >
-          Review status could not be loaded, so candidates below are not sorted by
-          review stage. {reviewError}
+          {t("dashboard.reviewStatusWarning")} {reviewError}
+        </div>
+      )}
+
+      {reviewLoading && !reviewError && (
+        <div role="status" style={{ marginBottom: 12, fontSize: 12, color: D.dim, display: "flex", alignItems: "center", gap: 6 }}>
+          <Loader2 size={12} className="animate-spin" /> {t("dashboard.reviewLoading")}
         </div>
       )}
 
@@ -355,8 +415,8 @@ export default function Dashboard() {
             marginBottom: 16,
             padding: "10px 14px",
             borderRadius: 8,
-            border: `1px solid ${D.mint}40`,
-            background: `${D.mint}10`,
+            border: `1px solid ${tint("mint", "40")}`,
+            background: `${tint("mint", "10")}`,
             color: D.mint,
             fontSize: 12.5,
             fontWeight: 500,
@@ -370,7 +430,7 @@ export default function Dashboard() {
           <button
             type="button"
             onClick={() => setNotice(null)}
-            aria-label="Dismiss"
+            aria-label={t("common.dismiss")}
             style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0 }}
           >
             <X size={14} strokeWidth={2} />
@@ -379,10 +439,10 @@ export default function Dashboard() {
       )}
             <div style={{ marginBottom: 32 }}>
               <h1 style={{ fontSize: 28, fontWeight: 700, color: D.ink, marginBottom: 8 }}>
-                Dashboard Overview
+                {t("dashboard.title")}
               </h1>
               <p style={{ fontSize: 14, color: D.muted }}>
-                Welcome back! Here&apos;s what&apos;s happening with your recruitment pipeline today.
+                {t("dashboard.welcome")}
               </p>
             </div>
 
@@ -396,28 +456,36 @@ export default function Dashboard() {
                 }}
               >
                 <div style={{ 
-                  width: 48, height: 48, borderRadius: 10, background: `${D.purple}10`,
+                  width: 48, height: 48, borderRadius: 10, background: `${tint("purple", "10")}`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
                   <BarChart3 size={24} strokeWidth={1.5} color={D.purple} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: D.ink }}>View Analytics</div>
-                  <div style={{ fontSize: 12, color: D.muted }}>Recruitment metrics and insights</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: D.ink }}>{t("dashboard.viewAnalytics")}</div>
+                  <div style={{ fontSize: 12, color: D.muted }}>{t("dashboard.viewAnalyticsHint")}</div>
                 </div>
               </button>
             </div>
 
             {loading ? (
-              <div style={{ padding: "40px", textAlign: "center" }}>
-                <Loader2 size={32} className="animate-spin text-blue-500 mx-auto" />
+              <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }} aria-busy="true">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} style={{ padding: "16px 20px", borderBottom: `1px solid ${D.line}`, display: "flex", alignItems: "center", gap: 16 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: D.surface, animation: "skelShimmer 1.4s ease-in-out infinite" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ height: 12, width: `${38 + i * 9}%`, borderRadius: 4, background: D.surface, animation: "skelShimmer 1.4s ease-in-out infinite" }} />
+                      <div style={{ height: 10, width: `${24 + i * 7}%`, borderRadius: 4, background: D.surface, animation: "skelShimmer 1.4s ease-in-out infinite" }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
                 {user?.role === "hr" && hrNeedsApproval.length > 0 && (
                   <div>
                     <h2 style={{ fontSize: 18, fontWeight: 600, color: D.amber, marginBottom: 16 }}>
-                      Pending HR Decision (Passed Tech Lead Review)
+                      {t("dashboard.pendingHrDecision")}
                     </h2>
                     <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }}>
                       {hrNeedsApproval.map((c) => renderCandidateRow(c, false))}
@@ -428,11 +496,11 @@ export default function Dashboard() {
                 {/* Table 1: Based on Role */}
                 <div>
                   <h2 style={{ fontSize: 18, fontWeight: 600, color: D.ink, marginBottom: 16 }}>
-                    {user?.role === "hr" ? "Ready for Scheduling" : "Candidates Pending Review"}
+                    {user?.role === "hr" ? t("dashboard.readyForScheduling") : t("dashboard.pendingReview")}
                   </h2>
                   <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }}>
                     {toReviewOrSchedule.length === 0 ? (
-                      <div style={{ padding: "24px", textAlign: "center", color: D.muted, fontSize: 13 }}>No candidates found</div>
+                      <div style={{ padding: "24px", textAlign: "center", color: D.muted, fontSize: 13 }}>{t("dashboard.noCandidates")}</div>
                     ) : (
                       toReviewOrSchedule.map((c) => renderCandidateRow(c, false))
                     )}
@@ -442,7 +510,7 @@ export default function Dashboard() {
                 {inTechnicalReview.length > 0 && (
                   <div>
                     <h2 style={{ fontSize: 18, fontWeight: 600, color: D.sub, marginBottom: 16 }}>
-                      {user?.role === "hr" ? "In Technical Review" : "Already Decided"}
+                      {user?.role === "hr" ? t("dashboard.inTechnicalReview") : t("dashboard.alreadyDecided")}
                     </h2>
                     <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }}>
                       {inTechnicalReview.map((c) => renderCandidateRow(c, false))}
@@ -454,11 +522,11 @@ export default function Dashboard() {
                 {user?.role === "hr" && (
                   <div>
                     <h2 style={{ fontSize: 18, fontWeight: 600, color: D.ink, marginBottom: 16 }}>
-                      Scheduled Interviews
+                      {t("dashboard.scheduledInterviews")}
                     </h2>
                     <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }}>
                       {scheduled.length === 0 ? (
-                        <div style={{ padding: "24px", textAlign: "center", color: D.muted, fontSize: 13 }}>No scheduled interviews yet</div>
+                        <div style={{ padding: "24px", textAlign: "center", color: D.muted, fontSize: 13 }}>{t("dashboard.noScheduled")}</div>
                       ) : (
                         scheduled.map((c) => renderCandidateRow(c, true))
                       )}
