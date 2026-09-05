@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clarificationHistory } from "../useAgentChat";
+import { clarificationHistory, summaryOf } from "../useAgentChat";
 
 describe("clarificationHistory — trả lời câu hỏi làm rõ phải mang theo yêu cầu gốc", () => {
   it("lấy tin người dùng ngay trước câu hỏi làm rõ", () => {
@@ -25,5 +25,12 @@ describe("clarificationHistory — trả lời câu hỏi làm rõ phải mang t
       ]),
     ).toEqual([]);
     expect(clarificationHistory([])).toEqual([]);
+  });
+});
+
+describe("summaryOf — lịch sử gửi lại cho agent là câu tóm tắt, không phải JSON thô", () => {
+  it("rút summary từ kết quả JSON; chuỗi thường giữ nguyên", () => {
+    expect(summaryOf(JSON.stringify({ summary: "Mạnh về Python", candidates: [] }))).toBe("Mạnh về Python");
+    expect(summaryOf("plain text")).toBe("plain text");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Bot, ChevronDown, ExternalLink, Loader2, Send, X } from "lucide-react";
+import { Bot, ChevronDown, ExternalLink, Loader2, RotateCcw, Send, Sparkles, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAgentChat } from "../hooks/useAgentChat";
 import { COMPANY_ONBOARDING_PATH, useAuth } from "../contexts/AuthContext";
@@ -117,20 +117,64 @@ function CandidateCards({ result }: { result: AgentResult }) {
 
 function MessageContent({ message }: { message: { role: "assistant" | "user" | "error"; content: string } }) {
   const result = message.role === "assistant" ? parseAgentResult(message.content) : null;
-  return result ? <CandidateCards result={result} /> : <MarkdownMessage content={message.content} />;
+  if (!result) return <MarkdownMessage content={message.content} />;
+  // Chế độ hỏi đáp ứng viên trả lời bằng văn bản (markdown), không có thẻ ứng viên.
+  if (result.candidates.length === 0) return <MarkdownMessage content={result.summary} />;
+  return <CandidateCards result={result} />;
+}
+
+/** Ô nút icon 28×28 canh giữa — mọi nút trong header dùng chung một cỡ. */
+const iconButton: React.CSSProperties = {
+  width: 28, height: 28, display: "grid", placeItems: "center",
+  border: 0, borderRadius: 6, background: "transparent", cursor: "pointer", color: D.muted, padding: 0,
+};
+
+function Chips({ label, items, onPick, disabled }: { label: string; items: string[]; onPick: (s: string) => void; disabled: boolean }) {
+  if (items.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: D.dim, display: "flex", alignItems: "center", gap: 5 }}>
+        <Sparkles size={11} /> {label}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {items.map((item) => (
+          <button
+            key={item}
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(item)}
+            style={{ padding: "6px 10px", borderRadius: 999, border: `1px solid ${D.line}`, background: D.canvas, color: D.ink, fontSize: 11.5, cursor: disabled ? "default" : "pointer", textAlign: "left", fontFamily: D.font }}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function AgentChatDrawer() {
   const { user } = useAuth();
   const pathname = usePathname();
   const t = useT();
-  const { messages, isLoading, isOpen, setIsOpen, sendMessage, retry } = useAgentChat();
+  const { messages, isLoading, isOpen, setIsOpen, sendMessage, retry, activeCandidate, suggestions, resetSession } = useAgentChat();
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
   }, [messages]);
   if (!shouldShowAgentChat(user, pathname)) return null;
+
+  // Câu hỏi mở đầu: theo ứng viên đang mở và theo role. Tech lead không thấy
+  // PII nên thay câu dễ dính danh tính bằng đánh giá kỹ thuật qua GitHub.
+  const starters = activeCandidate
+    ? (user?.role === "tech_lead"
+        ? ["candidate.chat.starter.github", "candidate.chat.starter.gaps", "candidate.chat.starter.interview", "candidate.chat.starter.risks"]
+        : ["candidate.chat.starter.strengths", "candidate.chat.starter.gaps", "candidate.chat.starter.interview", "candidate.chat.starter.risks"])
+    : ["candidate.chat.starter.findBest", "candidate.chat.starter.findBackend", "candidate.chat.starter.findSkills"];
+  const subtitle = activeCandidate
+    ? t("candidate.chat.about", { code: activeCandidate.slice(0, 8) })
+    : t("candidate.chat.general");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -142,12 +186,44 @@ export function AgentChatDrawer() {
 
   return (
     <>
-      {!isOpen && <button type="button" aria-label={t("candidate.chat.open")} title={t("candidate.chat.open")} onClick={() => setIsOpen(true)} style={{ position: "fixed", right: 22, bottom: 22, zIndex: 60, width: 46, height: 46, border: 0, borderRadius: "50%", background: D.blue, color: "white", cursor: "pointer", boxShadow: "0 8px 24px rgba(15,23,42,.2)" }}><Bot size={19} /></button>}
+      {!isOpen && <button type="button" aria-label={t("candidate.chat.open")} title={t("candidate.chat.open")} onClick={() => setIsOpen(true)} style={{ position: "fixed", right: 22, bottom: 22, zIndex: 60, width: 48, height: 48, display: "grid", placeItems: "center", padding: 0, border: 0, borderRadius: "50%", background: D.blue, color: "white", cursor: "pointer", boxShadow: "0 8px 24px rgba(15,23,42,.2)" }}><Bot size={22} strokeWidth={1.9} /></button>}
       {isOpen && <aside aria-label={t("candidate.chat.aria")} style={{ position: "fixed", right: 20, bottom: 20, zIndex: 60, width: "min(390px, calc(100vw - 32px))", height: "min(650px, calc(100dvh - 40px))", display: "flex", flexDirection: "column", background: D.surface, border: `1px solid ${D.line}`, borderRadius: 8, boxShadow: "0 18px 45px rgba(15,23,42,.18)" }}>
-        <header style={{ padding: "14px 15px", display: "flex", alignItems: "center", gap: 9, borderBottom: `1px solid ${D.line}` }}><Bot size={17} color={D.blue} /><strong style={{ flex: 1, fontSize: 13 }}>{t("candidate.chat.title")}</strong><button type="button" aria-label={t("candidate.chat.minimizeAria")} title={t("candidate.chat.minimize")} onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><ChevronDown size={16} /></button><button type="button" aria-label={t("candidate.chat.closeAria")} title={t("common.close")} onClick={() => setIsOpen(false)} style={{ border: 0, background: "none", cursor: "pointer", color: D.muted }}><X size={15} /></button></header>
+        <header style={{ padding: "10px 10px 10px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${D.line}` }}>
+          <div aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 8, background: D.blueSoft, display: "grid", placeItems: "center", flexShrink: 0 }}><Bot size={16} color={D.blue} strokeWidth={1.9} /></div>
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+            <strong style={{ fontSize: 13, lineHeight: 1.2 }}>{t("candidate.chat.title")}</strong>
+            <span style={{ fontSize: 10.5, color: D.muted, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{subtitle}</span>
+          </div>
+          <button type="button" aria-label={t("candidate.chat.newConversation")} title={t("candidate.chat.newConversation")} onClick={resetSession} disabled={isLoading || messages.length === 0} style={{ ...iconButton, opacity: messages.length === 0 ? .4 : 1 }}><RotateCcw size={15} /></button>
+          <button type="button" aria-label={t("candidate.chat.minimizeAria")} title={t("candidate.chat.minimize")} onClick={() => setIsOpen(false)} style={iconButton}><ChevronDown size={16} /></button>
+          <button type="button" aria-label={t("candidate.chat.closeAria")} title={t("common.close")} onClick={() => setIsOpen(false)} style={iconButton}><X size={15} /></button>
+        </header>
         <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-          {messages.length === 0 && <div style={{ color: D.muted, fontSize: 12, textAlign: "center", margin: "auto 12px" }}>{t("candidate.chat.empty")}</div>}
-          {messages.map((message) => <div key={message.id} style={{ alignSelf: message.role === "user" ? "flex-end" : "flex-start", maxWidth: "88%", padding: "9px 11px", borderRadius: 7, background: message.role === "user" ? D.blue : message.role === "error" ? tint("red", "12") : D.canvas, color: message.role === "user" ? "white" : message.role === "error" ? D.red : D.ink, fontSize: 12 }}>{message.role === "error" ? <><div>{message.content}</div><button type="button" onClick={() => message.retryMessage && retry(message.retryMessage)} disabled={isLoading} style={{ marginTop: 8, border: "1px solid currentColor", background: "transparent", borderRadius: 4, padding: "4px 8px", color: "inherit", cursor: "pointer" }}>{t("common.retry")}</button></> : <MessageContent message={message} />}</div>)}
+          {messages.length === 0 && (
+            <div style={{ margin: "auto 0", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ color: D.muted, fontSize: 12, textAlign: "center", padding: "0 12px" }}>{t("candidate.chat.empty")}</div>
+              <Chips label={activeCandidate ? t("candidate.chat.starters") : t("candidate.chat.startersGeneral")} items={starters.map((k) => t(k))} onPick={(q) => void sendMessage(q)} disabled={isLoading} />
+            </div>
+          )}
+          {messages.map((message) => (
+            <div key={message.id} style={{ display: "flex", gap: 8, alignSelf: message.role === "user" ? "flex-end" : "stretch", maxWidth: message.role === "user" ? "88%" : "100%" }}>
+              {message.role !== "user" && (
+                <div aria-hidden="true" style={{ width: 24, height: 24, borderRadius: "50%", background: message.role === "error" ? tint("red", "18") : D.blueSoft, display: "grid", placeItems: "center", flexShrink: 0, marginTop: 2 }}>
+                  <Bot size={13} color={message.role === "error" ? D.red : D.blue} strokeWidth={1.9} />
+                </div>
+              )}
+              <div style={{ minWidth: 0, maxWidth: message.role === "user" ? "100%" : "calc(100% - 32px)", padding: "9px 11px", borderRadius: 8, background: message.role === "user" ? D.blue : message.role === "error" ? tint("red", "12") : D.canvas, color: message.role === "user" ? "white" : message.role === "error" ? D.red : D.ink, fontSize: 12 }}>
+                {message.role === "error"
+                  ? <><div>{message.content}</div><button type="button" onClick={() => message.retryMessage && retry(message.retryMessage)} disabled={isLoading} style={{ marginTop: 8, border: "1px solid currentColor", background: "transparent", borderRadius: 4, padding: "4px 8px", color: "inherit", cursor: "pointer" }}>{t("common.retry")}</button></>
+                  : <MessageContent message={message} />}
+              </div>
+            </div>
+          ))}
+          {!isLoading && messages.length > 0 && suggestions.length > 0 && (
+            <div style={{ paddingLeft: 32 }}>
+              <Chips label={t("candidate.chat.followUps")} items={suggestions} onPick={(q) => void sendMessage(q)} disabled={isLoading} />
+            </div>
+          )}
           {isLoading && <div style={{ alignSelf: "flex-start", color: D.muted, fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={13} style={{ animation: "spin .8s linear infinite" }} /> {t("candidate.chat.thinking")}</div>}
           <div ref={bottomRef} />
         </div>

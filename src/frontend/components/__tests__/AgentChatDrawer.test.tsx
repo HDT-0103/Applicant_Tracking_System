@@ -10,7 +10,7 @@
  * khi người dùng đã vào dashboard.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 let pathname = "/";
 let user: { role: string } | null = { role: "hr" };
@@ -23,20 +23,33 @@ vi.mock("../../contexts/AuthContext", () => ({
   useAuth: () => ({ user }),
   COMPANY_ONBOARDING_PATH: "/onboarding/company",
 }));
+let chatState = {
+  messages: [] as { id: string; role: string; content: string; suggestions?: string[] }[],
+  isLoading: false,
+  isOpen: false,
+  activeCandidate: null as string | null,
+  suggestions: [] as string[],
+};
+const sendMessage = vi.fn();
+const resetSession = vi.fn();
 vi.mock("../../hooks/useAgentChat", () => ({
   useAgentChat: () => ({
-    messages: [],
-    isLoading: false,
-    isOpen: false,
+    ...chatState,
     setIsOpen: vi.fn(),
-    sendMessage: vi.fn(),
+    sendMessage,
     retry: vi.fn(),
+    resetSession,
   }),
 }));
 
 import { AgentChatDrawer, shouldShowAgentChat } from "../AgentChatDrawer";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  sendMessage.mockReset();
+  resetSession.mockReset();
+  chatState = { messages: [], isLoading: false, isOpen: false, activeCandidate: null, suggestions: [] };
+});
 
 describe("shouldShowAgentChat", () => {
   it("hiện khi đã mở một ứng viên cụ thể, cho cả hr lẫn tech_lead", () => {
@@ -81,5 +94,56 @@ describe("AgentChatDrawer", () => {
     user = { role: "hr" };
     render(<AgentChatDrawer />);
     expect(screen.queryByRole("button", { name: /open agent chat/i })).toBeNull();
+  });
+});
+
+describe("AgentChatDrawer — phiên theo ứng viên và câu hỏi gợi ý", () => {
+  it("mở trên trang ứng viên: header ghi rõ ứng viên nào, và có 4 câu mở đầu bấm là gửi", () => {
+    pathname = "/candidate-profile/enriched";
+    user = { role: "hr" };
+    chatState = { ...chatState, isOpen: true, activeCandidate: "8b5c4334-0000-4000-8000-000000000000" };
+    render(<AgentChatDrawer />);
+    expect(screen.getByText("About Candidate #8b5c4334")).toBeInTheDocument();
+    const starters = screen.getAllByRole("button").filter((b) => /strengths|missing|interview|risks/i.test(b.textContent ?? ""));
+    expect(starters).toHaveLength(4);
+    fireEvent.click(starters[0]);
+    expect(sendMessage).toHaveBeenCalledWith("Summarise their standout strengths");
+  });
+
+  it("tech lead không thấy câu mở đầu dính danh tính, thay bằng đánh giá qua GitHub", () => {
+    pathname = "/candidate-profile/enriched";
+    user = { role: "tech_lead" };
+    chatState = { ...chatState, isOpen: true, activeCandidate: "8b5c4334-0000-4000-8000-000000000000" };
+    render(<AgentChatDrawer />);
+    expect(screen.getByRole("button", { name: /GitHub/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /standout strengths/ })).toBeNull();
+  });
+
+  it("câu trả lời văn bản hiện dạng markdown và kèm gợi ý hỏi tiếp", () => {
+    pathname = "/candidate-profile/enriched";
+    user = { role: "hr" };
+    chatState = {
+      ...chatState,
+      isOpen: true,
+      activeCandidate: "8b5c4334-0000-4000-8000-000000000000",
+      messages: [
+        { id: "1", role: "user", content: "điểm mạnh?" },
+        { id: "2", role: "assistant", content: JSON.stringify({ summary: "Mạnh về **Python**.", candidates: [], suggestions: ["Có rủi ro gì?"] }), suggestions: ["Có rủi ro gì?"] },
+      ],
+      suggestions: ["Có rủi ro gì?"],
+    };
+    render(<AgentChatDrawer />);
+    expect(screen.getByText("Python")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Có rủi ro gì?" }));
+    expect(sendMessage).toHaveBeenCalledWith("Có rủi ro gì?");
+  });
+
+  it("nút Cuộc trò chuyện mới xoá phiên hiện tại", () => {
+    pathname = "/candidate-profile/enriched";
+    user = { role: "hr" };
+    chatState = { ...chatState, isOpen: true, activeCandidate: "abc", messages: [{ id: "1", role: "user", content: "hi" }] };
+    render(<AgentChatDrawer />);
+    fireEvent.click(screen.getByRole("button", { name: /new conversation/i }));
+    expect(resetSession).toHaveBeenCalled();
   });
 });
