@@ -164,7 +164,7 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
       : clarificationHistory(current.messages);
 
     try {
-      const response = await streamClient("/agents", {
+      const response = await streamClient("/chat", {
         method: "POST",
         body: JSON.stringify({
           message: trimmed,
@@ -193,9 +193,12 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
           const data = JSON.parse(dataLine.slice(6)) as {
-            text?: string; message?: string; clarification?: boolean;
+            type?: string; content?: string; text?: string; message?: string; clarification?: boolean;
             result?: { summary?: string; candidates?: unknown[]; suggestions?: string[] };
           };
+          if (event.includes("event: direct") && data.content) {
+            patch((m) => ({ ...m, content: data.content! }));
+          }
           if (event.includes("event: delta") && data.text) patch((m) => ({ ...m, content: m.content + data.text }));
           if (event.includes("event: error")) throw new Error(data.message ?? "Agent request failed");
           if (event.includes("event: done") && data.result) {

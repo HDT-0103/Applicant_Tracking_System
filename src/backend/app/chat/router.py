@@ -33,6 +33,7 @@ def _orchestrator(settings: Settings) -> OrchestratorService:
 async def _stream_chat(
     request: AgentChatRequest,
     settings: Settings,
+    user: AuthUser | None = None,
 ) -> AsyncIterator[str]:
     try:
         decision: OrchestratorDecision = await asyncio.to_thread(
@@ -63,7 +64,7 @@ async def _stream_chat(
                 "message": "Agent is handling the candidate search.",
             },
         )
-        async for event in _stream_agent(agent_request, settings):
+        async for event in _stream_agent(agent_request, settings, user):
             yield event
     except Exception as exc:
         yield _sse("error", {"message": _agent_error_message(exc)})
@@ -77,7 +78,7 @@ async def chat(
     _limit: Annotated[None, Depends(agent_rate_limit)] = None,
 ) -> StreamingResponse:
     return StreamingResponse(
-        _stream_chat(request, settings),
+        _stream_chat(request, settings, _user),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

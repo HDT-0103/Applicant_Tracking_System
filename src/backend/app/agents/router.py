@@ -76,6 +76,7 @@ class AgentChatRequest(BaseModel):
     #: viên: chỉ tin TRƯỚC của người dùng khi họ trả lời câu hỏi làm rõ (planner
     #: chỉ đọc tin cuối nên phải ghép lại).
     history: list[Union[str, HistoryTurn]] = Field(default_factory=list, max_length=12)
+    initial_search_criteria: dict[str, object] | None = None
 
     def user_history(self) -> list[str]:
         return [h if isinstance(h, str) else h.content for h in self.history
@@ -246,6 +247,7 @@ async def _stream_agent(
         objective = "\n".join([*prior, request.message]) if prior else request.message
         initial_state = ATSState(
             messages=[objective],
+            initial_search_criteria=request.initial_search_criteria,
             candidate_search=CandidateSearchState(
                 mission=Mission(
                     objective=objective,
@@ -306,8 +308,12 @@ async def chat_with_agent(
     settings: Annotated[Settings, Depends(get_settings)],
     _limit: Annotated[None, Depends(agent_rate_limit)] = None,
 ) -> StreamingResponse:
+    # Keep this legacy route behind the same intent router as /chat. Existing
+    # clients must not be able to activate an agent graph without orchestration.
+    from src.backend.app.chat.router import _stream_chat
+
     return StreamingResponse(
-        _stream_agent(request, settings, _user),
+        _stream_chat(request, settings, _user),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
