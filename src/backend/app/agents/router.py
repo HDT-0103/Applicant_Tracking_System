@@ -45,6 +45,7 @@ from src.backend.app.services.llm_provider import (
     GroqProvider,
     HFProvider,
 )
+from src.backend.app.schemas.orchestrator import ChatResponse, ChatResponseType
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 logger = logging.getLogger(__name__)
@@ -59,6 +60,8 @@ class AgentChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=12000)
     conversation_id: UUID
     context: AgentContext
+    history: list[str] = Field(default_factory=list, max_length=20)
+    initial_search_criteria: dict[str, object] | None = None
 
 
 def _agent_graph(settings: Settings):
@@ -136,6 +139,7 @@ async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncI
         graph = _agent_graph(settings)
         initial_state = ATSState(
             messages=[request.message],
+            initial_search_criteria=request.initial_search_criteria,
             candidate_search=CandidateSearchState(
                 mission=Mission(
                     objective=request.message,
@@ -165,7 +169,11 @@ async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncI
 
         yield _sse(
             "done",
-            {"conversation_id": str(request.conversation_id), "result": result},
+            ChatResponse(
+                type=ChatResponseType.AGENT_EXECUTION,
+                conversation_id=str(request.conversation_id),
+                result=result,
+            ).model_dump(mode="json"),
         )
     except Exception as exc:
         logger.exception("Agent stream failed", extra={"error_type": type(exc).__name__})

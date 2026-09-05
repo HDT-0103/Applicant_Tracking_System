@@ -64,12 +64,13 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
     ]);
     setIsLoading(true);
     try {
-      const response = await streamClient("/agents", {
+      const response = await streamClient("/chat", {
         method: "POST",
         body: JSON.stringify({
           message: trimmed,
           conversation_id: conversationId,
           context: { current_page: window.location.pathname, user_id: user?.id ?? "unknown" },
+          history: messages.slice(-6).map((item) => `${item.role}: ${item.content}`),
         }),
       });
       const reader = response.body!.getReader();
@@ -84,7 +85,12 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
         for (const event of events) {
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
-          const data = JSON.parse(dataLine.slice(6)) as { text?: string; message?: string; result?: unknown };
+          const data = JSON.parse(dataLine.slice(6)) as { content?: string; text?: string; message?: string; result?: unknown };
+          if (event.includes("event: direct") && data.content) {
+            setMessages((current) => current.map((item) => item.id === assistantId
+              ? { ...item, content: data.content! }
+              : item));
+          }
           if (event.includes("event: delta") && data.text) {
             setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: item.content + data.text } : item));
           }
