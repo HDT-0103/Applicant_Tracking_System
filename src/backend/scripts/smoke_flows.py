@@ -210,6 +210,17 @@ def mint_tokens(
                 role=role,
             )
         )
+    # Tech lead KHÔNG thuộc hội đồng nào (id giả): dùng cho các phép kiểm ranh
+    # giới. Token "tech_lead" ở trên là thành viên hội đồng thật, nên không
+    # dùng nó để chứng minh "người ngoài bị chặn" được.
+    tokens["tech_lead_outsider"] = jwt.create_access_token(
+        AuthUser(
+            id=str(uuidlib.uuid5(uuidlib.NAMESPACE_DNS, "smoke-tech_lead-outsider")),
+            email="smoke-outsider@smartats.example.com",
+            name=f"{MARK} outsider",
+            role="tech_lead",
+        )
+    )
     return tokens
 
 
@@ -502,7 +513,7 @@ def _flow_c_enrichment(run: Runner, api: Api, state: dict) -> None:
     run.check("đọc được trạng thái enrichment", _status)
 
     def _panel_guard() -> Optional[str]:
-        r = api("GET", f"/api/enrichment/{uuid}", role="tech_lead")
+        r = api("GET", f"/api/enrichment/{uuid}", role="tech_lead_outsider")
         # 404 chứ không 403: 403 xác nhận ứng viên tồn tại, biến endpoint thành
         # công cụ dò xem một người có ứng tuyển hay không.
         assert r.status_code == 404, f"tech_lead ngoài hội đồng vẫn đọc được ({r.status_code})"

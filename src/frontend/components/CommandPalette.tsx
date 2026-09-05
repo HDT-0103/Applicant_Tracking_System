@@ -19,6 +19,7 @@ import { candidateDisplayName } from "../lib/candidateLabel";
 import { isOperationalRole } from "../lib/rbac";
 import { listCandidateOptions, listJobPostings } from "../services/catalogService";
 import { useT } from "../lib/i18n";
+import { CANDIDATE_OPTIONS_QUERY, JOB_POSTINGS_QUERY, fetchQuery } from "../lib/queryCache";
 
 /**
  * Bảng lệnh ⌘K.
@@ -86,7 +87,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     if (!open || !operational || dynamic.length > 0) return;
     let alive = true;
     setLoading(true);
-    Promise.all([listCandidateOptions(), listJobPostings()])
+    Promise.all([
+      fetchQuery(CANDIDATE_OPTIONS_QUERY, listCandidateOptions),
+      fetchQuery(JOB_POSTINGS_QUERY, listJobPostings),
+    ])
       .then(([cands, jobs]) => {
         if (!alive) return;
         setDynamic([

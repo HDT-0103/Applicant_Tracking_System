@@ -92,6 +92,18 @@ async def test_candidates_on_job_postings_filters_by_candidate_uuid(repo, record
 
 
 @pytest.mark.asyncio
+async def test_batch_applications_filter_by_candidate_uuid(repo, recorder):
+    await repo.applications_for_candidates(["cand-1", "cand-2"])
+    assert recorder.columns_used_on("applications") == {CANDIDATE_COLUMN}
+
+
+@pytest.mark.asyncio
+async def test_batch_panel_counts_filter_by_job_posting_id(repo, recorder):
+    await repo.count_panels(["job-1"])
+    assert recorder.columns_used_on("job_posting_reviewers") == {"job_posting_id"}
+
+
+@pytest.mark.asyncio
 async def test_ownership_is_read_from_jobs_posting_created_by(repo, recorder):
     # Cột thật là `created_by` (FK -> users.id). Không phải owner_id hay
     # recruiter_id — hai cái tên nghe hợp lý nhưng không tồn tại.

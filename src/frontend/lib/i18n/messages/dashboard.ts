@@ -42,4 +42,5 @@ export const dashboardMessages = {
   "dashboard.alreadyDecided": { en: "Already Decided", vi: "Đã có quyết định" },
   "dashboard.scheduledInterviews": { en: "Scheduled Interviews", vi: "Phỏng vấn đã đặt lịch" },
   "dashboard.noScheduled": { en: "No scheduled interviews yet", vi: "Chưa có buổi phỏng vấn nào được đặt lịch" },
+  "dashboard.reviewLoading": { en: "Loading review status…", vi: "Đang tải trạng thái duyệt…" },
 } satisfies Record<string, Message>;

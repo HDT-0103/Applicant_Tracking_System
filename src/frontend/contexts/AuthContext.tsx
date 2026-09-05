@@ -18,6 +18,7 @@ import {
   setStoredTokens,
 } from "../services/httpClient";
 import { resolveSessionState } from "../lib/jwt";
+import { clearQueryCache } from "../lib/queryCache";
 import {
   landingPathForRole,
   normaliseRole,
@@ -189,6 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setSessionExpiredHandler(() => {
       persistUser(null);
       setUser(null);
+      clearQueryCache();
       router.replace("/login?reason=session_expired");
     });
     return () => setSessionExpiredHandler(null);
@@ -294,6 +296,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     clearStoredTokens();
     persistUser(null);
     setUser(null);
+    // Cache danh sách là của phiên vừa đăng xuất; người tiếp theo đăng nhập
+    // trên cùng tab không được thấy sidebar của người trước.
+    clearQueryCache();
     router.replace("/login");
   }, [router]);
 

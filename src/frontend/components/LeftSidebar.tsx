@@ -30,6 +30,8 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { buildJobPath, buildJobUrl } from "../lib/jobUrl";
 import { useT } from "../lib/i18n";
+import { JOB_POSTINGS_QUERY, setQueryData, useCachedQuery } from "../lib/queryCache";
+import type { JobPostingSummary } from "../services/catalogService";
 
 /** Bề rộng rail khi thu gọn — vừa đủ cho vùng bấm 36px và lề hai bên. */
 const RAIL_WIDTH = 56;
@@ -105,36 +107,29 @@ export const LeftSidebar: React.FC = () => {
   const isCurrent = (path: string) =>
     path === "/" ? pathname === "/" : pathname?.startsWith(path) ?? false;
 
+  // Sidebar hiện ở MỌI trang, nên đây là truy vấn chạy nhiều nhất trong app.
+  // Cache "hiện cũ trước, làm mới ngầm": chuyển trang thấy danh sách ngay,
+  // không vòng xoay; các thao tác bên dưới cập nhật thẳng vào cache.
+  const jobsQuery = useCachedQuery<JobPostingSummary[]>(JOB_POSTINGS_QUERY, listJobPostings);
   useEffect(() => {
-    const loadJobPostings = async () => {
-      try {
-        // Qua backend: sidebar hiện ở MỌI trang, nên nó là truy vấn chạy nhiều
-        // nhất trong app. Trước đây nó đọc thẳng Supabase bằng anon key và tự
-        // đếm hồ sơ ứng tuyển ở phía trình duyệt.
-        const jobs = await listJobPostings();
-        const mapped: JobPosting[] = jobs.map((job) => ({
-          id: job.id,
-          title: job.job_title,
-          status: job.status,
-          applicant_count: job.applicant_count,
-        }));
-
-        setJobPostings(mapped);
-
-        const firstPublished = mapped.find(j => j.status === 'PUBLISHED');
-        if (firstPublished) {
-          setActiveJobId(firstPublished.id);
-        }
-      } catch (err) {
-        console.error('Failed to load job postings:', err);
+    if (jobsQuery.data === undefined) {
+      if (jobsQuery.error) {
+        console.error("Failed to load job postings:", jobsQuery.error);
         setJobPostings([]);
-      } finally {
         setLoadingJobs(false);
       }
-    };
-
-    loadJobPostings();
-  }, []);
+      return;
+    }
+    const mapped: JobPosting[] = jobsQuery.data.map((job) => ({
+      id: job.id,
+      title: job.job_title,
+      status: job.status,
+      applicant_count: job.applicant_count,
+    }));
+    setJobPostings(mapped);
+    setLoadingJobs(false);
+    setActiveJobId((current) => current ?? mapped.find((j) => j.status === "PUBLISHED")?.id ?? null);
+  }, [jobsQuery.data, jobsQuery.error]);
 
   const handleToggleStatus = async (e: React.MouseEvent, job: JobPosting) => {
     e.stopPropagation();
@@ -142,8 +137,8 @@ export const LeftSidebar: React.FC = () => {
     setJobError(null);
     try {
       await setJobPostingStatus(job.id, newStatus);
-      setJobPostings((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, status: newStatus } : j))
+      setQueryData<JobPostingSummary[]>(JOB_POSTINGS_QUERY, (prev) =>
+        (prev ?? []).map((j) => (j.id === job.id ? { ...j, status: newStatus } : j)),
       );
     } catch (err) {
       // Mở lại một tin chưa có hội đồng bị backend từ chối — người dùng cần
@@ -161,10 +156,7 @@ export const LeftSidebar: React.FC = () => {
     setJobError(null);
     try {
       const copy = await duplicateJobPosting(job.id);
-      setJobPostings((prev) => [
-        { id: copy.id, title: copy.job_title, status: copy.status, applicant_count: 0 },
-        ...prev,
-      ]);
+      setQueryData<JobPostingSummary[]>(JOB_POSTINGS_QUERY, (prev) => [copy, ...(prev ?? [])]);
     } catch (err) {
       setJobError(
         err instanceof Error ? err.message : t("sidebar.duplicateError"),
@@ -188,7 +180,7 @@ export const LeftSidebar: React.FC = () => {
     setJobError(null);
     try {
       await deleteJobPosting(job.id);
-      setJobPostings((prev) => prev.filter((j) => j.id !== job.id));
+      setQueryData<JobPostingSummary[]>(JOB_POSTINGS_QUERY, (prev) => (prev ?? []).filter((j) => j.id !== job.id));
       setDeletingJob(null);
     } catch (err) {
       // Trước đây chỉ console.error: tin tuyển dụng vẫn nằm nguyên trong danh

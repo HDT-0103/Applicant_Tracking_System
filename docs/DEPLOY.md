@@ -7,7 +7,7 @@ là đủ.
 | Thành phần | Nơi chạy | Địa chỉ |
 |---|---|---|
 | Frontend (Next.js) | Vercel Hobby | `smartats.tech` · `applicant-tracking-system-alpha.vercel.app` |
-| Backend (FastAPI + mô hình nhúng) | Azure Container Apps | `https://<APP_NAME>.<region>.azurecontainerapps.io` |
+| Backend (FastAPI + mô hình nhúng) | Azure Container Apps, vùng **Korea Central** | `https://smartats-backend.purpleforest-518acad7.koreacentral.azurecontainerapps.io` |
 | Cơ sở dữ liệu | Supabase Free | — |
 | File CV | Azure Blob Storage | — |
 
@@ -189,6 +189,13 @@ az containerapp revision list --name $APP_NAME --resource-group $RG -o table
 
 ## 3. Dựng hạ tầng lần đầu
 
+> **Vùng:** Supabase của nhóm ở Seoul, nên backend đặt ở `koreacentral`. Đặt ở
+> Singapore thì mỗi truy vấn PostgREST mất ~160 ms (đã đo), mọi màn hình chậm
+> theo số truy vấn. Azure for Students chỉ cho **một** Container App
+> Environment mỗi subscription — muốn đổi vùng là phải xoá cái cũ rồi tạo cái
+> mới (backend ngừng ~10–20 phút); sao lưu secret trước bằng
+> `az containerapp secret show` từng cái, vì `JWT_SECRET` phải giữ nguyên.
+
 Chỉ đọc phần này nếu phải dựng lại từ số không — ví dụ credit Azure hết hạn và
 nhóm chuyển sang subscription khác.
 
@@ -196,8 +203,8 @@ nhóm chuyển sang subscription khác.
 
 ```bash
 export RG=smartats-rg
-export LOCATION=southeastasia
-export ENV_NAME=smartats-env
+export LOCATION=koreacentral   # cùng vùng với Supabase (Seoul): mỗi truy vấn ~15 ms thay vì ~160 ms từ Singapore
+export ENV_NAME=smartats-env-kr
 export APP_NAME=smartats-backend
 export ACR_NAME=smartatsacr$RANDOM && echo "ACR_NAME=$ACR_NAME"   # GHI LẠI dòng này
 ```

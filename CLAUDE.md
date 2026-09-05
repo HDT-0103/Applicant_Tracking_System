@@ -204,6 +204,26 @@ careers) **luôn sáng**.
 - Hex cứng trong inline style (`#fff` cho chữ trên nền chàm) chỉ ổn khi nó là
   màu chữ trên màu chính; `background: "#fff"` sẽ loé trắng trong chế độ tối.
 
+### Mỗi truy vấn Supabase từ Azure mất ~160 ms — đừng hỏi theo từng dòng
+
+Azure ở Singapore, Supabase ở xa; `/health` 61 ms nhưng mỗi vòng khứ hồi
+PostgREST ~160 ms. Mọi màn hình chậm đều là "số truy vấn nối tiếp × 160 ms".
+
+- `review/batch` từng hỏi sĩ số hội đồng theo TỪNG ứng viên (2 truy vấn/người,
+  nối tiếp): 20 hồ sơ ≈ 7 giây. Nay `applications_for_candidates` +
+  `count_panels` gộp cả lô, cố định 4 truy vấn. Test
+  `test_the_batch_asks_the_database_once_per_table_not_once_per_candidate`
+  canh việc này. Thêm endpoint đọc nhiều hồ sơ thì viết theo kiểu lô ngay.
+- Sidebar dùng `applications(count)` nhúng của PostgREST: một truy vấn thay
+  cho hai (đã kiểm chạy được trên Supabase thật).
+- Frontend: `lib/queryCache.ts` (hiện cũ trước, làm mới ngầm). Sidebar,
+  dashboard, analytics, ⌘K, danh sách ứng viên ở lịch đều đi qua nó. Thao tác
+  ghi phải `setQueryData` / `invalidateQueries(JOB_POSTINGS_QUERY)`; đăng xuất
+  gọi `clearQueryCache()`.
+- Supabase ở **Seoul**; backend đã dời sang Azure **Korea Central** (2026-09-05)
+  để cùng vùng. Azure for Students chỉ cho 1 Container App Environment, nên
+  đổi vùng = xoá rồi tạo lại (xem `docs/DEPLOY.md` mục 3).
+
 ### Cấu hình frontend nằm ở `src/frontend`, không phải gốc repo
 
 `next.config.ts`, `tailwind.config.ts` và `postcss.config.mjs` đều nằm trong
@@ -290,7 +310,7 @@ chọn.
 | **V009 phải chạy trên Supabase trước khi deploy** | `src/backend/migrations/V009__user_company.sql` thêm `users.company_name/company_website`. Thiếu cột: đăng ký 500, `/api/auth/me` 500. Đăng ký bắt buộc công ty; đăng nhập Google lần đầu tự tạo tài khoản `hr` rồi bắt điền ở `/onboarding/company` |
 | Tin có sẵn `created_by = NULL` | Sau khi tách dữ liệu theo người dùng, tin đó không HR nào thấy. Gán chủ bằng SQL trong `docs/DEPLOY.md` mục 2 |
 | Settings `/settings`, menu tài khoản, ⌘K, chế độ tối, EN/VI | `PATCH /api/auth/me` sửa tên/công ty/website; `POST /api/auth/change-password` chỉ cho tài khoản có mật khẩu (`AuthUser.has_password`). Tuỳ chọn thông báo **chưa làm** theo quyết định của chủ dự án |
-| Chatbot: Groq chính, Hugging Face dự phòng | `app/agents/router.py` dựng `FallbackLLMProvider(GroqProvider(), HFProvider())`. Dự phòng gánh **mọi** lỗi của Groq (401/400/429/timeout), không chỉ 429. `GROQ_API_KEY` trong `.env` đang **không hợp lệ** (401) nên thực tế HF phục vụ; `HF_MODEL` phải là model serverless trên router (`Qwen/Qwen2.5-72B-Instruct`; bản 7B bị đẩy sang Together đòi endpoint riêng). Thử nhanh: `tests/test_llm_fallback.py` |
+| Chatbot: Groq chính, Hugging Face dự phòng | `app/agents/router.py` dựng `FallbackLLMProvider(GroqProvider(), HFProvider())`. Dự phòng gánh **mọi** lỗi của Groq (401/400/429/timeout), không chỉ 429. `GROQ_API_KEY` trong `.env` đang **không hợp lệ** (401) nên thực tế HF phục vụ; `HF_MODEL` phải là model serverless trên router (`Qwen/Qwen2.5-72B-Instruct`; bản 7B bị đẩy sang Together đòi endpoint riêng). Thử nhanh: `tests/test_llm_fallback.py`. Khi planner thấy yêu cầu chưa rõ, đồ thị đi qua node `interaction`: route dùng `HttpInteractionGateway` ném `ClarificationNeeded` và trả câu hỏi về client như một lượt trả lời (`done` kèm `clarification: true`); client gửi lại tin gốc trong `history` ở lượt sau. **Đừng** dùng `CLIInteractionGateway` trong route — nó gọi `input()` trên stdin server, production ném `EOFError` |
 | `/ai-agent-prompt` là mockup tĩnh | Giữ theo quyết định của chủ dự án |
 | 5 component frontend chết | Chưa xoá, cần hỏi người viết |
 

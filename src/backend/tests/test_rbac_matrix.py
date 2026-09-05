@@ -137,6 +137,15 @@ class _PanelStub:
     async def candidates_on_job_postings(self, candidate_uuids, job_posting_ids):
         return set(candidate_uuids) if "job-1" in job_posting_ids else set()
 
+    async def applications_for_candidates(self, candidate_uuids):
+        return {c: {"job_posting_id": "job-1", "review_panel_size": None} for c in candidate_uuids}
+
+    async def count_panels(self, job_posting_ids):
+        return {j: 1 for j in job_posting_ids}
+
+    async def get_reviews_for_candidates(self, candidate_uuids):
+        return {}
+
     async def get_reviews(self, candidate_uuid):
         return []
 

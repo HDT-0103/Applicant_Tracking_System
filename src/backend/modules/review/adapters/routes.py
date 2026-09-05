@@ -168,10 +168,9 @@ async def get_review_status(
 ) -> ReviewStatus:
     # 404 chứ không 403: 403 xác nhận ứng viên đó tồn tại, biến endpoint thành
     # công cụ dò xem một người có ứng tuyển hay không.
-    if not await service.may_access_candidate(
-        candidate_uuid, current_user.id, current_user.role
-    ):
+    result = await service.get_status_for(candidate_uuid, current_user.id, current_user.role)
+    if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found."
         )
-    return await service.get_status(candidate_uuid)
+    return result

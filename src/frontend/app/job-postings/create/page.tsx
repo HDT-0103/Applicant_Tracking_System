@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { buildJobUrl } from "../../../lib/jobUrl";
 import { ShareLinkBox } from "../../../components/ShareLinkBox";
+import { JOB_POSTINGS_QUERY, invalidateQueries } from "../../../lib/queryCache";
 import { useT } from "@/lib/i18n";
 
 interface JDState {
@@ -577,6 +578,8 @@ function CreateJobPostingForm() {
         postingId,
       );
       if (!postingId && saved?.id) setPostingId(saved.id);
+      // Sidebar đọc từ cache: tin vừa tạo / đổi tên phải xuất hiện ngay.
+      invalidateQueries(JOB_POSTINGS_QUERY);
 
       // Đăng tin là bước RIÊNG: backend từ chối nếu chưa có hội đồng chấm.
       if (status === 'PUBLISHED') {

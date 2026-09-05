@@ -4,10 +4,32 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { streamClient } from "../services/httpClient";
 import { useAuth } from "../contexts/AuthContext";
 
+/**
+ * Tin nhắn gốc của người dùng nếu lượt trả lời gần nhất của agent là câu hỏi
+ * làm rõ; rỗng nếu không. Chỉ lấy MỘT tin (ngay trước câu hỏi) — sâu hơn là
+ * gửi lại cả cuộc trò chuyện cho một planner chỉ đọc một dòng.
+ */
+export function clarificationHistory(
+  messages: { role: string; content: string; clarification?: boolean }[],
+): string[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant") {
+      if (!m.clarification) return [];
+      const prevUser = messages.slice(0, i).reverse().find((x) => x.role === "user");
+      return prevUser ? [prevUser.content] : [];
+    }
+    if (m.role === "error") return [];
+  }
+  return [];
+}
+
 export type AgentMessage = {
   id: string;
   role: "user" | "assistant" | "error";
   content: string;
+  /** Agent hỏi lại để làm rõ; tin người dùng gửi tiếp sẽ mang theo tin trước đó. */
+  clarification?: boolean;
   retryMessage?: string;
 };
 
@@ -63,6 +85,9 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
       { id: assistantId, role: "assistant", content: "" },
     ]);
     setIsLoading(true);
+    // Đang trả lời một câu hỏi làm rõ? Gửi kèm tin nhắn gốc, vì planner chỉ đọc
+    // tin cuối: "Senior Python, HCMC" một mình không nói lên đang tìm ai.
+    const history = clarificationHistory(messages);
     try {
       const response = await streamClient("/agents", {
         method: "POST",
@@ -70,6 +95,7 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
           message: trimmed,
           conversation_id: conversationId,
           context: { current_page: window.location.pathname, user_id: user?.id ?? "unknown" },
+          history,
         }),
       });
       const reader = response.body!.getReader();
@@ -84,14 +110,14 @@ export function AgentChatProvider({ children }: { children: React.ReactNode }) {
         for (const event of events) {
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
-          const data = JSON.parse(dataLine.slice(6)) as { text?: string; message?: string; result?: unknown };
+          const data = JSON.parse(dataLine.slice(6)) as { text?: string; message?: string; result?: unknown; clarification?: boolean };
           if (event.includes("event: delta") && data.text) {
             setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: item.content + data.text } : item));
           }
           if (event.includes("event: error")) throw new Error(data.message ?? "Agent request failed");
           if (event.includes("event: done") && data.result) {
             setMessages((current) => current.map((item) => item.id === assistantId
-              ? { ...item, content: JSON.stringify(data.result) }
+              ? { ...item, content: JSON.stringify(data.result), clarification: data.clarification === true }
               : item));
           }
         }

@@ -142,6 +142,45 @@ class SupabaseReviewRepo(IReviewRepo):
         application = await self._get_application(candidate_uuid)
         return application.get("job_posting_id") if application else None
 
+    async def applications_for_candidates(
+        self, candidate_uuids: Sequence[str]
+    ) -> Dict[str, dict]:
+        if not candidate_uuids:
+            return {}
+        res = (
+            self._client.table("applications")
+            .select("candidate_uuid, job_posting_id, review_panel_size, created_at")
+            .in_("candidate_uuid", list(candidate_uuids))
+            .order("created_at", desc=True)
+            .execute()
+        )
+        latest: Dict[str, dict] = {}
+        for row in res.data or []:
+            # Đã sắp xếp mới nhất trước: dòng đầu tiên của mỗi ứng viên là đơn
+            # mới nhất, cùng luật với `_get_application`.
+            latest.setdefault(
+                row["candidate_uuid"],
+                {
+                    "job_posting_id": row.get("job_posting_id"),
+                    "review_panel_size": row.get("review_panel_size"),
+                },
+            )
+        return latest
+
+    async def count_panels(self, job_posting_ids: Sequence[str]) -> Dict[str, int]:
+        if not job_posting_ids:
+            return {}
+        res = (
+            self._client.table("job_posting_reviewers")
+            .select("job_posting_id")
+            .in_("job_posting_id", list(job_posting_ids))
+            .execute()
+        )
+        counts: Dict[str, int] = {}
+        for row in res.data or []:
+            counts[row["job_posting_id"]] = counts.get(row["job_posting_id"], 0) + 1
+        return counts
+
     async def candidates_on_job_postings(
         self, candidate_uuids: Sequence[str], job_posting_ids: Sequence[str]
     ) -> Set[str]:

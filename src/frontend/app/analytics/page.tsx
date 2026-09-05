@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AppShell } from "../../components/AppShell";
 import { D } from "../../lib/shared";
 import { getAnalytics } from "../../services/catalogService";
+import { ANALYTICS_QUERY, fetchQuery } from "../../lib/queryCache";
 import { useT } from "../../lib/i18n";
 import {
   BarChart3,
@@ -77,7 +78,7 @@ export default function AnalyticsPage() {
         // Đáng chú ý: bản cũ kéo về full_name, email, github_username,
         // linkedin_url của MỌI ứng viên chỉ để hiện ra vài con số tổng. Danh
         // tính không cần rời khỏi máy chủ để đếm; endpoint mới trả về số đếm.
-        const analytics = await getAnalytics();
+        const analytics = await fetchQuery(ANALYTICS_QUERY, getAnalytics);
         const jobData = analytics.jobs as any[];
         const appData = analytics.applications as any[];
 

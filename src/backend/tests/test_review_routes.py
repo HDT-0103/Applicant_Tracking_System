@@ -86,6 +86,19 @@ class FakeReviewRepo(IReviewRepo):
             if self.candidate_jobs.get(c, self.default_job) in allowed
         }
 
+    async def applications_for_candidates(self, candidate_uuids):
+        self.batch_calls = getattr(self, "batch_calls", 0) + 1
+        out = {}
+        for c in candidate_uuids:
+            job = self.candidate_jobs.get(c, self.default_job)
+            if job is not None:
+                out[c] = {"job_posting_id": job, "review_panel_size": self.frozen_panel_size.get(c)}
+        return out
+
+    async def count_panels(self, job_posting_ids):
+        # Cùng nguồn với get_panel_size: test đặt `repo.panel_size` để nói sĩ số.
+        return {j: self.panel_size for j in job_posting_ids}
+
     async def get_panel(self, job_posting_id):
         return list(self.panel.get(job_posting_id, []))
 
@@ -485,6 +498,26 @@ class TestPanelMembership:
         # Vắng hẳn, không phải trả về rỗng: một mục "đang chờ" cho ứng viên lạ
         # vẫn tiết lộ rằng người đó có ứng tuyển.
         assert set(body) == {mine}
+
+    def test_the_batch_asks_the_database_once_per_table_not_once_per_candidate(
+        self, client, as_role, repo
+    ):
+        # 20 hồ sơ từng là ~42 vòng khứ hồi (2 truy vấn/người, nối tiếp) ≈ 7 giây
+        # trên production. Đường lô phải hỏi `applications` đúng một lần.
+        as_role("hr")
+        uuids = [str(_uuid.uuid4()) for _ in range(20)]
+        body = client.post("/api/review/batch", json={"candidate_uuids": uuids}).json()
+        assert set(body) == set(uuids)
+        assert repo.batch_calls == 1
+
+    def test_a_frozen_panel_size_wins_over_the_live_count_in_the_batch(
+        self, client, as_role, repo
+    ):
+        repo.panel_size = 5
+        repo.frozen_panel_size[CANDIDATE] = 2
+        as_role("hr")
+        body = client.post("/api/review/batch", json={"candidate_uuids": [CANDIDATE]}).json()
+        assert body[CANDIDATE]["total_tls"] == 2
 
     def test_the_batch_is_scoped_for_hr_too(self, client, as_role, repo):
         mine, theirs = CANDIDATE, str(_uuid.uuid4())

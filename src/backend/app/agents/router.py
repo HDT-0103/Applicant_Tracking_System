@@ -32,7 +32,7 @@ from modules.shared.infrastructure.rate_limit import agent_rate_limit
 from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
 from pydantic import BaseModel, Field
 
-from src.backend.app.agents.nodes.interaction import CLIInteractionGateway
+from src.backend.app.agents.nodes.interaction import HumanInteractionGateway
 from src.backend.app.agents.state import (
     ATSState,
     CandidateSearchState,
@@ -59,6 +59,32 @@ class AgentChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=12000)
     conversation_id: UUID
     context: AgentContext
+    #: Tin nhắn TRƯỚC của người dùng, chỉ gửi khi họ đang trả lời một câu hỏi
+    #: làm rõ của agent. Planner chỉ đọc tin nhắn cuối, nên phải ghép lại thì
+    #: "Senior Python, HCMC" mới còn dính với "tìm backend engineer" trước đó.
+    history: list[str] = Field(default_factory=list, max_length=6)
+
+
+class ClarificationNeeded(Exception):
+    """Agent cần hỏi lại người dùng trước khi làm tiếp."""
+
+    def __init__(self, question: str) -> None:
+        super().__init__(question)
+        self.question = question
+
+
+class HttpInteractionGateway(HumanInteractionGateway):
+    """Gateway cho HTTP: không chờ được câu trả lời trong cùng một request.
+
+    Gateway CLI cũ gọi `input()` — đọc stdin của SERVER — nên trên production
+    nó ném `EOFError`, câu hỏi làm rõ không bao giờ tới người dùng và chat chỉ
+    thấy "The agent could not complete this request." Ở đây câu hỏi được ném
+    lên để route trả về cho client như một lượt trả lời; người dùng đáp lại
+    bằng request tiếp theo (kèm `history`).
+    """
+
+    async def ask(self, question: str) -> str:
+        raise ClarificationNeeded(question)
 
 
 def _agent_graph(settings: Settings):
@@ -85,7 +111,7 @@ def _agent_graph(settings: Settings):
             fallback=HFProvider(),
         ),
         search_service=search_service,
-        interaction_gateway=CLIInteractionGateway(),
+        interaction_gateway=HttpInteractionGateway(),
     )
 
 
@@ -134,11 +160,13 @@ def _extract_final_decision(value: object):
 async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncIterator[str]:
     try:
         graph = _agent_graph(settings)
+        # Trả lời câu hỏi làm rõ: ghép tin trước với tin này thành một yêu cầu.
+        objective = "\n".join([*request.history, request.message]) if request.history else request.message
         initial_state = ATSState(
-            messages=[request.message],
+            messages=[objective],
             candidate_search=CandidateSearchState(
                 mission=Mission(
-                    objective=request.message,
+                    objective=objective,
                     current_step="Planner Assessment",
                     status=MissionStatus.PENDING,
                 )
@@ -147,10 +175,23 @@ async def _stream_agent(request: AgentChatRequest, settings: Settings) -> AsyncI
 
         yield _sse("status", {"message": "Agent is thinking..."})
         final_state = None
-        async for update in graph.astream(initial_state, stream_mode="updates"):
-            final_state = update
-            for node_name in update:
-                yield _sse("status", {"message": f"Completed {node_name}"})
+        try:
+            async for update in graph.astream(initial_state, stream_mode="updates"):
+                final_state = update
+                for node_name in update:
+                    yield _sse("status", {"message": f"Completed {node_name}"})
+        except ClarificationNeeded as need:
+            # Câu hỏi làm rõ là một LƯỢT TRẢ LỜI, không phải lỗi: client vẽ nó
+            # như tin nhắn của agent và gửi câu trả lời ở request sau.
+            yield _sse(
+                "done",
+                {
+                    "conversation_id": str(request.conversation_id),
+                    "result": {"summary": need.question, "candidates": []},
+                    "clarification": True,
+                },
+            )
+            return
 
         if not final_state:
             raise RuntimeError("Agent completed without a result")

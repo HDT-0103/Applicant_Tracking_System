@@ -51,6 +51,21 @@ class IReviewRepo:
         """Tin mà ứng viên này nộp vào (đơn mới nhất). None nếu chưa nộp đâu."""
         raise NotImplementedError
 
+    async def applications_for_candidates(
+        self, candidate_uuids: Sequence[str]
+    ) -> Dict[str, dict]:
+        """Đơn ứng tuyển MỚI NHẤT của từng ứng viên, một lượt cho cả lô.
+
+        Trả về ``{candidate_uuid: {"job_posting_id", "review_panel_size"}}``;
+        thiếu key = chưa nộp đâu. Dashboard hỏi 20–30 hồ sơ: hỏi từng người
+        là 20–30 vòng khứ hồi, mỗi vòng ~160 ms từ Azure sang Supabase.
+        """
+        raise NotImplementedError
+
+    async def count_panels(self, job_posting_ids: Sequence[str]) -> Dict[str, int]:
+        """Sĩ số hội đồng của nhiều tin trong MỘT truy vấn. Tin không có = 0."""
+        raise NotImplementedError
+
     async def candidates_on_job_postings(
         self, candidate_uuids: Sequence[str], job_posting_ids: Sequence[str]
     ) -> Set[str]:

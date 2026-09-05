@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../components/AppShell";
 import { D, tint } from "../lib/shared";
@@ -9,7 +9,8 @@ import {
   topLanguages,
   candidateContext,
 } from "../lib/candidateSummary";
-import { getDashboard } from "../services/catalogService";
+import { getDashboard, type DashboardData } from "../services/catalogService";
+import { DASHBOARD_QUERY, fetchQuery, getQueryData } from "../lib/queryCache";
 import {
   candidateDisplayName,
   candidateInitials,
@@ -79,45 +80,13 @@ export default function Dashboard() {
   const [notice, setNotice] = useState<string | null>(null);
   /** Đọc trạng thái duyệt hỏng. Hồ sơ vẫn hiện, nhưng phân nhóm sẽ không chính xác. */
   const [reviewError, setReviewError] = useState<string | null>(null);
+  /** Hồ sơ đã hiện, trạng thái duyệt còn đang về: phân nhóm tạm thời. */
+  const [reviewLoading, setReviewLoading] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      // Một request duy nhất, đi qua backend.
-      //
-      // Trước đây chỗ này `select` thẳng vào Supabase bằng anon key — khoá nằm
-      // trong bundle JS công khai, nên toàn bộ bảng `candidates` đọc được mà
-      // không cần đăng nhập, và tầng che PII ở backend bị đi vòng hoàn toàn.
-      // Endpoint mới lọc theo hội đồng của người đang đăng nhập và che PII
-      // theo role trước khi trả về.
-      let dashboard;
-      try {
-        dashboard = await getDashboard();
-      } catch (err) {
-        if (!mounted) return;
-        setLoading(false);
-        setNotice(null);
-        setSendError(err instanceof Error ? err.message : t("dashboard.loadError"));
-        return;
-      }
-      if (!mounted) return;
-
+  /** Dựng danh sách từ dữ liệu dashboard + trạng thái duyệt (có thể rỗng). */
+  const applyDashboard = useCallback(
+    (dashboard: DashboardData, reviewByUuid: Record<string, ReviewStatus>) => {
       const slots = dashboard.slots;
-
-      // Hỏng ở đây KHÔNG được làm hồ sơ biến mất — hồ sơ vẫn hiện, chỉ là
-      // chưa biết trạng thái duyệt. Nhưng phải nói ra: nuốt lỗi rồi để danh
-      // sách trống là cách hỏng tệ nhất, vì trông y hệt "không có ứng viên nào".
-      let reviewByUuid: Record<string, ReviewStatus> = {};
-      let reviewFailed: string | null = null;
-      try {
-        reviewByUuid = await getReviewStatuses(
-          dashboard.candidates.map((c) => c.candidate_uuid),
-        );
-      } catch (err) {
-        reviewFailed =
-          err instanceof Error ? err.message : t("dashboard.reviewLoadError");
-      }
-
       const now = new Date().toISOString();
       const mapped = dashboard.candidates.map((c) => {
         const ts = c.created_at ? new Date(c.created_at).getTime() : Date.now();
@@ -147,11 +116,61 @@ export default function Dashboard() {
           mustHave: readMustHave(c.skills_matrix),
         };
       });
+      setCandidates(mapped);
+    },
+    [],
+  );
 
-      if (mounted) {
-        setCandidates(mapped);
-        setReviewError(reviewFailed);
+  useEffect(() => {
+    let mounted = true;
+    const REVIEW_QUERY = "review:batch";
+
+    // Có bản cache (vừa rời trang rồi quay lại) thì vẽ NGAY, rồi làm mới ngầm.
+    // Trước đây mỗi lần về dashboard là vòng xoay vài giây dù dữ liệu vừa có.
+    const cachedDashboard = getQueryData<DashboardData>(DASHBOARD_QUERY);
+    const cachedReview = getQueryData<Record<string, ReviewStatus>>(REVIEW_QUERY) ?? {};
+    if (cachedDashboard) {
+      applyDashboard(cachedDashboard, cachedReview);
+      setLoading(false);
+    }
+
+    (async () => {
+      // Một request đi qua backend: lọc theo phạm vi người đăng nhập và che
+      // PII theo role trước khi trả về.
+      let dashboard: DashboardData;
+      try {
+        dashboard = await fetchQuery(DASHBOARD_QUERY, getDashboard);
+      } catch (err) {
+        if (!mounted) return;
         setLoading(false);
+        setNotice(null);
+        setSendError(err instanceof Error ? err.message : t("dashboard.loadError"));
+        return;
+      }
+      if (!mounted) return;
+
+      // Hồ sơ hiện TRƯỚC, trạng thái duyệt đổ vào sau. Chờ cả hai là bắt
+      // người dùng nhìn vòng xoay suốt thời gian của request chậm nhất.
+      applyDashboard(dashboard, cachedReview);
+      setLoading(false);
+      setReviewLoading(true);
+
+      // Hỏng ở đây KHÔNG được làm hồ sơ biến mất — hồ sơ vẫn hiện, chỉ là
+      // chưa biết trạng thái duyệt. Nhưng phải nói ra: nuốt lỗi rồi để danh
+      // sách trống là cách hỏng tệ nhất, vì trông y hệt "không có ứng viên nào".
+      const uuids = dashboard.candidates.map((c) => c.candidate_uuid);
+      try {
+        const reviewByUuid = uuids.length
+          ? await fetchQuery(REVIEW_QUERY, () => getReviewStatuses(uuids))
+          : {};
+        if (!mounted) return;
+        applyDashboard(dashboard, reviewByUuid);
+        setReviewError(null);
+      } catch (err) {
+        if (!mounted) return;
+        setReviewError(err instanceof Error ? err.message : t("dashboard.reviewLoadError"));
+      } finally {
+        if (mounted) setReviewLoading(false);
       }
     })();
 
@@ -161,7 +180,7 @@ export default function Dashboard() {
     // Chỉ tải một lần; đổi ngôn ngữ không được kéo lại dữ liệu. Hai chuỗi lỗi
     // dùng `t` ở đây là của lần tải đó, chấp nhận giữ ngôn ngữ lúc xảy ra.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [applyDashboard]);
 
   const openSendDetails = (e: React.MouseEvent, c: ExtendedCandidate) => {
     e.stopPropagation();
@@ -383,6 +402,12 @@ export default function Dashboard() {
         </div>
       )}
 
+      {reviewLoading && !reviewError && (
+        <div role="status" style={{ marginBottom: 12, fontSize: 12, color: D.dim, display: "flex", alignItems: "center", gap: 6 }}>
+          <Loader2 size={12} className="animate-spin" /> {t("dashboard.reviewLoading")}
+        </div>
+      )}
+
       {notice && (
         <div
           role="status"
@@ -444,8 +469,16 @@ export default function Dashboard() {
             </div>
 
             {loading ? (
-              <div style={{ padding: "40px", textAlign: "center" }}>
-                <Loader2 size={32} className="animate-spin text-blue-500 mx-auto" />
+              <div style={{ borderRadius: 12, background: D.canvas, border: `1px solid ${D.line}`, overflow: "hidden" }} aria-busy="true">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} style={{ padding: "16px 20px", borderBottom: `1px solid ${D.line}`, display: "flex", alignItems: "center", gap: 16 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: D.surface, animation: "skelShimmer 1.4s ease-in-out infinite" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ height: 12, width: `${38 + i * 9}%`, borderRadius: 4, background: D.surface, animation: "skelShimmer 1.4s ease-in-out infinite" }} />
+                      <div style={{ height: 10, width: `${24 + i * 7}%`, borderRadius: 4, background: D.surface, animation: "skelShimmer 1.4s ease-in-out infinite" }} />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>

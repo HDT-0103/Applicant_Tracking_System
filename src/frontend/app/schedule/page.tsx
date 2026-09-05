@@ -16,6 +16,7 @@ import {
   type Interviewer, type TimeSlot, type ConfirmedSlot,
 } from "../../services/schedulingService";
 
+import { CANDIDATE_OPTIONS_QUERY, fetchQuery } from "../../lib/queryCache";
 import { listCandidateOptions } from "../../services/catalogService";
 import { useLang, type Lang } from "../../lib/i18n";
 
@@ -154,7 +155,7 @@ export default function SchedulePage() {
   useEffect(() => {
     // Qua backend chứ không hỏi thẳng Supabase: danh sách này chỉ được chứa
     // ứng viên mà người đang đăng nhập có quyền xem.
-    listCandidateOptions()
+    fetchQuery(CANDIDATE_OPTIONS_QUERY, listCandidateOptions)
       .then((options) => {
         const data = options.map((o) => ({
           uuid: o.candidate_uuid,

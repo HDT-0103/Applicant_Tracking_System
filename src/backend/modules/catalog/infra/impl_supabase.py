@@ -42,31 +42,27 @@ class SupabaseCatalogRepo:
         `None` = không giới hạn (admin). Danh sách rỗng thì service đã trả về
         rỗng trước khi tới đây — `in_("id", [])` của PostgREST không đáng tin.
         """
-        query = self._client.table("jobs_posting").select("id, job_title, status")
+        # `applications(count)`: PostgREST đếm hồ sơ ngay trong truy vấn tin.
+        # Trước đây là hai truy vấn (tin + toàn bộ cột job_posting_id của
+        # applications) rồi đếm ở Python — sidebar hiện ở MỌI trang nên mỗi
+        # vòng khứ hồi bớt đi là mỗi trang nhanh lên.
+        query = self._client.table("jobs_posting").select(
+            "id, job_title, status, applications(count)"
+        )
         if job_posting_ids is not None:
             query = query.in_("id", list(job_posting_ids))
         jobs = query.order("created_at", desc=True).execute()
 
-        counts: Dict[str, int] = {}
-        apps_query = (
-            self._client.table("applications")
-            .select("job_posting_id")
-            .not_.is_("job_posting_id", "null")
-        )
-        if job_posting_ids is not None:
-            apps_query = apps_query.in_("job_posting_id", list(job_posting_ids))
-        apps = apps_query.execute()
-        for row in apps.data or []:
-            job_id = row.get("job_posting_id")
-            if job_id:
-                counts[job_id] = counts.get(job_id, 0) + 1
+        def _count(row: dict) -> int:
+            embedded = _first(row.get("applications")) or {}
+            return int(embedded.get("count") or 0)
 
         return [
             JobPostingSummary(
                 id=row["id"],
                 job_title=row.get("job_title") or "Untitled",
                 status=row.get("status") or "DRAFT",
-                applicant_count=counts.get(row["id"], 0),
+                applicant_count=_count(row),
             )
             for row in jobs.data or []
         ]
