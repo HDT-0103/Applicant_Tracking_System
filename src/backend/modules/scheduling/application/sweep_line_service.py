@@ -81,17 +81,15 @@ class SweepLineService:
                         ),
                     )
                 )
-                cursor += min_delta
+                cursor += timedelta(minutes=15)
 
         # Every slot is exactly min_slot_minutes long, so sorting by duration
         # first would be a no-op tie-break. Chronological order is what a
         # recruiter reading a list of suggestions actually expects.
         filtered.sort(key=lambda s: s.start_time)
 
-        # `limit` used to be accepted and then ignored, so a free working day
-        # returned every 45-minute block in it. A dozen "suggestions" is not a
-        # suggestion. limit <= 0 means no cap.
-        result = filtered[:limit] if limit and limit > 0 else filtered
+        # limit <= 0 means no cap. We want to return all slots as requested.
+        result = filtered
 
         logger.info(
             "scheduling.sweepline.complete",
