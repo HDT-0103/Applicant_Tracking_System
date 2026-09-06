@@ -26,8 +26,8 @@ from modules.scheduling.infra.google_oauth_service import GoogleOAuthService
 
 logger = structlog.get_logger(__name__)
 
-#: How many slot suggestions the panel search returns at most.
-MAX_SUGGESTED_SLOTS = 5
+#: Default limit for slot suggestions (0 means no cap, return all available slots)
+MAX_SUGGESTED_SLOTS = 0
 
 
 class SchedulingService:
@@ -117,8 +117,11 @@ class SchedulingService:
         date_from: datetime,
         date_to: datetime,
         api_key: str = "",
+        duration_minutes: Optional[int] = None,
+        limit: int = 0,
     ) -> list[TimeSlot]:
         config = self._repo.get_config()
+        min_slot_minutes = duration_minutes or config.min_slot_minutes
 
         interviewers = self._repo.get_interviewers()
         selected = [p for p in interviewers if p.id in interviewer_ids]
@@ -201,36 +204,25 @@ class SchedulingService:
 
             # 3. Fallback to standard working hours if interviewer has no calendar connected
             if not fbs:
-                start = date_from.replace(
-                    hour=int(config.work_start.split(":")[0]),
-                    minute=int(config.work_start.split(":")[1]),
-                    second=0,
-                    microsecond=0,
-                )
-                end = date_to.replace(
-                    hour=int(config.work_end.split(":")[0]),
-                    minute=int(config.work_end.split(":")[1]),
-                    second=0,
-                    microsecond=0,
+                from modules.scheduling.infra.google_calendar_service import _working_hour_intervals
+
+                working_wholes = _working_hour_intervals(
+                    date_from, date_to, config.work_start, config.work_end
                 )
                 fbs = [
                     FreeBusyInterval(
                         interviewer_id=interviewer.id,
-                        start_time=max(start, datetime.now(timezone.utc)),
-                        end_time=end,
+                        start_time=ws,
+                        end_time=we,
                     )
+                    for ws, we in working_wholes
                 ]
             freebusy_map[interviewer.id] = fbs
 
         slots = self._sweepline.find_slots(
             interviewer_freebusy=freebusy_map,
-            min_slot_minutes=config.min_slot_minutes,
-            # Passed explicitly so the cap is visible here rather than hidden in
-            # a default. `limit` used to be ignored entirely, so a free working
-            # day returned every 45-minute block in it — the UI header reads
-            # "Available Slots (N)", and N in the dozens is noise, not choice.
-            # Raise this if recruiters ask for more options.
-            limit=MAX_SUGGESTED_SLOTS,
+            min_slot_minutes=min_slot_minutes,
+            limit=limit,
         )
 
         return slots
@@ -289,10 +281,11 @@ class SchedulingService:
                 eid = await self._calendar_event.create_event(
                     api_key=iv_key,
                     summary=f"Interview: {candidate_name}",
-                    description=f"SmartATS Interview with {candidate_name}",
+                    description=f"SmartATS Interview with {candidate_name}\n\nNote: Meeting room and location details will be announced later.",
                     start_time=start_time,
                     end_time=end_time,
                     attendee_emails=attendee_emails,
+                    timezone_str=self._email_notifier.timezone,
                 )
                 if eid:
                     created_event_ids.append(eid)
@@ -301,10 +294,11 @@ class SchedulingService:
             eid = await self._calendar_event.create_event(
                 api_key=api_key,
                 summary=f"Interview: {candidate_name}",
-                description=f"SmartATS Interview with {candidate_name}",
+                description=f"SmartATS Interview with {candidate_name}\n\nNote: Meeting room and location details will be announced later.",
                 start_time=start_time,
                 end_time=end_time,
                 attendee_emails=attendee_emails,
+                timezone_str=self._email_notifier.timezone,
             )
             if eid:
                 created_event_ids.append(eid)

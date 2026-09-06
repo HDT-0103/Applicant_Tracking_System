@@ -74,6 +74,21 @@ class SupabaseSchedulingRepo(ISchedulingRepo):
             update_data["calendar_refresh_token"] = refresh_token
 
         res = self._supabase.table("interviewers").update(update_data).eq("id", interviewer_id).execute()
+        if not res.data:
+            user_row = self._supabase.table("users").select("name, email").eq("id", interviewer_id).execute()
+            name = user_row.data[0]["name"] if user_row.data else "Interviewer"
+            email = user_row.data[0]["email"] if user_row.data else ""
+            insert_data = {
+                "id": interviewer_id,
+                "name": name,
+                "email": email,
+                "job_title": "Interviewer",
+                "initials": (name[:2] if name else "IN").upper(),
+                "color": "#6366F1",
+                "calendar_id": "primary",
+                **update_data
+            }
+            res = self._supabase.table("interviewers").insert(insert_data).execute()
         
         if res.data:
             return self.get_interviewer(interviewer_id)

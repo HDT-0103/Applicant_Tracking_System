@@ -34,6 +34,7 @@ export interface SlotsRequest {
   interviewer_uuids: string[];
   date_from: string;
   date_to: string;
+  duration_minutes?: number;
 }
 
 export interface ConfirmRequest {
@@ -58,9 +59,14 @@ export async function exchangeGoogleCode(code: string): Promise<{ status: string
   return api.post<{ status: string; message: string }>("/api/scheduling/auth/google/callback", { code });
 }
 
-export async function fetchConnectedInterviewers(): Promise<Interviewer[]> {
+export async function updateCalendarApiKey(apiKey: string): Promise<{ status: string; message: string }> {
+  return api.post<{ status: string; message: string }>("/api/scheduling/calendar-key", { api_key: apiKey });
+}
+
+export async function fetchConnectedInterviewers(candidateId?: string): Promise<Interviewer[]> {
   type BackendIV = { id: string; name: string; email: string; role: string; cal_connected: boolean };
-  const raw = await api.get<BackendIV[]>("/api/scheduling/connected-interviewers");
+  const query = candidateId ? `?candidate_id=${encodeURIComponent(candidateId)}` : "";
+  const raw = await api.get<BackendIV[]>(`/api/scheduling/connected-interviewers${query}`);
   return raw.map((iv) => ({
     uuid: iv.id,
     name: iv.name,
@@ -77,6 +83,7 @@ export async function querySlots(req: SlotsRequest): Promise<TimeSlot[]> {
     interviewer_ids: req.interviewer_uuids,
     date_from: req.date_from,
     date_to: req.date_to,
+    duration_minutes: req.duration_minutes,
   });
   return raw.map((s) => ({
     start: s.start_time,

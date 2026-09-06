@@ -62,7 +62,7 @@ class TestPostIngestWorker:
     async def test_the_upload_route_schedules_the_worker_not_just_enrichment(self):
         # Đường upload là chỗ DUY NHẤT pipeline được gọi; nếu ai đó "đơn giản
         # hoá" về add_task(enrichment_worker) thì mọi thứ ở trên chết lặng.
-        src = Path(azure_routes.__file__).read_text()
+        src = Path(azure_routes.__file__).read_text(encoding="utf-8")
         assert "background_tasks.add_task(\n            post_ingest_worker," in src
         assert not re.search(r"add_task\(\s*enrichment_worker", src)
 
@@ -187,7 +187,7 @@ class TestRankingQueryColumns:
     """
 
     def test_every_selected_column_exists_in_the_schema(self):
-        schema = Path(__file__).resolve().parents[3].joinpath("docs/supabase_schema.md").read_text()
+        schema = Path(__file__).resolve().parents[3].joinpath("docs/supabase_schema.md").read_text(encoding="utf-8")
 
         def columns_of(table: str) -> set[str]:
             block = schema.split(f"CREATE TABLE public.{table} (")[1].split(");")[0]

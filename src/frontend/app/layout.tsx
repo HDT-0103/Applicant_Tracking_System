@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi" className={inter.variable}>
+    <html lang="vi" className={inter.variable} suppressHydrationWarning={true}>
       <body suppressHydrationWarning={true}>
         {/* Đặt data-theme TRƯỚC khi React chạy, nếu không trang tối sẽ loé
             trắng một nhịp ở mỗi lần tải. Cùng luật với ThemeContext: trang

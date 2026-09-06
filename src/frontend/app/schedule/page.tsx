@@ -20,19 +20,65 @@ import { CANDIDATE_OPTIONS_QUERY, fetchQuery } from "../../lib/queryCache";
 import { listCandidateOptions } from "../../services/catalogService";
 import { useLang, type Lang } from "../../lib/i18n";
 
+const TIMEZONE_UTC7 = "Asia/Ho_Chi_Minh";
+
 function dateLocale(lang: Lang): string {
   return lang === "vi" ? "vi-VN" : "en-US";
 }
 
 function formatDate(iso: string, locale: string): string {
   const d = new Date(iso);
-  return d.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" });
+  return d.toLocaleDateString(locale, {
+    timeZone: TIMEZONE_UTC7,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatTimeUTC7(iso: string): string {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: TIMEZONE_UTC7,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
+function getDayKeyUTC7(iso: string): string {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE_UTC7,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  return `${year}-${month}-${day}`;
+}
+
+function getMinutesInDayUTC7(iso: string): number {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TIMEZONE_UTC7,
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(d);
+  const hour = parseInt(parts.find((p) => p.type === "hour")?.value || "0", 10);
+  const minute = parseInt(parts.find((p) => p.type === "minute")?.value || "0", 10);
+  return hour * 60 + minute;
 }
 
 function daysFromNow(n: number): string {
   const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  const utc = d.getTime() + d.getTimezoneOffset() * 60000;
+  const d7 = new Date(utc + 7 * 3600000);
+  d7.setDate(d7.getDate() + n);
+  return d7.toISOString().slice(0, 10);
 }
 
 function InterviewerCard({ interviewer, selected, onToggle }: { interviewer: Interviewer; selected: boolean; onToggle: () => void }) {
@@ -75,7 +121,7 @@ function WorkHoursBar({ slots }: { slots: TimeSlot[] }) {
   const locale = dateLocale(lang);
   const dayMap = new Map<string, TimeSlot[]>();
   for (const s of slots) {
-    const day = s.start.slice(0, 10);
+    const day = getDayKeyUTC7(s.start);
     if (!dayMap.has(day)) dayMap.set(day, []);
     dayMap.get(day)!.push(s);
   }
@@ -87,7 +133,6 @@ function WorkHoursBar({ slots }: { slots: TimeSlot[] }) {
         const workStart = 480; const workEnd = 1020;
         const totalRange = workEnd - workStart;
         const scale = totalRange > 0 ? 100 / totalRange : 1;
-        const toMin = (s: string) => { const d = new Date(s); return d.getHours() * 60 + d.getMinutes(); };
         return (
           <div key={day}>
             <div style={{ fontSize: 10, fontWeight: 600, color: D.sub, marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
@@ -97,20 +142,20 @@ function WorkHoursBar({ slots }: { slots: TimeSlot[] }) {
             </div>
             <div style={{ position: "relative", height: 20, background: D.surface, borderRadius: 4, border: `1px solid ${D.lineSoft}`, overflow: "hidden" }}>
               {sorted.map((slot, i) => {
-                const sMin = toMin(slot.start);
-                const eMin = toMin(slot.end);
+                const sMin = getMinutesInDayUTC7(slot.start);
+                const eMin = getMinutesInDayUTC7(slot.end);
                 const left = (sMin - workStart) * scale;
                 const width = (eMin - sMin) * scale;
                 return (
                   <div key={i} style={{
-                    position: "absolute", left: `${left}%`, width: `${Math.max(width, 0.5)}%`,
+                    position: "absolute", left: `${Math.max(0, left)}%`, width: `${Math.max(width, 0.5)}%`,
                     top: 1, bottom: 1, background: D.blue, borderRadius: 2, opacity: 0.7, minWidth: 2,
-                  }} title={`${new Date(slot.start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} - ${new Date(slot.end).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`} />
+                  }} title={`${formatTimeUTC7(slot.start)} - ${formatTimeUTC7(slot.end)} (UTC+7)`} />
                 );
               })}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: D.dim, fontFamily: D.mono }}>
-              <span>08:00</span><span>17:00</span>
+              <span>08:00 (UTC+7)</span><span>17:00 (UTC+7)</span>
             </div>
           </div>
         );
@@ -133,6 +178,7 @@ export default function SchedulePage() {
   // OAuth state
   const [calendarConnected, setCalendarConnected] = useState<boolean | null>(null); // null = loading
   const [connecting, setConnecting] = useState(false);
+  const [dismissedConnect, setDismissedConnect] = useState(false);
   const codeExchangedRef = useRef(false);
 
   // Interviewer selection state
@@ -192,28 +238,42 @@ export default function SchedulePage() {
   // On mount: check for OAuth callback code, then check calendar status
   useEffect(() => {
     const code = searchParams.get("code");
-    if (code && !codeExchangedRef.current) {
+    const isAlreadyExchanged =
+      typeof window !== "undefined" &&
+      Boolean(code && sessionStorage.getItem("last_exchanged_google_code") === code);
+
+    if (code && !codeExchangedRef.current && !isAlreadyExchanged) {
       codeExchangedRef.current = true;
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("last_exchanged_google_code", code);
+      }
       // OAuth callback - exchange code for tokens
       setConnecting(true);
       exchangeGoogleCode(code)
         .then(() => {
           setCalendarConnected(true);
-          // If non-HR (e.g. tech_lead) just connected calendar, redirect them to dashboard
-          if (user && !hasRole("hr")) {
-            router.replace("/");
-            return;
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("calendar-status-updated", { detail: { connected: true } })
+            );
           }
-          // Clean the URL
-          const url = new URL(window.location.href);
-          url.searchParams.delete("code");
-          url.searchParams.delete("scope");
-          url.searchParams.delete("authuser");
-          url.searchParams.delete("prompt");
-          window.history.replaceState({}, "", url.toString());
+          // Sau khi kết nối Google Calendar thành công, chuyển hướng về trang danh sách ứng viên (Dashboard /)
+          // để người dùng (HR / Tech Lead) chọn ứng viên cần đặt lịch.
+          router.replace("/");
         })
-        .catch((err) => setError(t("schedule.errConnect", { message: err?.message || t("schedule.error") })))
+        .catch((err) => {
+          setError(t("schedule.errConnect", { message: err?.message || t("schedule.error") }));
+          router.replace("/");
+        })
         .finally(() => setConnecting(false));
+    } else if (code && isAlreadyExchanged) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("calendar-status-updated", { detail: { connected: true } })
+        );
+      }
+      // Đã xử lý xong code này ở lượt trước, chuyển hướng về trang danh sách ứng viên (Dashboard /)
+      router.replace("/");
     } else if (!code) {
       // Normal page load - check if already connected
       checkCalendarStatus()
@@ -222,11 +282,24 @@ export default function SchedulePage() {
     }
   }, [user, hasRole, router, searchParams, t]);
 
-  // When calendar is connected, load connected interviewers
+  // Lắng nghe sự kiện cập nhật trạng thái calendar từ các component khác
+  useEffect(() => {
+    const handleStatus = (e: any) => {
+      if (typeof e?.detail?.connected === "boolean") {
+        setCalendarConnected(e.detail.connected);
+      }
+    };
+    window.addEventListener("calendar-status-updated", handleStatus);
+    return () => {
+      window.removeEventListener("calendar-status-updated", handleStatus);
+    };
+  }, []);
+
+  // When calendar is connected, load connected interviewers for the selected candidate
   useEffect(() => {
     if (calendarConnected) {
       setLoadingInterviewers(true);
-      fetchConnectedInterviewers()
+      fetchConnectedInterviewers(candidateUuid || undefined)
         .then((ivs) => {
           setConnectedInterviewers(ivs);
           // Auto-select all
@@ -235,7 +308,7 @@ export default function SchedulePage() {
         .catch((err) => setError(err.message))
         .finally(() => setLoadingInterviewers(false));
     }
-  }, [calendarConnected]);
+  }, [calendarConnected, candidateUuid]);
 
   const handleConnectGoogle = async () => {
     setConnecting(true);
@@ -271,6 +344,7 @@ export default function SchedulePage() {
         interviewer_uuids: selectedUuids,
         date_from: dateFrom,
         date_to: dateTo,
+        duration_minutes: durationMinutes,
       });
       setSlots(result);
     } catch (err) {
@@ -305,7 +379,7 @@ export default function SchedulePage() {
   };
 
   const slotsByDay = slots.reduce<Record<string, TimeSlot[]>>((acc, s) => {
-    const day = s.start.slice(0, 10);
+    const day = getDayKeyUTC7(s.start);
     if (!acc[day]) acc[day] = [];
     acc[day].push(s);
     return acc;
@@ -325,10 +399,32 @@ export default function SchedulePage() {
     );
   }
 
-  if (calendarConnected === false) {
+  if (calendarConnected === false && !dismissedConnect) {
     return (
       <AppShell candidateName={candidateName} scroll={false} padded={false}>
-        <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, padding: 40 }}>
+        <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16, padding: 40, position: "relative" }}>
+          <button
+            onClick={() => setDismissedConnect(true)}
+            type="button"
+            aria-label="Đóng"
+            style={{
+              position: "absolute",
+              top: 24,
+              right: 24,
+              background: D.surface,
+              border: `1px solid ${D.line}`,
+              borderRadius: "50%",
+              width: 36,
+              height: 36,
+              display: "grid",
+              placeItems: "center",
+              color: D.muted,
+              cursor: "pointer",
+            }}
+            title="Đóng / Bỏ qua"
+          >
+            <X size={18} />
+          </button>
           <div style={{ width: 64, height: 64, borderRadius: "50%", background: D.blueSoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Calendar size={28} strokeWidth={1.5} color={D.blue} />
           </div>
@@ -357,6 +453,21 @@ export default function SchedulePage() {
           >
             <Link2 size={16} strokeWidth={2} />
             {t("schedule.connect")}
+          </button>
+          <button
+            onClick={() => setDismissedConnect(true)}
+            type="button"
+            style={{
+              background: "transparent",
+              border: `1px solid ${D.line}`,
+              borderRadius: 8,
+              padding: "8px 20px",
+              color: D.muted,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            Để sau (Bỏ qua & Xem trang lịch)
           </button>
           <div style={{ fontSize: 11, color: D.dim, marginTop: 4 }}>
             {t("schedule.connectOnce")}
@@ -559,7 +670,8 @@ export default function SchedulePage() {
                             </div>
                             <Clock size={11} strokeWidth={2} color={isSelected ? D.blue : D.muted} />
                             <span style={{ fontSize: 11.5, fontWeight: 600, color: D.ink, fontFamily: D.mono }}>
-                              {new Date(slot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(slot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {formatTimeUTC7(slot.start)} — {formatTimeUTC7(slot.end)}{" "}
+                              <span style={{ fontSize: 9.5, color: D.muted, fontWeight: 400 }}>(UTC+7)</span>
                             </span>
                             <Badge color={D.blue} bg={D.blueSoft}>{t("schedule.min", { n: slot.duration_minutes })}</Badge>
                             <div style={{ flex: 1 }} />
@@ -608,8 +720,8 @@ export default function SchedulePage() {
                 <Divider />
                 <div style={{ fontSize: 10, color: D.sub, fontFamily: D.mono, lineHeight: 1.7 }}>
                   <div><strong style={{ color: D.ink }}>{t("schedule.candidateLabel")}</strong> {candidateName}</div>
-                  <div><strong style={{ color: D.ink }}>{t("schedule.start")}</strong> {formatDate(confirmedSlot.start, locale)} {new Date(confirmedSlot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                  <div><strong style={{ color: D.ink }}>{t("schedule.end")}</strong> {formatDate(confirmedSlot.end, locale)} {new Date(confirmedSlot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  <div><strong style={{ color: D.ink }}>{t("schedule.start")}</strong> {formatDate(confirmedSlot.start, locale)} {formatTimeUTC7(confirmedSlot.start)} (UTC+7)</div>
+                  <div><strong style={{ color: D.ink }}>{t("schedule.end")}</strong> {formatDate(confirmedSlot.end, locale)} {formatTimeUTC7(confirmedSlot.end)} (UTC+7)</div>
                   <div><strong style={{ color: D.ink }}>{t("schedule.interviewersLabel")}</strong> {t("schedule.nSelected", { n: selectedUuids.length })}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -640,7 +752,7 @@ export default function SchedulePage() {
                     padding: "8px 14px", border: `1px solid ${D.line}`, borderRadius: 5,
                     background: D.canvas, cursor: "pointer", fontSize: 10.5, fontWeight: 600, color: D.sub, marginTop: 8,
                   }}>
-                  <RefreshCw size={11} strokeWidth={2} />{t("schedule.scheduleAnother")}
+                    <RefreshCw size={11} strokeWidth={2} />{t("schedule.scheduleAnother")}
                 </button>
               </div>
             ) : selectedSlot ? (
@@ -652,7 +764,7 @@ export default function SchedulePage() {
                       {formatDate(selectedSlot.start, locale)}
                     </div>
                     <div style={{ fontSize: 12, fontFamily: D.mono, color: D.blue, marginBottom: 4 }}>
-                      {new Date(selectedSlot.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — {new Date(selectedSlot.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatTimeUTC7(selectedSlot.start)} — {formatTimeUTC7(selectedSlot.end)} (UTC+7)
                     </div>
                     <Badge color={D.blue} bg={D.blueSoft}>
                       <Clock size={9} strokeWidth={2} /> {t("schedule.minutes", { n: selectedSlot.duration_minutes })}

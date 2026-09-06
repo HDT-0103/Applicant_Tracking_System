@@ -1,4 +1,5 @@
-from datetime import datetime
+import zoneinfo
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 import httpx
@@ -7,6 +8,16 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+
+
+def to_local_tz(dt: datetime, tz_name: str = "Asia/Ho_Chi_Minh") -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        tz = timezone(timedelta(hours=7))
+    return dt.astimezone(tz)
 
 
 class CalendarEventService:
@@ -18,6 +29,7 @@ class CalendarEventService:
         start_time: datetime,
         end_time: datetime,
         attendee_emails: list[str],
+        timezone_str: str = "Asia/Ho_Chi_Minh",
     ) -> Optional[str]:
         # Không có token thì KHÔNG có sự kiện. Trước đây chỗ này trả một uuid
         # giả và ghi vào `confirmed_slots.calendar_event_id`, nên màn hình báo
@@ -27,16 +39,19 @@ class CalendarEventService:
             logger.warning("scheduling.calendar_event.no_key", summary=summary)
             return None
 
+        local_start = to_local_tz(start_time, timezone_str)
+        local_end = to_local_tz(end_time, timezone_str)
+
         payload = {
             "summary": summary,
             "description": description,
             "start": {
-                "dateTime": start_time.isoformat(),
-                "timeZone": "UTC",
+                "dateTime": local_start.isoformat(),
+                "timeZone": timezone_str,
             },
             "end": {
-                "dateTime": end_time.isoformat(),
-                "timeZone": "UTC",
+                "dateTime": local_end.isoformat(),
+                "timeZone": timezone_str,
             },
             "attendees": [{"email": email} for email in attendee_emails if email],
             "reminders": {

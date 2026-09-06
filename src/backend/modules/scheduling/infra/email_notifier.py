@@ -84,36 +84,98 @@ class EmailNotifier:
 
         for email in recipients:
             if email == candidate_email:
-                subject = f"Interview Invitation: {candidate_name} - SmartATS"
+                subject = f"Interview Invitation: Congratulations {candidate_name}! - SmartATS"
                 lines = [
                     f"Dear {candidate_name},",
                     "",
-                    "Congratulations! Following your application review, we are pleased to invite you for an interview with our team:",
+                    f"Congratulations {candidate_name}!",
+                    "We are very pleased to inform you that your application has advanced to the interview stage at SmartATS.",
                     "",
+                    "Your interview has been scheduled with the following details:",
+                    f"• Candidate: {candidate_name}",
                     f"• Date: {local_start.strftime('%A, %B %d, %Y')}",
-                    f"• Time: {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} (GMT+7)",
+                    f"• Time: {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} (UTC+7)",
                     f"• Duration: {duration_minutes} minutes",
                     f"• Interview Panel: {interviewer_list}",
+                    "• Location & Room: To be announced later",
                     "",
-                    "Additional details regarding the meeting room, location, or virtual conference link will be sent to you shortly.",
+                    "Please note that the specific meeting room and location details (or online meeting link) will be announced in a follow-up notification prior to the interview.",
+                    "",
+                    "If you have any questions or require any assistance, please reply directly to this email.",
                     "",
                     "Best regards,",
                     "SmartATS Talent Acquisition Team",
                 ]
+                html_body = f"""
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <div style="margin-bottom: 20px;">
+                        <h2 style="color: #2563eb; margin: 0 0 8px 0; font-size: 20px;">SmartATS Interview Invitation</h2>
+                        <div style="font-size: 13px; color: #64748b;">Applicant Tracking &amp; Interview Management</div>
+                    </div>
+                    <p style="font-size: 15px; margin-bottom: 12px;">Dear <strong>{candidate_name}</strong>,</p>
+                    <div style="background-color: #ecfdf5; border-left: 4px solid #10b981; padding: 14px 18px; margin: 16px 0; border-radius: 4px;">
+                        <p style="margin: 0; font-size: 16px; font-weight: 700; color: #065f46;">
+                            🎉 Congratulations {candidate_name}!
+                        </p>
+                        <p style="margin: 6px 0 0 0; font-size: 14px; color: #047857;">
+                            We are very pleased to inform you that your application has advanced to the interview stage at SmartATS.
+                        </p>
+                    </div>
+                    <p style="font-size: 14px; color: #334155;">Your interview has been scheduled with the following details:</p>
+                    <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 14px 18px; margin: 18px 0; border-radius: 4px; font-size: 14px;">
+                        <p style="margin: 6px 0;"><strong>Candidate:</strong> {candidate_name}</p>
+                        <p style="margin: 6px 0;"><strong>Date:</strong> {local_start.strftime('%A, %B %d, %Y')}</p>
+                        <p style="margin: 6px 0;"><strong>Time:</strong> {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} <span style="display: inline-block; background-color: #eff6ff; color: #1d4ed8; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 12px;">UTC+7</span></p>
+                        <p style="margin: 6px 0;"><strong>Duration:</strong> {duration_minutes} minutes</p>
+                        <p style="margin: 6px 0;"><strong>Interview Panel:</strong> {interviewer_list}</p>
+                        <p style="margin: 6px 0;"><strong>Location &amp; Room:</strong> <em style="color: #64748b;">To be announced later</em></p>
+                    </div>
+                    <p style="font-size: 13px; color: #64748b; background-color: #f1f5f9; padding: 10px 14px; border-radius: 6px;">
+                        ℹ️ <em>Please note that the specific meeting room and location details (or virtual conference link) will be announced in a follow-up notification prior to the interview.</em>
+                    </p>
+                    <p style="font-size: 14px; color: #334155;">If you have any questions or require any assistance, please feel free to reply directly to this email.</p>
+                    <br/>
+                    <p style="margin-bottom: 2px; font-size: 14px; color: #475569;">Best regards,</p>
+                    <p style="margin-top: 0; font-weight: 700; color: #2563eb; font-size: 14px;">SmartATS Talent Acquisition Team</p>
+                </div>
+                """
             else:
-                subject = f"Interview Scheduled: {candidate_name}"
+                subject = f"Interview Scheduled: {candidate_name} - SmartATS"
                 lines = [
                     "Hello,",
                     "",
-                    f"An interview has been scheduled with {candidate_name}.",
+                    f"An interview with candidate {candidate_name} has been scheduled successfully.",
                     "",
-                    f"Date: {local_start.strftime('%A, %B %d, %Y')}",
-                    f"Time: {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} (GMT+7)",
-                    f"Duration: {duration_minutes} minutes",
+                    "Interview Schedule:",
+                    f"• Date: {local_start.strftime('%A, %B %d, %Y')}",
+                    f"• Time: {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} (UTC+7)",
+                    f"• Duration: {duration_minutes} minutes",
+                    f"• Interview Panel: {interviewer_list}",
+                    "• Location & Room: To be announced later by the HR team",
                     "",
                     "Best regards,",
-                    "SmartATS",
+                    "SmartATS Scheduling System",
                 ]
+                html_body = f"""
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                    <div style="margin-bottom: 20px;">
+                        <h2 style="color: #2563eb; margin: 0 0 8px 0; font-size: 20px;">Interview Scheduled</h2>
+                        <div style="font-size: 13px; color: #64748b;">SmartATS Scheduling Notification</div>
+                    </div>
+                    <p style="font-size: 15px;">Hello,</p>
+                    <p style="font-size: 14px; color: #334155;">An interview with candidate <strong>{candidate_name}</strong> has been scheduled successfully.</p>
+                    <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 14px 18px; margin: 18px 0; border-radius: 4px; font-size: 14px;">
+                        <p style="margin: 6px 0;"><strong>Date:</strong> {local_start.strftime('%A, %B %d, %Y')}</p>
+                        <p style="margin: 6px 0;"><strong>Time:</strong> {local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')} <span style="display: inline-block; background-color: #eff6ff; color: #1d4ed8; font-weight: 600; padding: 2px 6px; border-radius: 4px; font-size: 12px;">UTC+7</span></p>
+                        <p style="margin: 6px 0;"><strong>Duration:</strong> {duration_minutes} minutes</p>
+                        <p style="margin: 6px 0;"><strong>Interview Panel:</strong> {interviewer_list}</p>
+                        <p style="margin: 6px 0;"><strong>Location &amp; Room:</strong> <em style="color: #64748b;">To be announced later by HR</em></p>
+                    </div>
+                    <br/>
+                    <p style="margin-bottom: 2px; font-size: 14px; color: #475569;">Best regards,</p>
+                    <p style="margin-top: 0; font-weight: 700; color: #2563eb; font-size: 14px;">SmartATS Scheduling System</p>
+                </div>
+                """
             
             body_text = "\n".join(lines)
 
@@ -124,6 +186,7 @@ class EmailNotifier:
                     msg["To"] = email
                     msg["Subject"] = subject
                     msg.attach(MIMEText(body_text, "plain"))
+                    msg.attach(MIMEText(html_body, "html"))
 
                     with smtplib.SMTP(self._smtp_host, self._smtp_port) as server:
                         server.starttls()
@@ -157,12 +220,13 @@ class EmailNotifier:
         room: str,
         address: str,
     ) -> bool:
-        subject = f"Interview Location & Room Details - {candidate_name} - SmartATS"
+        subject = f"Interview Location & Room Details: {candidate_name} - SmartATS"
         lines = [
             f"Dear {candidate_name},",
             "",
-            "Here are the specific room and location details for your upcoming interview with SmartATS:",
+            f"Hello {candidate_name}, here are the specific room and location details for your upcoming interview with SmartATS:",
             "",
+            f"• Candidate: {candidate_name}",
             f"• Scheduled Time: {slot_time}",
             f"• Meeting Room / Virtual Link: {room}",
             f"• Office Address / Instructions: {address}",
@@ -173,6 +237,28 @@ class EmailNotifier:
             "SmartATS Talent Acquisition Team",
         ]
         body_text = "\n".join(lines)
+        html_body = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <div style="margin-bottom: 20px;">
+                <h2 style="color: #2563eb; margin: 0 0 8px 0; font-size: 20px;">Interview Location &amp; Room Details</h2>
+                <div style="font-size: 13px; color: #64748b;">SmartATS Interview Notification</div>
+            </div>
+            <p style="font-size: 15px;">Dear <strong>{candidate_name}</strong>,</p>
+            <p style="font-size: 14px; color: #334155;">Here are the specific room and location details for your upcoming interview with SmartATS:</p>
+            <div style="background-color: #f8fafc; border-left: 4px solid #2563eb; padding: 14px 18px; margin: 18px 0; border-radius: 4px; font-size: 14px;">
+                <p style="margin: 6px 0;"><strong>Candidate:</strong> {candidate_name}</p>
+                <p style="margin: 6px 0;"><strong>Scheduled Time:</strong> {slot_time}</p>
+                <p style="margin: 6px 0;"><strong>Meeting Room / Virtual Link:</strong> <span style="color: #2563eb; font-weight: 600;">{room}</span></p>
+                <p style="margin: 6px 0;"><strong>Office Address / Instructions:</strong> {address}</p>
+            </div>
+            <p style="font-size: 13px; color: #64748b; background-color: #f1f5f9; padding: 10px 14px; border-radius: 6px;">
+                ℹ️ <em>Please be ready 5 to 10 minutes prior to the start time. If you have any questions or require assistance, please feel free to reply to this email.</em>
+            </p>
+            <br/>
+            <p style="margin-bottom: 2px; font-size: 14px; color: #475569;">Best regards,</p>
+            <p style="margin-top: 0; font-weight: 700; color: #2563eb; font-size: 14px;">SmartATS Talent Acquisition Team</p>
+        </div>
+        """
 
         if self._smtp_username and self._smtp_password:
             try:
@@ -181,6 +267,7 @@ class EmailNotifier:
                 msg["To"] = candidate_email
                 msg["Subject"] = subject
                 msg.attach(MIMEText(body_text, "plain"))
+                msg.attach(MIMEText(html_body, "html"))
 
                 with smtplib.SMTP(self._smtp_host, self._smtp_port) as server:
                     server.starttls()

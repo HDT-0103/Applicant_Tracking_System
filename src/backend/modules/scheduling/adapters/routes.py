@@ -29,8 +29,9 @@ from modules.review.adapters.routes import get_review_repo
 from modules.review.application.review_service import ReviewService
 from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.config import Settings, get_settings
-from modules.shared.infrastructure.supabase_client import get_supabase_client
+from modules.shared.infrastructure.supabase_client import get_supabase_client, get_supabase_admin_client
 from modules.scheduling.infra.google_oauth_service import GoogleOAuthService
+from supabase import Client
 
 router = APIRouter(prefix="/api/scheduling", tags=["scheduling"])
 logger = structlog.get_logger(__name__)
@@ -78,6 +79,7 @@ def _build_service(
 
 ServiceDep = Annotated[SchedulingService, Depends(_build_service)]
 ReviewRepoDep = Annotated[IReviewRepo, Depends(get_review_repo)]
+SupabaseDep = Annotated[Client, Depends(get_supabase_admin_client)]
 
 
 async def _require_candidate_access(
@@ -99,6 +101,8 @@ class SlotsQueryRequest(BaseModel):
     interviewer_ids: list[str]
     date_from: str
     date_to: str
+    duration_minutes: Optional[int] = None
+    limit: Optional[int] = 0
 
 
 class ConfirmSlotRequest(BaseModel):
@@ -131,6 +135,13 @@ async def calendar_status(
 ):
     """Check if the current user has a valid calendar connection"""
     interviewer = await service.get_interviewer(user.id)
+    if not interviewer and user.email:
+        all_interviewers = await service.list_interviewers()
+        for iv in all_interviewers:
+            if iv.email and iv.email.lower() == user.email.lower():
+                interviewer = iv
+                break
+
     connected = bool(
         interviewer
         and (interviewer.calendar_api_key or interviewer.calendar_refresh_token)
@@ -141,13 +152,48 @@ async def calendar_status(
 @router.get("/connected-interviewers")
 async def list_connected_interviewers(
     service: ServiceDep,
+    review_repo: ReviewRepoDep,
+    supabase: SupabaseDep,
+    candidate_id: Optional[str] = Query(None, description="Filter by candidate review panel"),
     user: AuthUser = Depends(require_operational_roles()),
     oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
 ):
-    """List all interviewers who have valid calendar connections."""
+    """List all interviewers who have valid calendar connections for the candidate's review panel / HR company."""
+    allowed_reviewer_ids: Optional[set[str]] = None
+
+    if candidate_id and candidate_id != "00000000-0000-0000-0000-000000000000":
+        await _require_candidate_access(review_repo, candidate_id, user)
+        job_posting_id = await review_repo.job_posting_of_candidate(candidate_id)
+        if job_posting_id:
+            panel = await review_repo.get_panel(job_posting_id)
+            allowed_reviewer_ids = {m.reviewer_id for m in panel}
+            # Cho phép chính HR tham gia nếu cần
+            allowed_reviewer_ids.add(user.id)
+        else:
+            allowed_reviewer_ids = set()
+    elif user.role == "hr":
+        hr_job_postings = await review_repo.job_postings_created_by(user.id)
+        allowed_ids: set[str] = set()
+        for jpid in hr_job_postings:
+            panel = await review_repo.get_panel(jpid)
+            allowed_ids.update(m.reviewer_id for m in panel)
+        allowed_ids.add(user.id)
+
+        # Fallback theo company_name nếu tin chưa gán hội đồng
+        u_row = supabase.table("users").select("company_name").eq("id", user.id).execute()
+        company_name = u_row.data[0].get("company_name") if u_row.data else None
+        if company_name:
+            c_users = supabase.table("users").select("id").eq("company_name", company_name).execute()
+            for r in (c_users.data or []):
+                allowed_ids.add(r["id"])
+
+        allowed_reviewer_ids = allowed_ids
+
     all_interviewers = await service.list_interviewers()
     connected = []
     for iv in all_interviewers:
+        if allowed_reviewer_ids is not None and iv.id not in allowed_reviewer_ids:
+            continue
         if iv.calendar_api_key or iv.calendar_refresh_token:
             if not iv.calendar_api_key and iv.calendar_refresh_token:
                 new_token = await oauth_service.refresh_access_token(iv.calendar_refresh_token)
@@ -192,10 +238,29 @@ async def google_auth_callback(
     return {"status": "success", "message": "Google Calendar connected successfully"}
 
 
+class UpdateCalendarKeyRequest(BaseModel):
+    api_key: str
+
+
+@router.post("/calendar-key")
+async def update_calendar_key(
+    body: UpdateCalendarKeyRequest,
+    scheduling_service: SchedulingService = Depends(_build_service),
+    user: AuthUser = Depends(require_operational_roles()),
+):
+    """Cập nhật Google Calendar API Key trực tiếp"""
+    key = body.api_key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="API Key không được để trống")
+    await scheduling_service.update_calendar_key(user.id, key)
+    return {"status": "success", "message": "Google Calendar API Key updated successfully"}
+
+
 @router.post("/slots", response_model=list[TimeSlot])
 async def query_slots(
     body: SlotsQueryRequest,
     service: ServiceDep,
+    review_repo: ReviewRepoDep,
     user: AuthUser = Depends(require_roles("hr")),
 ) -> list[TimeSlot]:
     try:
@@ -212,6 +277,10 @@ async def query_slots(
     if date_to.tzinfo is None:
         date_to = date_to.replace(tzinfo=timezone.utc)
 
+    # Nếu date_to không có giờ cụ thể (00:00:00), mở rộng hết ngày đó (23:59:59)
+    if date_to.hour == 0 and date_to.minute == 0 and date_to.second == 0:
+        date_to = date_to.replace(hour=23, minute=59, second=59)
+
     if date_from >= date_to:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -224,11 +293,27 @@ async def query_slots(
             detail="At least one interviewer_id is required",
         )
 
+    if body.candidate_id and body.candidate_id != "00000000-0000-0000-0000-000000000000":
+        await _require_candidate_access(review_repo, body.candidate_id, user)
+        job_posting_id = await review_repo.job_posting_of_candidate(body.candidate_id)
+        if job_posting_id:
+            panel = await review_repo.get_panel(job_posting_id)
+            allowed_panel_ids = {m.reviewer_id for m in panel}
+            allowed_panel_ids.add(user.id)
+            for iv_id in body.interviewer_ids:
+                if iv_id not in allowed_panel_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Interviewer {iv_id} is not in the review panel for this candidate's job posting",
+                    )
+
     try:
         return await service.query_slots(
             interviewer_ids=body.interviewer_ids,
             date_from=date_from,
             date_to=date_to,
+            duration_minutes=body.duration_minutes,
+            limit=body.limit or 0,
         )
     except CalendarUnavailableError as exc:
         # 503 kèm TÊN người cần kết nối lại, không phải 500 trống rỗng. HR đọc
@@ -284,6 +369,18 @@ async def confirm_slot(
         )
 
     await _require_candidate_access(review_repo, body.candidate_id, user)
+
+    job_posting_id = await review_repo.job_posting_of_candidate(body.candidate_id)
+    if job_posting_id:
+        panel = await review_repo.get_panel(job_posting_id)
+        allowed_panel_ids = {m.reviewer_id for m in panel}
+        allowed_panel_ids.add(user.id)
+        for iv_id in body.interviewer_ids:
+            if iv_id not in allowed_panel_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Interviewer {iv_id} is not in the review panel for this candidate's job posting",
+                )
 
     interviewer = await service.get_interviewer(user.id)
     api_key = interviewer.calendar_api_key if interviewer and interviewer.calendar_api_key else ""

@@ -304,7 +304,7 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
            <div style={{ fontSize: 12, color: D.blue, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}>
               <CalendarDays size={14} />
-              {new Date(c.scheduledSlot.start_time).toLocaleString(locale)}
+              {new Date(c.scheduledSlot.start_time).toLocaleString(locale, { timeZone: "Asia/Ho_Chi_Minh" })} (UTC+7)
            </div>
            {user?.role === "hr" && (
              <button
@@ -375,7 +375,7 @@ export default function Dashboard() {
         candidateName={detailsFor?.name ?? ""}
         slotTime={
           detailsFor?.scheduledSlot
-            ? new Date(detailsFor.scheduledSlot.start_time).toLocaleString(locale)
+            ? `${new Date(detailsFor.scheduledSlot.start_time).toLocaleString(locale, { timeZone: "Asia/Ho_Chi_Minh" })} (UTC+7)`
             : ""
         }
         sending={sending}

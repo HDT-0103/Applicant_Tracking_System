@@ -152,7 +152,7 @@ class TestColumnNamesMatchTheSchema:
     def _schema_columns() -> dict[str, set[str]]:
         import re
         from pathlib import Path
-        text = Path(__file__).resolve().parents[1].joinpath("docs/supabase_schema.md").read_text()
+        text = Path(__file__).resolve().parents[1].joinpath("docs/supabase_schema.md").read_text(encoding="utf-8")
         tables: dict[str, set[str]] = {}
         for m in re.finditer(r"CREATE TABLE public\.(\w+) \((.*?)\n\);", text, re.S):
             cols = {line.strip().split()[0] for line in m.group(2).splitlines()

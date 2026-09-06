@@ -24,7 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
               {children}
               <AgentChatDrawer />
             </AgentChatProvider>
-            {/* <RequireCalendarModal /> */}
+            <RequireCalendarModal />
             </WorkspaceProvider>
         </AuthGuard>
       </AuthProvider>
