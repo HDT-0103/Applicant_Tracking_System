@@ -98,27 +98,56 @@ class AuthService:
             "Please contact an administrator."
         )
 
-    async def _create_db_session_record(self, user_id: str, jti: str) -> None:
+    async def _create_db_session_record(
+        self, user_id: str, jti: str, ip: str | None = None, user_agent: str | None = None
+    ) -> None:
+        """Ghi phiên kèm IP và user-agent THẬT (route lấy từ request).
+
+        Trước đây hai cột này luôn NULL, và trang admin điền "127.0.0.1" /
+        "Browser" cho đẹp — tức là mọi phiên trông như đến từ máy chủ.
+        """
         try:
             expires_at = (
                 datetime.now(timezone.utc)
                 + timedelta(days=self._settings.refresh_token_expire_days)
             ).isoformat()
-            
+
             self._supabase_client.table("user_sessions").insert({
                 "user_id": user_id,
                 "token_jti": jti,
                 "expires_at": expires_at,
                 "is_revoked": False,
+                "ip_address": ip,
+                "user_agent": user_agent,
             }).execute()
         except Exception as e:
             logger.error("auth.session_record.failed", error=str(e))
 
-    async def _write_audit_log(self, user_id: str | None, action: str, details: dict) -> None:
-        # Tạm thời bỏ qua ghi log database
-        pass
+    async def _write_audit_log(
+        self,
+        user_id: str | None,
+        action: str,
+        details: dict,
+        ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> None:
+        """Ghi `audit_logs` thật. Hàm này từng là `pass` — bảng im từ tháng 8.
 
-    async def login_with_google(self, credential: str) -> AuthTokenResponse:
+        Dùng chung AuditRecorder với các module khác; lỗi không được chặn
+        đăng nhập, và dưới pytest thì không ghi.
+        """
+        import os
+
+        from modules.shared.infrastructure.audit import AuditRecorder
+
+        recorder = AuditRecorder(
+            self._supabase_client, enabled=not os.environ.get("PYTEST_CURRENT_TEST")
+        )
+        await recorder.record(action, user_id=user_id, ip=ip, user_agent=user_agent, details=details)
+
+    async def login_with_google(
+        self, credential: str, *, client_ip: str | None = None, user_agent: str | None = None
+    ) -> AuthTokenResponse:
         profile = self._google_verifier.verify_credential(credential)
         email = profile["email"]
 
@@ -195,8 +224,8 @@ class AuthService:
         access_token = self._jwt_service.create_access_token(user, jti=jti)
         refresh_token = self._jwt_service.create_refresh_token(user, jti=jti)
 
-        await self._create_db_session_record(user_id, jti)
-        await self._write_audit_log(user_id, "login_google", {"email": email, "role": role})
+        await self._create_db_session_record(user_id, jti, client_ip, user_agent)
+        await self._write_audit_log(user_id, "login_google", {"email": email, "role": role}, client_ip, user_agent)
 
         logger.info(
             "auth.login.success",
@@ -212,7 +241,9 @@ class AuthService:
             user=user,
         )
 
-    async def login_with_email_password(self, email: str, password: str) -> AuthTokenResponse:
+    async def login_with_email_password(
+        self, email: str, password: str, *, client_ip: str | None = None, user_agent: str | None = None
+    ) -> AuthTokenResponse:
         res = self._supabase_client.table("users").select("*").eq("email", email).limit(1).execute()
         db_user = res.data[0] if res.data else None
 
@@ -254,8 +285,8 @@ class AuthService:
         access_token = self._jwt_service.create_access_token(user, jti=jti)
         refresh_token = self._jwt_service.create_refresh_token(user, jti=jti)
 
-        await self._create_db_session_record(user.id, jti)
-        await self._write_audit_log(user.id, "login_password", {"email": email, "role": user.role})
+        await self._create_db_session_record(user.id, jti, client_ip, user_agent)
+        await self._write_audit_log(user.id, "login_password", {"email": email, "role": user.role}, client_ip, user_agent)
 
         logger.info("auth.login_password.success", user_id=user.id, email=user.email)
 

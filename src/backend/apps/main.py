@@ -18,6 +18,8 @@ from modules.review.adapters.routes import router as review_router
 from modules.search.adapters.routes import router as search_router
 from modules.scoring.adapters.routes import router as scoring_router
 from src.backend.app.agents.router import router as agents_router
+from src.backend.app.services.llm_provider import set_usage_sink
+from modules.shared.infrastructure.llm_usage import make_supabase_usage_sink
 from modules.shared.infrastructure.config import get_settings
 
 structlog.configure(
@@ -29,6 +31,9 @@ structlog.configure(
 )
 
 settings = get_settings()
+# Mọi lượt gọi LLM (Groq/HF/Gemini) báo token về bảng llm_usage_logs cho trang
+# admin "AI & Vector". Gắn ở đây, một lần cho cả tiến trình.
+set_usage_sink(make_supabase_usage_sink(settings))
 
 app = FastAPI(
     title=settings.app_name,

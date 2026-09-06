@@ -25,7 +25,7 @@ mac**.
 ## Test
 
 ```bash
-./venv/bin/python -m pytest -q            # ~480 test — GỘP cả hai bộ
+./venv/bin/python -m pytest -q            # ~495 test — GỘP cả hai bộ
 npm test                                  # ~270 test — vitest, chạy từ GỐC repo
 ```
 
@@ -288,6 +288,36 @@ sau.
   ở trang tin. Tech lead nhận tên/email `***`, điểm và kỹ năng giữ nguyên
   (whitelist ABAC có `overall_score`, `must_have`, `matched`, `missing`…).
 
+### Trang admin: hai bảng không có khoá ngoại tới `users`
+
+`user_sessions.user_id` và `audit_logs.user_id` **không có FK** tới `users`
+trên Supabase, nên `select("*, users(name,email)")` trả `PGRST200` và cả hai
+mục Phiên / Nhật ký từng chết ngay khi mở. `AdminService` đọc hai bước: lấy
+hàng, rồi MỘT truy vấn `users?id=in.(...)` cho cả lô (`_users_by_id`). Tìm
+theo tên người thì tìm `users` trước rồi lọc `user_id.in.(...)` — vẫn lọc ở
+DB, trước `limit`. Đừng thêm `users(...)` vào select của hai bảng này.
+
+Những gì trang admin hiện là dữ liệu THẬT, có người ghi:
+
+- **Nhật ký kiểm toán**: `modules/shared/infrastructure/audit.py` là nơi duy
+  nhất insert `audit_logs`. Route gọi `recorder.record(...)` sau khi việc xong:
+  đăng nhập (password/Google), nộp CV, chấm hồ sơ, xác nhận lịch, gửi phòng,
+  và 4 thao tác admin. IP lấy từ `X-Forwarded-For` (sau proxy Azure). Dưới
+  pytest recorder tắt (`PYTEST_CURRENT_TEST`) để test không xả rác vào DB.
+  `AuthService._write_audit_log` từng là `pass`.
+- **Phiên**: auth ghi `ip_address`/`user_agent` thật khi tạo phiên; phiên cũ
+  không có thì để NULL và giao diện ghi "không ghi nhận" (trước đây điền
+  "127.0.0.1"/"Browser").
+- **AI & Vector**: `llm_provider.report_usage` báo token của mọi lượt Groq/HF
+  (Gemini ở ingestion cũng báo) về sink `modules/shared/infrastructure/
+  llm_usage.py` → `llm_usage_logs`, ghi trong thread nền. `operation_type` và
+  `user_id` đi theo ContextVar (`llm_context(...)` ở route). Chi phí ước tính
+  theo `PRICE_PER_MILLION`; model không có giá → `estimated_cost` NULL và UI
+  ghi "chưa có giá", không phải $0. Biểu đồ "dữ liệu mẫu" đã bỏ.
+- **Hạ tầng**: `api_rate_limits` do `fetch_github_profile` ghi từ header
+  `X-RateLimit-*` của GitHub (upsert theo `provider`). Service Bus báo
+  `not_configured` khi thiếu connection string.
+
 ### numpy 2 trên macOS Intel làm mô hình nhúng chết im lặng
 
 torch 2.2.2 (bản cuối cho x86_64 mac) biên dịch với numpy 1.x. Cài numpy 2
@@ -361,6 +391,7 @@ gồm pipeline CV chấm điểm thật, bảng xếp hạng, và tìm kiếm la
 | **V010 chưa chạy trên Supabase** | `V010__reindex_embeddings.sql` tạo RPC `reindex_embeddings`. Chưa chạy thì nút "Vector re-index" ở admin trả **503 kèm lý do** (trước đây trả `completed` giả). |
 | Lịch Google chưa kết nối thật | `CalendarEventService` **không còn** trả uuid giả khi thiếu token / Google lỗi: `confirmed_slots.calendar_event_id` NULL nghĩa là không có sự kiện. 2/6 interviewer có token, 0/15 slot có sự kiện thật. Route `PUT .../calendar-key` (đặt token tay, không kiểm chủ) đã xoá — kết nối qua OAuth `/api/scheduling/auth/google/*`. |
 | Cụm matching GitHub chưa nối | Xem "Hai cây code song song". `github_score` trong `applications` luôn NULL; `overall_score` chỉ gồm summary 0.3 + experience 0.5, tái phân bổ trọng số. |
+| Trang admin (2026-09-06) | Đã chạy thật: nhật ký kiểm toán có người ghi, phiên có IP/UA, token LLM được đếm, hạn mức GitHub được ghi. Xem mục "Trang admin" ở phần bẫy. Tài khoản admin seed `admin@smartats.com` vẫn dùng mật khẩu mặc định `Admin@123` (đăng nhập thử 2026-09-06 thành công) — **đổi trước khi demo/deploy**. |
 | Azure Service Bus chỉ có bên gửi | `publish_cv_received_event` phát sự kiện, không có consumer nào trong repo; `AZURE_SERVICE_BUS_CONNECTION_STRING` trống là bỏ qua. |
 | Nhánh `fix-integrate-agent` đã **gộp tay** (2026-09-05) | Lấy: `POST /api/search/find` (tìm kiếm lai từ khoá 0.35 + vector 0.65, trang `/search` dùng nó), `FindCandidateService`, DTO, `get_candidate_details`, `initial_search_criteria` cho planner. **Sửa** khi gộp: `/find` giờ lọc theo `job_visibility` như `/api/search` (bản gốc trả tên/email/SĐT của mọi ứng viên cho bất kỳ HR nào) và che PII. **Bỏ**: `app/chat/router.py` + `/chat` + `ChatResponse` (trùng đường với orchestrator đã nằm trong `_stream_agent`), đổi tên ranking service (file đã xoá). PR trên GitHub sẽ conflict nếu merge thêm lần nữa — đóng PR, không merge. |
 | **V009 phải chạy trên Supabase trước khi deploy** | `src/backend/migrations/V009__user_company.sql` thêm `users.company_name/company_website`. Thiếu cột: đăng ký 500, `/api/auth/me` 500. Đăng ký bắt buộc công ty; đăng nhập Google lần đầu tự tạo tài khoản `hr` rồi bắt điền ở `/onboarding/company` |

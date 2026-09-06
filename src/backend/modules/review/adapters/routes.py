@@ -1,6 +1,6 @@
 from typing import Annotated, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from modules.auth.domain.models import AuthUser
@@ -13,6 +13,8 @@ from modules.shared.infrastructure.auth_dependencies import (
     require_roles,
 )
 from modules.shared.infrastructure.config import Settings, get_settings
+from modules.shared.infrastructure import audit
+from modules.shared.infrastructure.audit import AuditDep, client_context
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/api/review", tags=["review"])
@@ -135,8 +137,10 @@ async def get_review_statuses(
 async def submit_review(
     candidate_uuid: str,
     body: SubmitReviewRequest,
+    request: Request,
     service: ServiceDep,
     current_user: Annotated[AuthUser, Depends(require_operational_roles())],
+    recorder: AuditDep,
 ) -> ReviewStatus:
     if body.decision not in ("approved", "rejected"):
         raise HTTPException(
@@ -144,13 +148,20 @@ async def submit_review(
             detail="decision must be 'approved' or 'rejected'",
         )
     try:
-        return await service.submit_review(
+        result = await service.submit_review(
             candidate_uuid=candidate_uuid,
             reviewer_id=current_user.id,
             reviewer_role=current_user.role,
             decision=body.decision,
             review_text=body.review_text,
         )
+        ip, ua = client_context(request)
+        await recorder.record(
+            audit.REVIEW_SUBMIT,
+            user_id=current_user.id, candidate_uuid=candidate_uuid, ip=ip, user_agent=ua,
+            details={"decision": body.decision, "role": current_user.role, "overall_status": getattr(result, "overall_status", None)},
+        )
+        return result
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:

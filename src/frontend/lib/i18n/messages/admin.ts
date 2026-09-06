@@ -77,7 +77,6 @@ export const adminMessages = {
   "admin.ai.stat.promptTokens": { en: "Prompt Tokens", vi: "Token đầu vào" },
   "admin.ai.stat.completionTokens": { en: "Completion Tokens", vi: "Token đầu ra" },
   "admin.ai.dailyCost": { en: "Daily API Cost", vi: "Chi phí API theo ngày" },
-  "admin.ai.sampleNote": { en: "(sample — no usage yet)", vi: "(dữ liệu mẫu — chưa có lượt dùng)" },
   "admin.ai.reindex.title": { en: "pgvector re-indexing", vi: "Đánh lại chỉ mục pgvector" },
   "admin.ai.reindex.body": {
     en: "Rebuild HNSW / IVFFlat indexes on the embedding tables.",
@@ -90,14 +89,8 @@ export const adminMessages = {
   "admin.ai.col.calls": { en: "Calls", vi: "Lượt gọi" },
   "admin.ai.col.tokens": { en: "Tokens", vi: "Token" },
   "admin.ai.col.cost": { en: "Cost (USD)", vi: "Chi phí (USD)" },
+  "admin.ai.unpriced": { en: "no price list", vi: "chưa có giá" },
   "admin.ai.empty": { en: "No LLM usage recorded.", vi: "Chưa ghi nhận lượt dùng LLM nào." },
-  "admin.day.mon": { en: "Mon", vi: "T2" },
-  "admin.day.tue": { en: "Tue", vi: "T3" },
-  "admin.day.wed": { en: "Wed", vi: "T4" },
-  "admin.day.thu": { en: "Thu", vi: "T5" },
-  "admin.day.fri": { en: "Fri", vi: "T6" },
-  "admin.day.sat": { en: "Sat", vi: "T7" },
-  "admin.day.sun": { en: "Sun", vi: "CN" },
 
   // --- Infrastructure -------------------------------------------------------
   "admin.infra.title": { en: "Infrastructure & Queue Monitoring", vi: "Giám sát hạ tầng & hàng đợi" },

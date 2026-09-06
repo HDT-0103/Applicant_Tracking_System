@@ -1,12 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from supabase import Client
 
 from modules.admin.application.admin_service import AdminService, ReindexUnavailableError
 from modules.auth.domain.models import AuthUser
 from modules.shared.infrastructure.auth_dependencies import require_roles
 from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
+from modules.shared.infrastructure import audit
+from modules.shared.infrastructure.audit import AuditDep, client_context
 
 router = APIRouter(
     prefix="/api/admin",
@@ -38,8 +40,10 @@ async def list_users(
 async def update_user(
     user_id: str,
     payload: dict,
+    request: Request,
     current_user: Annotated[AuthUser, Depends(require_roles("admin"))],
     admin_service: Annotated[AdminService, Depends(get_admin_service)],
+    recorder: AuditDep,
 ):
     role = payload.get("role")
     is_approved = payload.get("is_approved")
@@ -49,7 +53,14 @@ async def update_user(
             detail="Provide 'role' and/or 'is_approved' to update",
         )
     try:
-        return await admin_service.update_user(user_id, role, is_approved, current_user.id)
+        updated = await admin_service.update_user(user_id, role, is_approved, current_user.id)
+        ip, ua = client_context(request)
+        await recorder.record(
+            audit.ADMIN_USER_UPDATE,
+            user_id=current_user.id, ip=ip, user_agent=ua,
+            details={"target_user_id": user_id, "role": role, "is_approved": is_approved},
+        )
+        return updated
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
@@ -87,7 +98,10 @@ async def list_policies(
 async def update_policy(
     policy_id: str,
     payload: dict,
+    request: Request,
+    current_user: Annotated[AuthUser, Depends(require_roles("admin"))],
     admin_service: Annotated[AdminService, Depends(get_admin_service)],
+    recorder: AuditDep,
 ):
     is_masked = payload.get("is_masked")
     if is_masked is None:
@@ -98,6 +112,12 @@ async def update_policy(
 
     try:
         policy = await admin_service.update_abac_policy(policy_id, is_masked)
+        ip, ua = client_context(request)
+        await recorder.record(
+            audit.ADMIN_ABAC_UPDATE,
+            user_id=current_user.id, ip=ip, user_agent=ua,
+            details={"policy_id": policy_id, "is_masked": is_masked},
+        )
         return {
             "id": str(policy.id) if hasattr(policy, "id") else str(policy.get("id")),
             "role": getattr(policy, "role", policy.get("role") if isinstance(policy, dict) else None),
@@ -127,12 +147,17 @@ async def list_sessions(
 @router.post("/sessions/{jti}/revoke")
 async def revoke_session(
     jti: str,
+    request: Request,
+    current_user: Annotated[AuthUser, Depends(require_roles("admin"))],
     admin_service: Annotated[AdminService, Depends(get_admin_service)],
+    recorder: AuditDep,
 ):
     try:
         success = await admin_service.revoke_session(jti)
         if not success:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        ip, ua = client_context(request)
+        await recorder.record(audit.ADMIN_SESSION_REVOKE, user_id=current_user.id, ip=ip, user_agent=ua, details={"jti": jti})
         return {"status": "success", "message": f"Session {jti} revoked"}
     except HTTPException:
         raise
@@ -166,10 +191,16 @@ async def get_ai_timeseries(
 
 @router.post("/vector/reindex")
 async def trigger_reindex(
-    admin_service: Annotated[AdminService, Depends(get_admin_service)]
+    request: Request,
+    current_user: Annotated[AuthUser, Depends(require_roles("admin"))],
+    admin_service: Annotated[AdminService, Depends(get_admin_service)],
+    recorder: AuditDep,
 ):
     try:
-        return await admin_service.trigger_vector_reindex()
+        result = await admin_service.trigger_vector_reindex()
+        ip, ua = client_context(request)
+        await recorder.record(audit.ADMIN_VECTOR_REINDEX, user_id=current_user.id, ip=ip, user_agent=ua)
+        return result
     except ReindexUnavailableError as e:
         # 503 chứ không 200 giả: RPC chưa cài là việc của migration, không phải
         # của nút bấm.

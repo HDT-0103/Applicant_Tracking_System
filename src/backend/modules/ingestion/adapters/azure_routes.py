@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Annotated, Optional
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 
 from modules.ingestion.application.azure_ingestion_service import AzureIngestionService
@@ -19,6 +19,8 @@ from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.auth_dependencies import require_operational_roles
 from modules.shared.infrastructure.rate_limit import ingest_rate_limit
 from modules.shared.infrastructure.config import Settings, get_settings
+from modules.shared.infrastructure import audit
+from modules.shared.infrastructure.audit import AuditDep, client_context
 from modules.shared.infrastructure.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/api/v1", tags=["azure-ingestion"])
@@ -172,6 +174,8 @@ def get_azure_ingestion_service(
 async def ingest_cv(
     file: Annotated[UploadFile, File(...)],
     background_tasks: BackgroundTasks,
+    request: Request,
+    recorder: AuditDep,
     azure_service: Annotated[AzureIngestionService, Depends(get_azure_ingestion_service)],
     settings: Annotated[Settings, Depends(get_settings)],
     full_name: Annotated[Optional[str], Form()] = None,
@@ -270,6 +274,14 @@ async def ingest_cv(
             filename=file.filename,
             screening=screening_payload,
             salary_expectation=salary_expectation,
+        )
+        # Nộp CV là sự kiện đầu chuỗi của mọi hồ sơ: ghi nhật ký (không có
+        # user — ứng viên không đăng nhập), kèm IP để điều tra spam.
+        ip, ua = client_context(request)
+        await recorder.record(
+            audit.UPLOAD_RESUME,
+            candidate_uuid=result.candidate_uuid, ip=ip, user_agent=ua,
+            details={"job_id": job_id, "application_id": result.application_id, "filename": file.filename},
         )
         # Xử lý nền: pipeline CV (LLM → vector → điểm khớp) rồi enrichment
         # (GitHub + LinkedIn). Một task, tuần tự — xem post_ingest_worker.
