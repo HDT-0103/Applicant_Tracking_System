@@ -31,7 +31,7 @@ from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.config import Settings, get_settings
 from modules.shared.infrastructure import audit
 from modules.shared.infrastructure.audit import AuditDep, client_context
-from modules.shared.infrastructure.supabase_client import get_supabase_client
+from modules.shared.infrastructure.supabase_client import get_supabase_client, get_supabase_admin_client
 from modules.scheduling.infra.google_oauth_service import GoogleOAuthService
 from supabase import Client
 
