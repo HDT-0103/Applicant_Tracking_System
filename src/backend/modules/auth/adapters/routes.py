@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from supabase import Client
 
 from modules.auth.application.auth_service import AuthService
@@ -25,6 +25,7 @@ from modules.shared.infrastructure.rate_limit import (
     register_rate_limit,
 )
 from modules.shared.infrastructure.supabase_client import get_supabase_admin_client
+from modules.shared.infrastructure.audit import client_context
 
 logger = structlog.get_logger(__name__)
 
@@ -46,10 +47,12 @@ def get_auth_service(
 @router.post("/google", response_model=AuthTokenResponse)
 async def google_login(
     payload: GoogleLoginRequest,
+    request: Request,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> AuthTokenResponse:
+    ip, ua = client_context(request)
     try:
-        return await auth_service.login_with_google(payload.credential)
+        return await auth_service.login_with_google(payload.credential, client_ip=ip, user_agent=ua)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,10 +73,14 @@ async def google_login(
 )
 async def email_password_login(
     payload: LoginRequest,
+    request: Request,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> AuthTokenResponse:
+    ip, ua = client_context(request)
     try:
-        return await auth_service.login_with_email_password(payload.email, payload.password)
+        return await auth_service.login_with_email_password(
+            payload.email, payload.password, client_ip=ip, user_agent=ua
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -19,10 +19,44 @@ class ReindexUnavailableError(RuntimeError):
 
 
 class AdminService:
+    """Bảng `user_sessions` và `audit_logs` KHÔNG có khoá ngoại tới `users` trên
+    Supabase, nên `select("*, users(name,email)")` trả PGRST200 — cả hai màn
+    hình (Phiên, Nhật ký) từng chết vì đúng một lỗi này. Ở đây đọc hai bước:
+    lấy hàng, rồi một truy vấn `users?id=in.(...)` cho cả lô (`_users_by_id`).
+    """
+
     def __init__(self, client: Client, settings: Optional[Settings] = None):
         self.client = client
         # Mặc định để chỗ gọi cũ (và test) không phải truyền thêm tham số.
         self._settings = settings or get_settings()
+
+
+    def _search_users(self, term: str, limit: int = 50) -> List[str]:
+        """id của người dùng có tên/email chứa `term` — cho bộ lọc nhật ký."""
+        try:
+            res = (
+                self.client.table("users")
+                .select("id")
+                .or_(f"name.ilike.*{term}*,email.ilike.*{term}*")
+                .limit(limit)
+                .execute()
+            )
+        except Exception as exc:
+            logger.warning("admin.users_search.failed", error=str(exc)[:200])
+            return []
+        return [str(r["id"]) for r in (res.data or [])]
+
+    def _users_by_id(self, user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """{id: {name, email, role}} cho một lô id — một truy vấn, không phải N."""
+        ids = sorted({str(u) for u in user_ids if u})
+        if not ids:
+            return {}
+        try:
+            res = self.client.table("users").select("id, name, email, role").in_("id", ids).execute()
+        except Exception as exc:
+            logger.warning("admin.users_lookup.failed", error=str(exc)[:200])
+            return {}
+        return {str(r["id"]): r for r in (res.data or [])}
 
     # ----------------------------------------------------
     # USER MANAGEMENT & ACCESS
@@ -164,23 +198,27 @@ class AdminService:
         now_iso = datetime.now(timezone.utc).isoformat()
         res = (
             self.client.table("user_sessions")
-            .select("*, users(name, email, role)")
+            .select("*")
             .gt("expires_at", now_iso)
             .order("created_at", desc=True)
             .execute()
         )
-
+        rows = res.data or []
+        users = self._users_by_id([r.get("user_id") for r in rows if not r.get("users")])
         sessions = []
-        for s in res.data or []:
-            user_info = s.get("users") or {}
+        for s in rows:
+            user_info = s.get("users") or users.get(str(s.get("user_id")), {})
             sessions.append({
                 "id": str(s.get("id")),
                 "jti": s.get("token_jti"),
-                "user_name": user_info.get("name", "Unknown"),
-                "user_email": user_info.get("email", ""),
-                "user_role": user_info.get("role", ""),
-                "ip_address": s.get("ip_address") or "127.0.0.1",
-                "user_agent": s.get("user_agent") or "Browser",
+                "user_name": user_info.get("name") or "Unknown",
+                "user_email": user_info.get("email") or "",
+                "user_role": user_info.get("role") or "",
+                # KHÔNG bịa: phiên tạo trước khi auth ghi IP/user-agent thì để
+                # None, giao diện hiện "không ghi nhận". "127.0.0.1"/"Browser"
+                # cũ làm mọi phiên trông như đến từ máy chủ.
+                "ip_address": s.get("ip_address") or None,
+                "user_agent": s.get("user_agent") or None,
                 "is_revoked": s.get("is_revoked", False),
                 "expires_at": s.get("expires_at"),
                 "created_at": s.get("created_at"),
@@ -341,7 +379,7 @@ class AdminService:
         một nhật ký dùng để điều tra, im lặng bỏ sót là hỏng hẳn chứ không chỉ
         là bất tiện.
         """
-        builder = self.client.table("audit_logs").select("*, users(name, email)")
+        builder = self.client.table("audit_logs").select("*")
 
         if query:
             term = query.strip()
@@ -351,17 +389,21 @@ class AdminService:
                 # gõ sẽ tự tách thành điều kiện thứ hai.
                 safe = term.replace(",", " ").replace("(", " ").replace(")", " ")
                 pattern = f"*{safe}*"
-                builder = builder.or_(
-                    f"action.ilike.{pattern},"
-                    f"users.name.ilike.{pattern},"
-                    f"users.email.ilike.{pattern}"
-                )
+                # Không nhúng được `users` (không có khoá ngoại), nên tìm người
+                # theo tên/email TRƯỚC rồi lọc theo `user_id`. Vẫn lọc ở DB,
+                # trước `limit` — xem docstring.
+                clauses = [f"action.ilike.{pattern}"]
+                matched_users = self._search_users(safe)
+                if matched_users:
+                    clauses.append(f"user_id.in.({','.join(matched_users)})")
+                builder = builder.or_(",".join(clauses))
 
         res = builder.order("created_at", desc=True).limit(limit).execute()
-
+        rows = res.data or []
+        users = self._users_by_id([r.get("user_id") for r in rows if not r.get("users")])
         logs = []
-        for audit in res.data or []:
-            user_info = audit.get("users") or {}
+        for audit in rows:
+            user_info = audit.get("users") or users.get(str(audit.get("user_id")), {})
             logs.append({
                 "id": str(audit.get("id")),
                 # "System/Candidate" là suy luận đúng: dòng không gắn user là

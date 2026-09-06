@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Optional
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from modules.scheduling.application.scheduling_service import SchedulingService
@@ -29,7 +29,9 @@ from modules.review.adapters.routes import get_review_repo
 from modules.review.application.review_service import ReviewService
 from modules.review.domain.repo_interface import IReviewRepo
 from modules.shared.infrastructure.config import Settings, get_settings
-from modules.shared.infrastructure.supabase_client import get_supabase_client, get_supabase_admin_client
+from modules.shared.infrastructure import audit
+from modules.shared.infrastructure.audit import AuditDep, client_context
+from modules.shared.infrastructure.supabase_client import get_supabase_client
 from modules.scheduling.infra.google_oauth_service import GoogleOAuthService
 from supabase import Client
 
@@ -328,6 +330,26 @@ async def query_slots(
         )
 
 
+async def _audit_slot(recorder, request, user, slot) -> None:
+    """Ghi nhật ký xác nhận lịch: có tạo được sự kiện Google hay không là
+    thông tin điều tra quan trọng nhất, nên ghi đúng cờ, không suy diễn."""
+    if recorder is None:
+        return
+    ip, ua = client_context(request)
+    await recorder.record(
+        audit.SLOT_CONFIRM,
+        user_id=user.id, candidate_uuid=slot.candidate_id, ip=ip, user_agent=ua,
+        details={
+            "slot_id": slot.id,
+            "start_time": slot.start_time.isoformat() if hasattr(slot.start_time, "isoformat") else str(slot.start_time),
+            "interviewer_ids": list(slot.interviewer_ids),
+            "calendar_event_created": bool(slot.calendar_event_id),
+            "slack_notified": bool(getattr(slot, "slack_notified", False)),
+            "email_notified": bool(getattr(slot, "email_notified", False)),
+        },
+    )
+
+
 @router.post("/confirm", response_model=ConfirmedSlot)
 async def confirm_slot(
     body: ConfirmSlotRequest,
@@ -335,6 +357,8 @@ async def confirm_slot(
     review_repo: ReviewRepoDep,
     user: AuthUser = Depends(require_roles("hr")),
     oauth_service: GoogleOAuthService = Depends(_build_oauth_service),
+    request: Request = None,
+    recorder: AuditDep = None,
 ) -> ConfirmedSlot:
     try:
         start_time = datetime.fromisoformat(body.start_time)
@@ -395,6 +419,7 @@ async def confirm_slot(
             interviewer_ids=body.interviewer_ids,
             api_key=api_key,
         )
+        await _audit_slot(recorder, request, user, slot)
         return slot
     except Exception as e:
         is_401 = "401" in str(e) or (isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401)
@@ -410,6 +435,7 @@ async def confirm_slot(
                     interviewer_ids=body.interviewer_ids,
                     api_key=new_access_token,
                 )
+                await _audit_slot(recorder, request, user, slot)
                 return slot
         raise e
 
@@ -428,6 +454,8 @@ async def send_interview_details(
     service: ServiceDep,
     review_repo: ReviewRepoDep,
     user: AuthUser = Depends(require_roles("hr")),
+    request: Request = None,
+    recorder: AuditDep = None,
 ):
     """Gửi phòng và địa chỉ phỏng vấn cho ứng viên — của lịch trong phạm vi mình."""
     slot = await service.get_confirmed_slot(slot_id)
@@ -438,6 +466,13 @@ async def send_interview_details(
         email = await service.send_interview_details(
             slot_id=slot_id, room=body.room, address=body.address
         )
+        if recorder is not None:
+            ip, ua = client_context(request)
+            await recorder.record(
+                audit.INTERVIEW_DETAILS_SENT,
+                user_id=user.id, candidate_uuid=slot.candidate_id, ip=ip, user_agent=ua,
+                details={"slot_id": slot_id, "room": body.room},
+            )
     except SlotNotFoundError:
         raise HTTPException(status_code=404, detail="Confirmed slot not found")
     except CandidateContactMissingError:

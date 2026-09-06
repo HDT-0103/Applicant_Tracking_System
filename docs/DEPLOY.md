@@ -446,6 +446,8 @@ Ghi ra đây để không ai tưởng là hỏng:
 | Gửi email phòng phỏng vấn | `SMTP_*` rỗng; `send_room_details` trả **503 kèm lý do** thay vì giả vờ thành công | Đặt `SMTP_HOST/PORT/USERNAME/PASSWORD/FROM_EMAIL` rồi chạy lại 1.3 |
 | Sự kiện Google Calendar khi xác nhận lịch | Interviewer chưa kết nối OAuth → `calendar_event_id` **NULL** (trước đây ghi uuid giả và báo "đã tạo") | Mỗi interviewer bấm kết nối Google ở trang lịch (`/api/scheduling/auth/google/*`) |
 | Nút "Vector re-index" ở admin | RPC `reindex_embeddings` chưa có → **503 kèm lý do** | Chạy `V010__reindex_embeddings.sql` |
+| Admin → Hạ tầng: Service Bus "not_configured", hạn mức API trống lúc đầu | `AZURE_SERVICE_BUS_CONNECTION_STRING` trống (tuỳ chọn); hạn mức GitHub chỉ có sau lượt enrichment đầu tiên | Không cần làm gì; hàng GitHub tự xuất hiện |
+| Admin → AI & Vector trống lúc đầu | `llm_usage_logs` chỉ có dữ liệu từ lượt gọi LLM đầu tiên sau bản này | Nộp một CV hoặc hỏi chatbot một câu |
 | Điểm khớp / xếp hạng cho đơn nộp TRƯỚC bản này | Pipeline CV chỉ chạy khi hồ sơ nộp vào; đơn cũ giữ `overall_score` NULL, tab Xếp hạng hiện "Chưa chấm" | Không có script chấm lại hàng loạt; nộp lại CV nếu cần |
 | Đăng nhập bằng email công ty | `RECRUITER_EMAIL_DOMAINS` rỗng → chỉ `ADMIN_EMAILS` vào được | Đặt biến đó |
 | Hội đồng chấm đúng nghĩa | DB chỉ có 1 tech lead → ngưỡng 80% thành 1/1 | Mời thêm tech lead |

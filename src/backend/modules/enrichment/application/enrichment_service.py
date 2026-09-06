@@ -255,6 +255,41 @@ async def check_existing_enrichment(
         return None
 
 
+def _record_github_rate_limit(settings: Settings, headers) -> None:
+    """Ghi hạn mức GitHub API vào `api_rate_limits` cho trang admin "Hạ tầng".
+
+    Bảng này rỗng từ đầu (không ai ghi), nên màn hình luôn báo "chưa có nhà
+    cung cấp nào báo hạn mức". GitHub trả hạn mức trong header mọi response —
+    ghi lại là có số thật, không tốn thêm lượt gọi nào.
+    """
+    try:
+        total = headers.get("x-ratelimit-limit")
+        remaining = headers.get("x-ratelimit-remaining")
+        reset = headers.get("x-ratelimit-reset")
+        if total is None or remaining is None:
+            return
+        client = get_supabase_client(settings, use_admin=True)
+        if client is None:
+            return
+        from datetime import datetime, timezone
+
+        reset_iso = (
+            datetime.fromtimestamp(int(reset), tz=timezone.utc).isoformat() if reset else None
+        )
+        client.table("api_rate_limits").upsert(
+            {
+                "provider": "github",
+                "rate_limit_total": int(total),
+                "rate_limit_remaining": int(remaining),
+                "rate_limit_reset": reset_iso,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="provider",
+        ).execute()
+    except Exception as exc:  # noqa: BLE001 — thống kê không được làm hỏng enrichment
+        logger.warning("github.rate_limit.record_failed", error=str(exc)[:200])
+
+
 async def fetch_github_profile(
     github_username: str,
     settings: Annotated[Settings, Depends(get_settings)]
@@ -272,6 +307,7 @@ async def fetch_github_profile(
                 params={"per_page": 100, "sort": "updated"}
             )
             repos_response.raise_for_status()
+            _record_github_rate_limit(settings, repos_response.headers)
             repos_data = repos_response.json()
             
             repos = [

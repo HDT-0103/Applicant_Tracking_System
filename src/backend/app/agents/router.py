@@ -49,7 +49,12 @@ from src.backend.app.agents.state import (
     MissionStatus,
 )
 from src.backend.app.schemas.orchestrator import IntentType, OrchestratorDecision
-from src.backend.app.services.llm_provider import build_default_llm_provider
+from src.backend.app.services.llm_provider import (
+    build_default_llm_provider,
+    llm_context,
+    llm_operation,
+    llm_user_id,
+)
 from src.backend.app.services.orchestrator import OrchestratorService
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -257,14 +262,17 @@ async def _stream_candidate_qa(
         role = user.role if user else "tech_lead"
         context = await asyncio.to_thread(load_candidate_context, client, candidate_uuid, role)
         yield _sse("status", {"message": "Agent is thinking..."})
-        answer: CandidateAnswer = await asyncio.to_thread(
-            answer_about_candidate,
-            llm=_llm_provider(),
-            context=context,
-            lang=request.context.lang,
-            message=request.message,
-            history=request.turns(),
-        )
+        # Gắn nhãn thao tác/người dùng cho thống kê token (llm_usage_logs);
+        # ContextVar đi theo asyncio.to_thread.
+        with llm_context("candidate_qa", user.id if user else None):
+            answer: CandidateAnswer = await asyncio.to_thread(
+                answer_about_candidate,
+                llm=_llm_provider(),
+                context=context,
+                lang=request.context.lang,
+                message=request.message,
+                history=request.turns(),
+            )
         yield _sse(
             "done",
             {
@@ -297,13 +305,14 @@ async def _stream_agent(
             # mình dễ bị xếp nhầm thành trò chuyện.
             yield _sse("status", {"message": "Understanding your request..."})
             overview = await asyncio.to_thread(_workspace_overview, settings, user)
-            decision: OrchestratorDecision = await asyncio.to_thread(
-                _orchestrator().classify,
-                request.message,
-                [f"{t.role}: {t.content}" for t in request.turns()],
-                lang=request.context.lang,
-                overview=overview,
-            )
+            with llm_context("intent_router", user.id if user else None):
+                decision: OrchestratorDecision = await asyncio.to_thread(
+                    _orchestrator().classify,
+                    request.message,
+                    [f"{t.role}: {t.content}" for t in request.turns()],
+                    lang=request.context.lang,
+                    overview=overview,
+                )
             if decision.intent == IntentType.GENERAL_CHAT:
                 yield _sse(
                     "done",
@@ -337,6 +346,11 @@ async def _stream_agent(
         yield _sse("status", {"message": "Agent is thinking..."})
         final_state = None
         try:
+            # Đồ thị chạy nhiều lượt LLM trong nhiều task; đặt ContextVar cho
+            # cả phần còn lại của generator này (không cần reset — generator
+            # có context riêng, kết thúc là mất).
+            llm_operation.set("candidate_search")
+            llm_user_id.set(user.id if user else None)
             async for update in graph.astream(initial_state, stream_mode="updates"):
                 final_state = update
                 for node_name in update:

@@ -67,8 +67,9 @@ interface Session {
   user_name: string;
   user_email: string;
   user_role: string;
-  ip_address: string;
-  user_agent: string;
+  /** `null` = phiên tạo trước khi auth ghi nguồn gốc; hiện "không ghi nhận", không bịa. */
+  ip_address: string | null;
+  user_agent: string | null;
   is_revoked: boolean;
   created_at: string;
   expires_at: string;
@@ -98,7 +99,8 @@ interface LLMMetrics {
   total_completion_tokens: number;
   total_tokens: number;
   total_estimated_cost: number;
-  by_model: { model_name: string; total_tokens: number; cost: number; calls: number }[];
+  /** `cost` null = model không có trong bảng giá; hiện "chưa có giá", không phải $0. */
+  by_model: { model_name: string; total_tokens: number; cost: number | null; calls: number }[];
 }
 
 interface InfraMetrics {
@@ -154,17 +156,6 @@ const NAV: { key: ActiveTab; labelKey: string; icon: LucideIcon }[] = [
   { key: "ai", labelKey: "admin.nav.ai", icon: Cpu },
   { key: "infra", labelKey: "admin.nav.infra", icon: Activity },
   { key: "audit", labelKey: "admin.nav.audit", icon: ScrollText },
-];
-
-// `name` là key i18n của thứ trong tuần; dịch lúc render (xem chartData).
-const SAMPLE_COST: CostPoint[] = [
-  { name: "admin.day.mon", cost: 0.24, tokens: 12000 },
-  { name: "admin.day.tue", cost: 0.45, tokens: 22500 },
-  { name: "admin.day.wed", cost: 0.38, tokens: 19000 },
-  { name: "admin.day.thu", cost: 0.72, tokens: 36000 },
-  { name: "admin.day.fri", cost: 0.95, tokens: 47500 },
-  { name: "admin.day.sat", cost: 0.52, tokens: 26000 },
-  { name: "admin.day.sun", cost: 0.65, tokens: 32500 },
 ];
 
 export default function AdminDashboard() {
@@ -292,8 +283,9 @@ export default function AdminDashboard() {
     }
   };
 
-  const chartIsSample = costSeries.length === 0;
-  const chartData = chartIsSample ? SAMPLE_COST.map((p) => ({ ...p, name: t(p.name) })) : costSeries;
+  // Không có lượt dùng thì KHÔNG vẽ biểu đồ mẫu: một đường cong bịa trên trang
+  // theo dõi chi phí là thứ admin sẽ tin. Trống thì nói trống.
+  const chartData = costSeries;
 
   if (!user || user.role !== "admin") {
     return (
@@ -495,7 +487,7 @@ export default function AdminDashboard() {
                               <div style={{ fontSize: 11, color: D.muted }}>{s.user_email}</div>
                             </td>
                             <td style={tdStyle}><RoleBadge role={s.user_role} /></td>
-                            <td style={{ ...tdStyle, fontFamily: D.mono }}>{s.ip_address}</td>
+                            <td style={{ ...tdStyle, fontFamily: D.mono }}>{s.ip_address ?? t("admin.audit.notRecorded")}</td>
                             <td style={tdStyle}>{new Date(s.created_at).toLocaleString(locale)}</td>
                             <td style={tdStyle}>
                               {s.is_revoked ? (
@@ -537,25 +529,31 @@ export default function AdminDashboard() {
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 28 }}>
                 <div style={{ ...card, padding: 20 }}>
                   <h3 style={{ fontSize: 14, fontWeight: 700, color: D.ink, margin: "0 0 4px", display: "flex", alignItems: "center", gap: 6 }}>
-                    <TrendingUp size={15} style={{ color: D.blue }} /> {t("admin.ai.dailyCost")} {chartIsSample && <span style={{ fontSize: 10.5, color: D.dim, fontWeight: 500 }}>{t("admin.ai.sampleNote")}</span>}
+                    <TrendingUp size={15} style={{ color: D.blue }} /> {t("admin.ai.dailyCost")}
                   </h3>
+                  {chartData.length === 0 ? (
+                    <div style={{ height: 232, marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", color: D.muted, fontSize: 12.5, border: `1px dashed ${D.line}`, borderRadius: 8 }}>
+                      {t("admin.ai.empty")}
+                    </div>
+                  ) : (
                   <div style={{ width: "100%", height: 232, marginTop: 12 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartData} margin={{ top: 6, right: 8, left: -22, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="cost" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={D.blue} stopOpacity={0.22} />
-                            <stop offset="95%" stopColor={D.blue} stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke={D.lineSoft} />
-                        <XAxis dataKey="name" stroke={D.dim} fontSize={11} />
-                        <YAxis stroke={D.dim} fontSize={11} />
-                        <Tooltip contentStyle={{ background: D.canvas, border: `1px solid ${D.line}`, borderRadius: 6, color: D.ink, fontSize: 12 }} />
-                        <Area type="monotone" dataKey="cost" stroke={D.blue} strokeWidth={2} fillOpacity={1} fill="url(#cost)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData} margin={{ top: 6, right: 8, left: -22, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="cost" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={D.blue} stopOpacity={0.22} />
+                              <stop offset="95%" stopColor={D.blue} stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke={D.lineSoft} />
+                          <XAxis dataKey="name" stroke={D.dim} fontSize={11} />
+                          <YAxis stroke={D.dim} fontSize={11} />
+                          <Tooltip contentStyle={{ background: D.canvas, border: `1px solid ${D.line}`, borderRadius: 6, color: D.ink, fontSize: 12 }} />
+                          <Area type="monotone" dataKey="cost" stroke={D.blue} strokeWidth={2} fillOpacity={1} fill="url(#cost)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ ...card, padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
@@ -593,7 +591,7 @@ export default function AdminDashboard() {
                         <td style={{ ...tdStyle, fontWeight: 600, color: D.blue }}>{m.model_name}</td>
                         <td style={tdStyle}>{m.calls.toLocaleString(locale)}</td>
                         <td style={{ ...tdStyle, fontFamily: D.mono }}>{m.total_tokens.toLocaleString(locale)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", color: D.mint, fontWeight: 600 }}>${m.cost.toFixed(5)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", color: D.mint, fontWeight: 600 }}>{m.cost === null ? t("admin.ai.unpriced") : `$${m.cost.toFixed(5)}`}</td>
                       </tr>
                     ))}
                     {(!aiMetrics || aiMetrics.by_model.length === 0) && (

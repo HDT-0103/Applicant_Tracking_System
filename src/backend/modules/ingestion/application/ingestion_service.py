@@ -132,6 +132,21 @@ def _clean(value) -> str | None:
     return stripped
 
 
+def _report_gemini_usage(model_name: str, response) -> None:
+    """Báo token của Gemini về bảng llm_usage_logs (cùng sink với Groq/HF).
+
+    Import lười: `src.backend.app.*` chỉ phân giải được sau khi legacy_bridge
+    vá sys.path, mà module này được nạp trước đó lúc khởi động.
+    """
+    try:
+        from src.backend.app.services.llm_provider import llm_context, report_usage
+
+        with llm_context("cv_contact_parse"):
+            report_usage(model_name, getattr(response, "usage_metadata", None), provider="gemini")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("gemini.usage_report_failed", error=str(exc)[:120])
+
+
 async def parse_cv_with_gemini(resume_text: str, settings: Settings) -> dict | None:
     if not settings.gemini_api_key:
         logger.warning("ingestion.gemini.api_key_missing")
@@ -157,6 +172,7 @@ async def parse_cv_with_gemini(resume_text: str, settings: Settings) -> dict | N
         response = await model.generate_content_async(
             f"{CV_PARSE_PROMPT}\n\n--- CV TEXT ---\n{resume_text}"
         )
+        _report_gemini_usage(settings.gemini_model, response)
 
         raw = response.text.strip()
         if raw.startswith("```json"):

@@ -15,6 +15,58 @@ from pydantic import BaseModel
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Báo cáo lượt dùng (token) cho trang admin.
+#
+# Provider không biết ai đang gọi và để làm gì; route đặt hai ContextVar dưới
+# đây trước khi gọi (ContextVar đi theo cả `asyncio.to_thread`). Sink do
+# `apps/main.py` gắn qua `set_usage_sink`; không có sink thì im lặng.
+# ---------------------------------------------------------------------------
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Callable, Iterator, Optional
+
+llm_operation: ContextVar[str] = ContextVar("llm_operation", default="chat")
+llm_user_id: ContextVar[Optional[str]] = ContextVar("llm_user_id", default=None)
+_usage_sink: Optional[Callable[[dict], None]] = None
+
+
+def set_usage_sink(sink: Optional[Callable[[dict], None]]) -> None:
+    global _usage_sink
+    _usage_sink = sink
+
+
+@contextmanager
+def llm_context(operation: str, user_id: Optional[str] = None) -> Iterator[None]:
+    """Đặt thao tác / người dùng cho mọi lượt LLM bên trong khối."""
+    t1 = llm_operation.set(operation)
+    t2 = llm_user_id.set(user_id)
+    try:
+        yield
+    finally:
+        llm_operation.reset(t1)
+        llm_user_id.reset(t2)
+
+
+def report_usage(model: str, usage: Any, provider: str = "") -> None:
+    """Gửi số token của một response tới sink. Không bao giờ ném lỗi."""
+    if _usage_sink is None or usage is None:
+        return
+    try:
+        get = usage.get if isinstance(usage, dict) else (lambda k: getattr(usage, k, None))
+        payload = {
+            "provider": provider,
+            "model": model,
+            "prompt_tokens": int(get("prompt_tokens") or get("prompt_token_count") or 0),
+            "completion_tokens": int(get("completion_tokens") or get("candidates_token_count") or 0),
+            "total_tokens": int(get("total_tokens") or get("total_token_count") or 0),
+            "operation": llm_operation.get(),
+            "user_id": llm_user_id.get(),
+        }
+        _usage_sink(payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("LLM usage report failed: %s", str(exc)[:200])
+
 
 class LLMProvider(ABC):
     """
@@ -150,6 +202,7 @@ class GroqProvider(LLMProvider):
         )
 
         content = response.choices[0].message.content
+        report_usage(self.model, getattr(response, "usage", None), provider="groq")
 
         # ----------------------------
         # Plain Text
@@ -222,6 +275,7 @@ class HFProvider(LLMProvider):
             **request_kwargs,
         )
         content = response.choices[0].message.content or ""
+        report_usage(self.model, getattr(response, "usage", None), provider="huggingface")
         if response_model is None:
             return content
         return response_model.model_validate_json(content)
