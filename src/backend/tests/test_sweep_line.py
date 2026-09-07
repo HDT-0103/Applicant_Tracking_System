@@ -46,13 +46,7 @@ class TestOverlapDetection:
         slots = sweep.find_slots({"a": [free("a", 9, 12)]}, min_slot_minutes=60)
         assert [(s.start_time, s.end_time) for s in slots] == [
             (at(9), at(10)),
-            (at(9.25), at(10.25)),
-            (at(9.5), at(10.5)),
-            (at(9.75), at(10.75)),
             (at(10), at(11)),
-            (at(10.25), at(11.25)),
-            (at(10.5), at(11.5)),
-            (at(10.75), at(11.75)),
             (at(11), at(12)),
         ]
 
@@ -131,17 +125,18 @@ class TestMinimumLength:
         assert len(slots) == 1
         assert slots[0].duration_min == 45
 
-    def test_long_window_generates_overlapping_slots(self, sweep):
+    def test_long_window_is_chopped_into_back_to_back_slots(self, sweep):
         slots = sweep.find_slots({"a": [free("a", 9, 12)]}, min_slot_minutes=45)
-        # 180 min total. 180 - 45 = 135 mins of viable start times. 135 / 15 = 9. So 10 slots.
-        assert len(slots) == 10
+        assert len(slots) == 4  # 45 x 4 = 180 minutes
+        for earlier, later in zip(slots, slots[1:]):
+            assert earlier.end_time <= later.start_time, "slots must not overlap"
 
     def test_remainder_too_short_to_fill_is_not_emitted(self, sweep):
-        # 100 minutes at 45 each leaves 55 minutes of viable starts (9:00, 9:15, 9:30, 9:45).
+        # 100 minutes at 45 each leaves 10 minutes, which is not a slot.
         slots = sweep.find_slots(
             {"a": [free("a", 9, 9 + 100 / 60)]}, min_slot_minutes=45
         )
-        assert len(slots) == 4
+        assert len(slots) == 2
         assert all(s.duration_min == 45 for s in slots)
 
 
@@ -189,7 +184,16 @@ class TestResultShape:
         slots = sweep.find_slots({"a": [free("a", 9, 13)]}, min_slot_minutes=60)
         assert slots == sorted(slots, key=lambda s: s.start_time)
 
+    def test_limit_caps_the_number_of_slots(self, sweep):
+        """`limit` is part of the signature, so it has to mean something.
 
+        A whole free day at 45 minutes a slot is over a dozen options; handing
+        all of them to the UI as "suggestions" is not a suggestion.
+        """
+        slots = sweep.find_slots(
+            {"a": [free("a", 9, 17)]}, min_slot_minutes=45, limit=3
+        )
+        assert len(slots) == 3
 
     def test_duration_is_reported_in_minutes(self, sweep):
         slots = sweep.find_slots({"a": [free("a", 9, 10)]}, min_slot_minutes=60)
