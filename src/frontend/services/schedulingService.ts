@@ -59,10 +59,6 @@ export async function exchangeGoogleCode(code: string): Promise<{ status: string
   return api.post<{ status: string; message: string }>("/api/scheduling/auth/google/callback", { code });
 }
 
-export async function updateCalendarApiKey(apiKey: string): Promise<{ status: string; message: string }> {
-  return api.post<{ status: string; message: string }>("/api/scheduling/calendar-key", { api_key: apiKey });
-}
-
 export async function fetchConnectedInterviewers(candidateId?: string): Promise<Interviewer[]> {
   type BackendIV = { id: string; name: string; email: string; role: string; cal_connected: boolean };
   const query = candidateId ? `?candidate_id=${encodeURIComponent(candidateId)}` : "";

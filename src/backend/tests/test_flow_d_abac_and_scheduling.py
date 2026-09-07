@@ -385,10 +385,12 @@ class TestCalendarTokenExpiry:
         from modules.scheduling.application.scheduling_service import SchedulingService
         from modules.scheduling.application.sweep_line_service import SweepLineService
 
+        from datetime import datetime, timezone
+
         repo = MagicMock(spec=ISchedulingRepo)
         repo.get_interviewers.return_value = [interviewer]
         repo.get_config.return_value = SchedulingConfig()
-        return SchedulingService(
+        service = SchedulingService(
             repo=repo,
             calendar=calendar,
             sweepline=SweepLineService(),
@@ -396,7 +398,11 @@ class TestCalendarTokenExpiry:
             calendar_event=MagicMock(),
             email_notifier=MagicMock(),
             oauth_service=oauth,
-        ), repo
+        )
+        # Test dùng ngày cố định (2026-09-01); service không gợi ý giờ đã qua,
+        # nên "bây giờ" của nó phải đứng trước ngày đó.
+        service._now = lambda: datetime(2026, 8, 31, tzinfo=timezone.utc)
+        return service, repo
 
     @staticmethod
     def _interviewer(**kw):

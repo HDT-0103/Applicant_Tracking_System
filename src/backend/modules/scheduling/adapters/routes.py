@@ -103,8 +103,11 @@ class SlotsQueryRequest(BaseModel):
     interviewer_ids: list[str]
     date_from: str
     date_to: str
-    duration_minutes: Optional[int] = None
-    limit: Optional[int] = 0
+    #: Độ dài phỏng vấn. Không chặn thì 0 rơi về mặc định còn số âm đi thẳng
+    #: vào sweep-line và sinh khe có độ dài âm.
+    duration_minutes: Optional[int] = Field(default=None, ge=15, le=240)
+    #: 0 = không giới hạn. Trần 100 để một client hỏng không kéo cả tháng khe về.
+    limit: Optional[int] = Field(default=0, ge=0, le=100)
 
 
 class ConfirmSlotRequest(BaseModel):
@@ -174,11 +177,10 @@ async def list_connected_interviewers(
         else:
             allowed_reviewer_ids = set()
     elif user.role == "hr":
+        # MỘT truy vấn cho mọi tin của HR, không phải mỗi tin một `get_panel`:
+        # 20 tin là 20 vòng khứ hồi ~160 ms trên đường mở trang lịch.
         hr_job_postings = await review_repo.job_postings_created_by(user.id)
-        allowed_ids: set[str] = set()
-        for jpid in hr_job_postings:
-            panel = await review_repo.get_panel(jpid)
-            allowed_ids.update(m.reviewer_id for m in panel)
+        allowed_ids: set[str] = set(await review_repo.reviewers_for_job_postings(hr_job_postings))
         allowed_ids.add(user.id)
 
         # Fallback theo company_name nếu tin chưa gán hội đồng
@@ -240,22 +242,10 @@ async def google_auth_callback(
     return {"status": "success", "message": "Google Calendar connected successfully"}
 
 
-class UpdateCalendarKeyRequest(BaseModel):
-    api_key: str
-
-
-@router.post("/calendar-key")
-async def update_calendar_key(
-    body: UpdateCalendarKeyRequest,
-    scheduling_service: SchedulingService = Depends(_build_service),
-    user: AuthUser = Depends(require_operational_roles()),
-):
-    """Cập nhật Google Calendar API Key trực tiếp"""
-    key = body.api_key.strip()
-    if not key:
-        raise HTTPException(status_code=400, detail="API Key không được để trống")
-    await scheduling_service.update_calendar_key(user.id, key)
-    return {"status": "success", "message": "Google Calendar API Key updated successfully"}
+# Không có route đặt "API key" tay: backend gửi giá trị đó cho Google dưới
+# dạng Bearer, mà Bearer chỉ nhận OAuth access token — API key kiểu AIza… trả
+# 401 "Invalid Credentials" lúc đọc lịch, trong khi giao diện đã báo "đã kết
+# nối". Kết nối lịch chỉ đi qua /auth/google/*.
 
 
 @router.post("/slots", response_model=list[TimeSlot])

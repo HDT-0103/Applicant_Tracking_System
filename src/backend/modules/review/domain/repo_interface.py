@@ -80,6 +80,14 @@ class IReviewRepo:
         """Danh sách Tech Lead đang trong hội đồng của một tin tuyển dụng."""
         raise NotImplementedError
 
+    async def reviewers_for_job_postings(self, job_posting_ids: Sequence[str]) -> Set[str]:
+        """Mọi reviewer_id trong hội đồng của bất kỳ tin nào trong lô — MỘT truy vấn.
+
+        Trang lịch cần "ai được phỏng vấn cho HR này": gọi `get_panel` theo
+        từng tin là N vòng khứ hồi (~160 ms mỗi vòng từ Azure).
+        """
+        raise NotImplementedError
+
     async def list_available_reviewers(self) -> List[PanelMember]:
         """Mọi Tech Lead còn hoạt động — nguồn để HR chọn người mời.
 

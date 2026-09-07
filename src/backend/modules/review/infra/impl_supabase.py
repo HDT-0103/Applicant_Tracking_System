@@ -195,6 +195,17 @@ class SupabaseReviewRepo(IReviewRepo):
         )
         return {row["candidate_uuid"] for row in apps.data or []}
 
+    async def reviewers_for_job_postings(self, job_posting_ids: Sequence[str]) -> Set[str]:
+        if not job_posting_ids:
+            return set()
+        res = (
+            self._client.table("job_posting_reviewers")
+            .select("reviewer_id")
+            .in_("job_posting_id", list(job_posting_ids))
+            .execute()
+        )
+        return {row["reviewer_id"] for row in res.data or [] if row.get("reviewer_id")}
+
     async def get_panel(self, job_posting_id: str) -> List[PanelMember]:
         rows = (
             self._client.table("job_posting_reviewers")

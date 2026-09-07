@@ -28,6 +28,23 @@ logger = structlog.get_logger(__name__)
 
 #: Default limit for slot suggestions (0 means no cap, return all available slots)
 MAX_SUGGESTED_SLOTS = 0
+def clip_to_future(
+    freebusy_map: dict[str, list[FreeBusyInterval]], now: datetime
+) -> dict[str, list[FreeBusyInterval]]:
+    """Cắt mọi khoảng rảnh về sau `now`; khoảng đã qua hẳn thì bỏ."""
+    clipped: dict[str, list[FreeBusyInterval]] = {}
+    for interviewer_id, intervals in freebusy_map.items():
+        kept = []
+        for fb in intervals:
+            if fb.end_time <= now:
+                continue
+            if fb.start_time < now:
+                fb = fb.model_copy(update={"start_time": now})
+            kept.append(fb)
+        clipped[interviewer_id] = kept
+    return clipped
+
+
 #: Bước giữa hai gợi ý giờ bắt đầu trên trang lịch. 15 phút để HR chọn được
 #: 9:15 hay 9:30 chứ không chỉ 9:00 / 9:45; các khe vì thế chồng nhau — đó là
 #: gợi ý giờ bắt đầu, không phải lịch chia ca.
@@ -114,6 +131,10 @@ class SchedulingService:
         self, interviewer_id: str, api_key: str, refresh_token: Optional[str] = None
     ) -> Optional[Interviewer]:
         return self._repo.update_calendar_key(interviewer_id, api_key, refresh_token)
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
 
     async def query_slots(
         self,
@@ -222,6 +243,11 @@ class SchedulingService:
                     for ws, we in working_wholes
                 ]
             freebusy_map[interviewer.id] = fbs
+
+        # Không gợi ý giờ đã qua. Bản dựng khung giờ theo ngày làm việc từng
+        # bỏ mất `max(start, now)`: chọn "hôm nay" lúc 15h vẫn được đề nghị
+        # 9:00 sáng nay, và xác nhận thì tạo một sự kiện trong quá khứ.
+        freebusy_map = clip_to_future(freebusy_map, self._now())
 
         slots = self._sweepline.find_slots(
             interviewer_freebusy=freebusy_map,

@@ -2,15 +2,16 @@
 
 import React, { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Calendar, Link2, AlertCircle, X, Key, CheckCircle2 } from "lucide-react";
+import { Calendar, Link2, AlertCircle, X } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import {
-  checkCalendarStatus,
-  getGoogleAuthUrl,
-  updateCalendarApiKey,
-} from "../services/schedulingService";
+import { checkCalendarStatus, getGoogleAuthUrl } from "../services/schedulingService";
 import { D, tint } from "../lib/shared";
 import { useT } from "../lib/i18n";
+
+//: Chỉ có MỘT cách kết nối lịch: OAuth. Bản trước còn ô "dán API Key" — backend
+//: gửi giá trị đó cho Google dưới dạng Bearer, Bearer chỉ nhận OAuth token, nên
+//: key kiểu AIza… trả 401 lúc đọc lịch trong khi giao diện đã báo "đã kết nối".
+const DISMISS_KEY = "smartats_calendar_prompt_dismissed";
 
 export function RequireCalendarModal() {
   const pathname = usePathname();
@@ -19,10 +20,23 @@ export function RequireCalendarModal() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [savingKey, setSavingKey] = useState(false);
-  const [isDismissed, setIsDismissed] = useState<boolean>(false);
+  // Nhớ "để sau" trong phiên trình duyệt: không thì mỗi lần chuyển trang popup
+  // lại bật lên, và nút X thành vô nghĩa.
+  const [isDismissed, setIsDismissed] = useState<boolean>(() => {
+    try {
+      return typeof window !== "undefined" && sessionStorage.getItem(DISMISS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismiss = () => {
+    setIsDismissed(true);
+    try {
+      sessionStorage.setItem(DISMISS_KEY, "1");
+    } catch {
+      // Bộ nhớ phiên bị chặn thì popup chỉ đóng trong lần render này.
+    }
+  };
 
   const role = (user?.role || "").toLowerCase();
   // Áp dụng đúng và đầy đủ cho cả 2 role: HR và Tech Lead
@@ -103,30 +117,6 @@ export function RequireCalendarModal() {
     }
   };
 
-  const handleSaveApiKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!apiKeyInput.trim()) {
-      setError("Vui lòng nhập Google Calendar API Key");
-      return;
-    }
-    setSavingKey(true);
-    setError(null);
-    try {
-      await updateCalendarApiKey(apiKeyInput.trim());
-      setSuccess("Đã lưu Google Calendar API Key thành công!");
-      setConnected(true);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("calendar-status-updated", { detail: { connected: true } })
-        );
-      }
-    } catch (err: any) {
-      setError(err?.message || "Không thể lưu API Key. Vui lòng thử lại.");
-    } finally {
-      setSavingKey(false);
-    }
-  };
-
   return (
     <>
       {/* 1. NÚT NỔI Ở GÓC PHẢI MÀN HÌNH (chỉ hiển thị khi modal đã bị đóng và chưa kết nối) */}
@@ -158,11 +148,11 @@ export function RequireCalendarModal() {
           e.currentTarget.style.transform = "scale(1)";
           e.currentTarget.style.borderColor = isDismissed ? D.amber : D.line;
         }}
-        title="Google Calendar API Key (Bấm để thiết lập)"
+        title={t("calendar.connectNow")}
       >
-        <Key size={15} color={D.blue} strokeWidth={2.2} />
+        <Calendar size={15} color={D.blue} strokeWidth={2.2} />
         <span style={{ fontSize: "12.5px", fontWeight: 600, color: D.ink }}>
-          Google Calendar API Key
+          {t("schedule.connect")}
         </span>
         <span
           style={{
@@ -212,7 +202,7 @@ export function RequireCalendarModal() {
           >
             {/* Nút X ở góc trên bên phải */}
             <button
-              onClick={() => setIsDismissed(true)}
+              onClick={dismiss}
               type="button"
               aria-label="Đóng"
               style={{
@@ -305,28 +295,6 @@ export function RequireCalendarModal() {
               </div>
             )}
 
-            {success && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "10px 14px",
-                  borderRadius: "8px",
-                  background: `${tint("mint", "10")}`,
-                  border: `1px solid ${tint("mint", "30")}`,
-                  color: D.mint,
-                  fontSize: "12px",
-                  marginBottom: "16px",
-                  width: "100%",
-                  textAlign: "left",
-                }}
-              >
-                <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
-                <span>{success}</span>
-              </div>
-            )}
-
             {/* Cách 1: Kết nối Google OAuth tự động */}
             <button
               onClick={handleConnectOAuth}
@@ -354,65 +322,9 @@ export function RequireCalendarModal() {
               {loading ? t("calendar.redirecting") : t("calendar.connectNow")}
             </button>
 
-            {/* Phân cách hoặc */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                width: "100%",
-                margin: "16px 0",
-                gap: "10px",
-              }}
-            >
-              <div style={{ flex: 1, height: "1px", background: D.line }} />
-              <span style={{ fontSize: "11px", color: D.dim, textTransform: "uppercase" }}>
-                hoặc nhập API Key
-              </span>
-              <div style={{ flex: 1, height: "1px", background: D.line }} />
-            </div>
-
-            {/* Cách 2: Tự nhập Google Calendar API Key */}
-            <form onSubmit={handleSaveApiKey} style={{ width: "100%", display: "flex", gap: "8px" }}>
-              <input
-                type="text"
-                placeholder="Dán Google Calendar API Key..."
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                disabled={savingKey}
-                style={{
-                  flex: 1,
-                  padding: "9px 12px",
-                  borderRadius: "8px",
-                  border: `1px solid ${D.line}`,
-                  background: D.surface,
-                  color: D.ink,
-                  fontSize: "13px",
-                  outline: "none",
-                }}
-              />
-              <button
-                type="submit"
-                disabled={savingKey || !apiKeyInput.trim()}
-                style={{
-                  padding: "9px 16px",
-                  borderRadius: "8px",
-                  background: D.surface,
-                  color: D.ink,
-                  border: `1px solid ${D.line}`,
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  cursor: savingKey || !apiKeyInput.trim() ? "not-allowed" : "pointer",
-                  opacity: savingKey || !apiKeyInput.trim() ? 0.5 : 1,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {savingKey ? "Đang lưu..." : "Lưu"}
-              </button>
-            </form>
-
             {/* Nút Để sau (Đóng pop-up) */}
             <button
-              onClick={() => setIsDismissed(true)}
+              onClick={dismiss}
               type="button"
               style={{
                 width: "100%",
