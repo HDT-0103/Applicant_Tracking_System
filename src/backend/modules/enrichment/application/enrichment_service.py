@@ -800,7 +800,7 @@ def persist_analytics(
     candidate_uuid: str,
     analytics: "MockAnalytics | None",
     settings: Settings,
-) -> None:
+) -> "dict | None":
     """Lưu kết quả phân tích xuống bảng `enrichment_profiles`.
 
     Trước đây toàn bộ analytics chỉ nằm trong dict `candidate_enrichments` trên
@@ -815,12 +815,12 @@ def persist_analytics(
     WebSocket vẫn phải bắn đi được.
     """
     if analytics is None:
-        return
+        return None
 
     client = get_supabase_client(settings, use_admin=True)
     if client is None:
         logger.warning("enrichment.persist.no_client", candidate_uuid=candidate_uuid)
-        return
+        return None
 
     matrix = analytics.technical_skill_matrix
     radar = {
@@ -882,14 +882,39 @@ def persist_analytics(
         logger.info(
             "enrichment.persist.ok",
             candidate_uuid=candidate_uuid,
-            score=analytics.match_confidence_score,
+            score=payload["match_confidence_score"],
         )
+        # Trả về đúng thứ đã ghi: caller cần nó để bộ nhớ khớp với DB.
+        return payload
     except Exception as exc:
         logger.error(
             "enrichment.persist.failed",
             candidate_uuid=candidate_uuid,
             error=str(exc),
         )
+        return None
+
+
+def apply_persisted_analytics(profile: EnrichedProfile, persisted: "dict | None") -> EnrichedProfile:
+    """Đồng bộ bản trong bộ nhớ với bản đã gộp trên DB.
+
+    Trang hồ sơ đọc `candidate_enrichments` (bộ nhớ) trước, dashboard đọc DB.
+    Worker từng để trong bộ nhớ điểm đếm từ khoá (99) trong khi DB giữ điểm
+    pipeline (85) sau khi gộp — hai màn hình hiện hai số cho cùng một người
+    cho tới khi backend restart.
+    """
+    if not persisted:
+        return profile
+    analytics = profile.analytics.model_copy(
+        update={
+            "match_confidence_score": persisted.get("match_confidence_score", profile.analytics.match_confidence_score),
+            "score_increase": persisted.get("score_increase") if persisted.get("score_increase") is not None else 0,
+            "semantic_tags": list(persisted.get("semantic_tags") or profile.analytics.semantic_tags),
+        }
+    )
+    stored = persisted.get("skill_matrix")
+    breakdown = stored if isinstance(stored, dict) and "must_have" in stored else profile.skill_matrix
+    return profile.model_copy(update={"analytics": analytics, "skill_matrix": breakdown})
 
 
 def idempotent_merge(existing: EnrichedProfile | None, new_data: EnrichedProfile) -> EnrichedProfile:
@@ -1199,16 +1224,19 @@ async def enrichment_worker(
         existing = candidate_enrichments.get(candidate_uuid)
         merged_profile = idempotent_merge(existing.enriched_profile if existing else None, new_profile)
         
+        # Ghi xuống DB để kết quả sống sót qua lần khởi động lại và để danh
+        # sách ứng viên đọc được điểm khớp. Dùng bản đã merge, không dùng bản
+        # mới, vì lượt enrich sau có thể chỉ bổ sung một phần. DB có thể giữ
+        # điểm của pipeline CV (theo tin) thay vì điểm đếm từ khoá — bộ nhớ
+        # phải theo DB, không thì trang hồ sơ và dashboard hiện hai số khác nhau.
+        persisted = persist_analytics(candidate_uuid, merged_profile.analytics, settings)
+        merged_profile = apply_persisted_analytics(merged_profile, persisted)
+
         candidate_enrichments[candidate_uuid] = CandidateEnrichment(
             candidate_uuid=candidate_uuid,
             enrichment_status=EnrichmentStatus.ENRICHED,
             enriched_profile=merged_profile
         )
-
-        # Ghi xuống DB để kết quả sống sót qua lần khởi động lại và để danh
-        # sách ứng viên đọc được điểm khớp. Dùng bản đã merge, không dùng bản
-        # mới, vì lượt enrich sau có thể chỉ bổ sung một phần.
-        persist_analytics(candidate_uuid, merged_profile.analytics, settings)
 
         logger.info(
             "enrichment.worker.completed",

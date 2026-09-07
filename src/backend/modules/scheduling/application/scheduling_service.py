@@ -28,6 +28,10 @@ logger = structlog.get_logger(__name__)
 
 #: Default limit for slot suggestions (0 means no cap, return all available slots)
 MAX_SUGGESTED_SLOTS = 0
+#: Bước giữa hai gợi ý giờ bắt đầu trên trang lịch. 15 phút để HR chọn được
+#: 9:15 hay 9:30 chứ không chỉ 9:00 / 9:45; các khe vì thế chồng nhau — đó là
+#: gợi ý giờ bắt đầu, không phải lịch chia ca.
+SLOT_STEP_MINUTES = 15
 
 
 class SchedulingService:
@@ -223,6 +227,7 @@ class SchedulingService:
             interviewer_freebusy=freebusy_map,
             min_slot_minutes=min_slot_minutes,
             limit=limit,
+            step_minutes=SLOT_STEP_MINUTES,
         )
 
         return slots

@@ -198,3 +198,23 @@ class TestResultShape:
     def test_duration_is_reported_in_minutes(self, sweep):
         slots = sweep.find_slots({"a": [free("a", 9, 10)]}, min_slot_minutes=60)
         assert slots[0].duration_min == 60
+
+
+class TestStartTimeStep:
+    """`step_minutes` là bước giữa hai gợi ý giờ bắt đầu — tách khỏi độ dài khe.
+
+    Trang lịch muốn HR chọn được 9:15 chứ không chỉ 9:00/9:45 (bước 15 phút,
+    khe chồng nhau). Nhưng mặc định vẫn phải là các khe nối tiếp: đây là hành
+    vi mọi test khác dựa vào, và một lần "đổi hằng số" từng làm cả bộ test đỏ.
+    """
+
+    def test_default_step_equals_the_slot_length_so_slots_do_not_overlap(self, sweep):
+        slots = sweep.find_slots({"a": [free("a", 9, 12)]}, min_slot_minutes=45)
+        assert [s.start_time for s in slots] == [at(9), at(9.75), at(10.5), at(11.25)]
+
+    def test_a_15_minute_step_offers_every_quarter_hour_and_still_respects_limit(self, sweep):
+        slots = sweep.find_slots({"a": [free("a", 9, 12)]}, min_slot_minutes=45, step_minutes=15, limit=0)
+        assert [s.start_time for s in slots][:4] == [at(9), at(9.25), at(9.5), at(9.75)]
+        assert all(s.duration_min == 45 for s in slots)
+        assert slots[-1].end_time <= at(12)
+        assert len(sweep.find_slots({"a": [free("a", 9, 12)]}, min_slot_minutes=45, step_minutes=15, limit=3)) == 3

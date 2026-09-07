@@ -14,6 +14,7 @@ class SweepLineService:
         interviewer_freebusy: dict[str, list[FreeBusyInterval]],
         min_slot_minutes: int = 45,
         limit: int = 5,
+        step_minutes: int | None = None,
     ) -> list[TimeSlot]:
         if not interviewer_freebusy:
             return []
@@ -53,6 +54,10 @@ class SweepLineService:
         # availability would have produced a window ending in the past.
 
         min_delta = timedelta(minutes=min_slot_minutes)
+        # Bước dịch giữa hai gợi ý. Mặc định = độ dài khe → các khe nối tiếp,
+        # không chồng nhau (9:00–9:45, 9:45–10:30…). Trang lịch truyền 15 phút
+        # để HR chọn được giờ bắt đầu lẻ; khi đó các khe CỐ Ý chồng nhau.
+        step = timedelta(minutes=step_minutes) if step_minutes and step_minutes > 0 else min_delta
         # Sorted once: `interviewer_ids` below is built from a set, and set
         # iteration order is not stable between processes. Unsorted, two
         # identical requests return different payloads — which breaks response
@@ -81,15 +86,16 @@ class SweepLineService:
                         ),
                     )
                 )
-                cursor += timedelta(minutes=15)
+                cursor += step
 
         # Every slot is exactly min_slot_minutes long, so sorting by duration
         # first would be a no-op tie-break. Chronological order is what a
         # recruiter reading a list of suggestions actually expects.
         filtered.sort(key=lambda s: s.start_time)
 
-        # limit <= 0 means no cap. We want to return all slots as requested.
-        result = filtered
+        # `limit` phải có nghĩa: trang lịch gửi 0 (không giới hạn) một cách
+        # tường minh, nhưng nơi khác gọi với limit=3 thì phải nhận đúng 3.
+        result = filtered[:limit] if limit and limit > 0 else filtered
 
         logger.info(
             "scheduling.sweepline.complete",

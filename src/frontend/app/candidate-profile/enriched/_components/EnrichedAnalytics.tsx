@@ -144,7 +144,7 @@ export function EnrichedAnalytics({
       >
         <div style={{ marginBottom: 20 }}>
           <SectionLabel>{t("candidate.analytics.matchConfidenceScore")}</SectionLabel>
-          <MatchConfidence analytics={data?.analytics || null} />
+          <MatchConfidence analytics={data?.analytics || null} skillMatrix={data?.skill_matrix} />
         </div>
         <Divider />
         {/* The "why" behind the number above. A score with no breakdown is

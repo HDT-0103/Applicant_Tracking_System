@@ -264,6 +264,15 @@ Luật `test_*.py` trước đây không neo gốc nên khớp ở mọi độ s
 viết mà không bao giờ được commit. Đã sửa thành `/test_*.py`. Nếu thấy test
 chạy ở máy mà CI không có, kiểm `git status --untracked-files=all`.
 
+### Đặt lịch: bước gợi ý 15 phút, `limit` vẫn có nghĩa
+
+`SweepLineService.find_slots(step_minutes=None)`: mặc định bước = độ dài khe
+(các khe nối tiếp, không chồng — mọi test dựa vào đó). Trang lịch muốn HR chọn
+được 9:15/9:30 nên `SchedulingService` truyền `SLOT_STEP_MINUTES = 15` và
+`limit=0` (không giới hạn) một cách tường minh. Một lần "đổi hằng số" thẳng
+trong sweep từng làm 4 test đỏ trên `main`. Cùng commit đó xoá nhầm
+`.env.example` (2 test `test_env_contract` đỏ) — file này bắt buộc phải có.
+
 ### Pipeline CV và enrichment cùng ghi một hàng `enrichment_profiles`
 
 Sau upload, `post_ingest_worker` chạy hai việc **tuần tự**: pipeline CV ghi
@@ -276,6 +285,14 @@ Sau upload, `post_ingest_worker` chạy hai việc **tuần tự**: pipeline CV 
 từ khoá. Đổi thứ tự hay cho chạy song song là hai bên ghi đè nhau tuỳ ai xong
 sau.
 
+- `match_confidence_score` là MỘT con số ở mọi màn hình: dashboard đọc DB,
+  trang hồ sơ đọc `candidate_enrichments` trong bộ nhớ. `persist_analytics`
+  trả về payload đã gộp và worker ghi đúng bản đó vào bộ nhớ
+  (`apply_persisted_analytics`) — trước đây bộ nhớ giữ điểm đếm từ khoá (99)
+  còn DB giữ điểm pipeline (85). Hồ sơ chưa qua pipeline (không có
+  `must_have` trong `skill_matrix`) mang điểm từ khoá; UI ghi rõ "tín hiệu
+  GitHub/LinkedIn, chưa so với tin". `MatchConfidence.tsx` không còn rơi về
+  89.5 và không còn ba thanh 93/87/81 cứng.
 - `overall_score` NULL nghĩa là **chưa chấm** (khác 0.0 = không hợp): PDF
   không có text, tin không có vector, hoặc LLM hỏng — log `cv_pipeline.*`.
 - Text CV lấy từ `candidate_store` trong bộ nhớ (file tạm đã xoá trong

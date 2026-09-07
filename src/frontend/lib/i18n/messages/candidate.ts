@@ -77,13 +77,15 @@ export const candidateMessages = {
 
   // ── Match Confidence ─────────────────────────────────────────────────────
   "candidate.match.title": { en: "Match Confidence", vi: "Độ tin cậy phù hợp" },
+  "candidate.match.unscored": { en: "Not scored yet — the CV is being processed, or it has no readable text.", vi: "Chưa chấm — CV đang được xử lý, hoặc không đọc được text." },
+  "candidate.match.sourceJob": { en: "CV vs the job posting (summary + experience), with the must-have breakdown below.", vi: "So CV với tin tuyển dụng (tóm tắt + kinh nghiệm), kèm đối chiếu kỹ năng bắt buộc bên dưới." },
+  "candidate.match.sourceSignals": { en: "Technical signal from GitHub/LinkedIn only — not compared against a posting.", vi: "Tín hiệu kỹ thuật từ GitHub/LinkedIn — chưa so với tin tuyển dụng nào." },
+  "candidate.match.mustHave": { en: "Must-have skills", vi: "Kỹ năng bắt buộc" },
+  "candidate.match.niceToHave": { en: "Nice-to-have", vi: "Kỹ năng ưu tiên" },
   "candidate.match.increase": {
     en: "+{n} increase from external data enrichment",
     vi: "+{n} tăng nhờ làm giàu dữ liệu từ nguồn ngoài",
   },
-  "candidate.match.experienceFit": { en: "Experience Fit", vi: "Phù hợp kinh nghiệm" },
-  "candidate.match.skillsAlignment": { en: "Skills Alignment", vi: "Khớp kỹ năng" },
-  "candidate.match.cultureSignal": { en: "Culture Signal", vi: "Tín hiệu văn hoá" },
 
   // ── SkillMatchPanel ──────────────────────────────────────────────────────
   "candidate.skills.empty": {
